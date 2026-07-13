@@ -1,0 +1,214 @@
+"""ui/ingesta.py — Pantalla 1: Ingesta de fotos (RESELLERMASTER).
+
+SOLO renderiza. Su trabajo es: dejar que Diego señale un origen de fotos
+(carpeta en disco o arrastrar ficheros), copiarlas a
+`data/lotes/<lote_id>/` (**nunca** tocar los originales de Diego), leer
+EXIF/hash con `core.images`, y registrar todo en `core.store.LoteStore`.
+
+Nada de esto decide cómo agrupar, qué vale un atributo o qué precio tiene
+un producto — eso vive detrás de las costuras en `core/`.
+"""
+
+from __future__ import annotations
+
+import logging
+import shutil
+from datetime import datetime
+from pathlib import Path
+
+import streamlit as st
+
+from core.images import (
+    EXTENSIONES_SOPORTADAS,
+    es_soportada,
+    leer_metadatos,
+    sha256_de_fichero,
+)
+from core.store import Foto, FotoDuplicadaError, LoteStore
+
+logger = logging.getLogger(__name__)
+
+_TIPOS_UPLOADER = sorted(ext.lstrip(".") for ext in EXTENSIONES_SOPORTADAS)
+
+
+def _listar_fotos_en_carpeta(carpeta: Path) -> list[Path]:
+    """Fotos soportadas bajo `carpeta`, recursivo (las fotos de móvil suelen
+    venir en subcarpetas por fecha/álbum). Nunca escribe nada en `carpeta`."""
+    if not carpeta.is_dir():
+        return []
+    return sorted(p for p in carpeta.rglob("*") if p.is_file() and es_soportada(p))
+
+
+def _copia_destino_libre(carpeta_lote: Path, nombre_original: str) -> Path:
+    """Elige un nombre de destino libre dentro de `carpeta_lote`. Si el
+    nombre ya existe (dos ficheros con el mismo nombre desde orígenes
+    distintos), antepone un contador — nunca sobrescribe una copia ya
+    hecha en este lote."""
+    origen = Path(nombre_original)
+    destino = carpeta_lote / origen.name
+    contador = 1
+    while destino.exists():
+        destino = carpeta_lote / f"{origen.stem}_{contador}{origen.suffix}"
+        contador += 1
+    return destino
+
+
+def _ingerir(
+    store: LoteStore,
+    nombre_lote: str,
+    carpeta_origen: str,
+    rutas_origen: list[Path],
+) -> str:
+    """Copia todas `rutas_origen` a un lote nuevo y las registra en el
+    store. Devuelve el `lote_id` creado. Un fichero individual ilegible o
+    no copiable se registra con `logger.exception` y se salta — nunca
+    aborta el lote entero por una foto rota (mismo criterio que
+    `core/images.py`)."""
+    lote_id = store.crear_lote(nombre_lote, carpeta_origen)
+    carpeta_lote = store.lotes_dir / lote_id
+
+    total = len(rutas_origen)
+    progreso = st.progress(0.0, text=f"Copiando 0/{total} fotos…")
+
+    fotos_registro: list[Foto] = []
+    n_con_error = 0
+    for i, origen in enumerate(rutas_origen, start=1):
+        destino = _copia_destino_libre(carpeta_lote, origen.name)
+        try:
+            shutil.copy2(origen, destino)
+        except OSError:
+            logger.exception("No se pudo copiar %s -> %s", origen, destino)
+            n_con_error += 1
+            progreso.progress(i / total, text=f"Copiando {i}/{total} fotos…")
+            continue
+
+        meta = leer_metadatos(destino)
+        if not meta.legible:
+            n_con_error += 1
+
+        try:
+            hash_sha256 = sha256_de_fichero(destino)
+        except OSError:
+            logger.exception("No se pudo calcular el hash de %s", destino)
+            n_con_error += 1
+            progreso.progress(i / total, text=f"Copiando {i}/{total} fotos…")
+            continue
+
+        timestamp_exif = (
+            meta.fecha_captura_exif.isoformat() if meta.fecha_captura_exif else None
+        )
+        fotos_registro.append(
+            Foto(ruta=str(destino), hash=hash_sha256, timestamp_exif=timestamp_exif)
+        )
+        progreso.progress(i / total, text=f"Copiando {i}/{total} fotos…")
+
+    if fotos_registro:
+        try:
+            store.añadir_fotos(lote_id, fotos_registro)
+        except FotoDuplicadaError:
+            logger.exception("Duplicado registrando fotos del lote %s", lote_id)
+            raise
+
+    progreso.empty()
+    mensaje = f"Lote «{nombre_lote}» creado: {len(fotos_registro)} foto(s) registrada(s)."
+    if n_con_error:
+        mensaje += f" {n_con_error} fichero(s) con error (revisa el log) — se saltaron."
+    st.success(mensaje)
+    return lote_id
+
+
+def render(store: LoteStore) -> str | None:
+    """Pinta la pantalla de ingesta.
+
+    Devuelve el `lote_id` recién creado cuando Diego acaba de lanzar una
+    ingesta completa; `None` en cualquier otro caso. `app.py` usa ese
+    valor para decidir si navega a la pantalla de Confirmación — la
+    decisión de A DÓNDE navegar vive en `app.py`, aquí sólo se informa de
+    que ya pasó.
+    """
+    st.header("1. Ingesta de fotos")
+    st.caption(
+        "Copia las fotos del lote a `data/lotes/<id>/` — **nunca** toca tus "
+        "ficheros originales. Con cientos de fotos de varios MB puede "
+        "tardar; verás el progreso."
+    )
+
+    nombre_lote = st.text_input(
+        "Nombre del lote",
+        value=datetime.now().strftime("Lote %Y-%m-%d %H:%M"),
+    )
+
+    metodo = st.radio(
+        "Origen de las fotos",
+        ["Carpeta en disco", "Arrastrar ficheros"],
+        horizontal=True,
+    )
+
+    rutas: list[Path] = []
+    carpeta_origen_str = ""
+
+    if metodo == "Carpeta en disco":
+        carpeta_texto = st.text_input(
+            "Ruta de la carpeta con las fotos mezcladas",
+            placeholder=r"C:\Users\diego\Fotos\lote_reventa",
+        )
+        if carpeta_texto:
+            carpeta = Path(carpeta_texto)
+            carpeta_origen_str = str(carpeta)
+            if not carpeta.is_dir():
+                st.warning("Esa carpeta no existe todavía.")
+            else:
+                rutas = _listar_fotos_en_carpeta(carpeta)
+                if not rutas:
+                    st.warning(
+                        "La carpeta existe pero no contiene fotos en un formato "
+                        f"soportado ({', '.join(_TIPOS_UPLOADER)})."
+                    )
+                else:
+                    st.info(f"{len(rutas)} foto(s) encontradas.")
+    else:
+        subidos = st.file_uploader(
+            "Arrastra las fotos aquí",
+            type=_TIPOS_UPLOADER,
+            accept_multiple_files=True,
+        )
+        if subidos:
+            carpeta_origen_str = "(subida manual desde el navegador, sin carpeta de origen)"
+            # El navegador no da una ruta de disco: los bytes subidos se
+            # escriben a una carpeta temporal propia (nunca es "el
+            # original" de Diego, es la única copia que existe hasta este
+            # punto) y desde ahí `_ingerir` los copia al lote como con
+            # cualquier otro origen.
+            carpeta_temporal = store.data_dir / "_tmp_subidas"
+            carpeta_temporal.mkdir(parents=True, exist_ok=True)
+            for subido in subidos:
+                destino_tmp = _copia_destino_libre(carpeta_temporal, subido.name)
+                destino_tmp.write_bytes(subido.getbuffer())
+                rutas.append(destino_tmp)
+            st.info(f"{len(rutas)} foto(s) recibidas.")
+
+    if not rutas:
+        return None
+
+    st.info(
+        "Coste estimado de procesar este lote: **0,00 €**. Fase 1 usa sólo "
+        "extracción local (EXIF); no se llama a ningún proveedor de pago."
+    )
+
+    if not st.button("Ingerir lote", type="primary", disabled=not nombre_lote.strip()):
+        return None
+
+    lote_id = _ingerir(store, nombre_lote.strip(), carpeta_origen_str, rutas)
+
+    if metodo == "Arrastrar ficheros":
+        # Limpieza de la carpeta temporal de subida: los bytes ya están
+        # copiados dentro del lote (`data/lotes/<lote_id>/`); esto era sólo
+        # el paso intermedio para materializar en disco lo que llegó del
+        # navegador.
+        for ruta_tmp in rutas:
+            try:
+                ruta_tmp.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("No se pudo limpiar el fichero temporal %s", ruta_tmp)
+
+    return lote_id
