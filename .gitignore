@@ -1,0 +1,36 @@
+# Secretos
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+
+# Datos del usuario — fotos, lotes, caché de API, DB local
+data/lotes/
+data/cache/
+data/*.db
+data/exports/
+*.jpg
+*.jpeg
+*.png
+*.heic
+*.webp
+!docs/**/*.png
+
+# Claude Code — estado local
+.claude/.last-nudge
+.claude/worktrees/
+.claude/scheduled_tasks.lock
+
+# Streamlit
+.streamlit/secrets.toml
+
+# SO
+Thumbs.db
+desktop.ini
