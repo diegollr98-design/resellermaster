@@ -1,0 +1,9 @@
+# Fase 1 — cero dependencias de red, cero APIs de pago.
+streamlit>=1.40
+Pillow>=11.0
+pillow-heif>=0.20          # fotos .heic del iPhone
+ImageHash>=4.3             # hash perceptual para confirmar agrupacion
+
+# Dev
+pytest>=8.0
+ruff>=0.8

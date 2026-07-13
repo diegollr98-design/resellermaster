@@ -1,6 +1,6 @@
 # CLAUDE.md — RESELLERMASTER
 
-## v0.1 | Actualizado: 2026-07-13 | Infra agéntica instalada, producto SIN planear todavía. App local (Streamlit) para subir fotos de productos de reventa en masa → agrupar por producto → generar título/descripción/campos de Wallapop y Vinted → copiar-pegar y publicar rápido. Fase actual: **harness listo, esperando la sesión de planificación**. Nada de código de producto hasta que el plan esté aprobado por Diego.
+## v0.2 | Actualizado: 2026-07-13 | App local (Streamlit) para subir fotos de reventa en masa → agrupar por producto → generar los campos de Wallapop y Vinted → copiar-pegar rápido. **Plan aprobado. Ejecutando FASE 1** (costuras + ingesta + agrupación por EXIF). Campos de ambas plataformas verificados contra fuentes primarias (`rules/product.md`). Decisión clave tras `[INC-001]`: **se arranca con el stack GRATUITO** (OCR local + EXIF + color + plantilla) — cero APIs de pago. El de pago sólo entra si `/eval` demuestra que la cobertura del gratuito no basta. Golden set: **lo está fotografiando Diego** (Fase 0, en paralelo). Siguiente paso: gate de Diego al cerrar la Fase 1.
 
 ## ⚠️ CÓMO TRABAJAR CON EL USUARIO (Diego) — LEER SIEMPRE PRIMERO
 Diego pregunta/propone POCO; cuando lo hace es señal de ALTA prioridad y suele tener razón (detecta patrones bien). Detalle en `.claude/rules/decision-making.md`.
