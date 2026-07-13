@@ -22,12 +22,14 @@ DateTimeOriginal en la sub-IFD "Exif").
 from __future__ import annotations
 
 import io
+import random
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
 from PIL import ExifTags, Image, ImageDraw, ImageEnhance
 
-from core.grouping import UMBRAL_PHASH_MUY_DISTINTA, Grupo, agrupar
+from core.grouping import UMBRAL_COLORHASH_MUY_DISTINTA, UMBRAL_PHASH_MUY_DISTINTA, Grupo, agrupar
 
 # --------------------------------------------------------------------------
 # Helpers de fabricacion de imagenes sinteticas
@@ -157,9 +159,12 @@ def test_dos_productos_seguidos_con_hueco_pequeno_se_separan(tmp_path):
 
 
 def test_grupo_unico_disparado_a_ritmo_constante_no_se_corte_de_mas(tmp_path):
-    # Un solo producto, 5 fotos a ritmo perfectamente constante: la
-    # mediana de huecos es el propio ritmo, ningun hueco la triplica ->
-    # no debe partirse en falso.
+    # Un solo producto, 5 fotos a ritmo PERFECTAMENTE constante (huecos
+    # todos iguales, sin ninguna variacion): no debe partirse en falso --
+    # pero tampoco hay ninguna frontera que buscar en una distribucion sin
+    # variacion, asi que `_umbral_corte` devuelve None [C2] y el techo de
+    # confianza es "media", nunca "alta" (sin senal primaria que respalde
+    # la certeza maxima, aunque las fotos sean visualmente consistentes).
     fotos = []
     for i, seg in enumerate((0, 3, 6, 9, 12)):
         ruta = tmp_path / f"p_{i}.jpg"
@@ -170,7 +175,8 @@ def test_grupo_unico_disparado_a_ritmo_constante_no_se_corte_de_mas(tmp_path):
 
     assert len(grupos) == 1
     assert set(grupos[0].fotos) == set(fotos)
-    assert grupos[0].confianza == "alta"
+    assert grupos[0].confianza == "media"
+    assert "huecos suficientes" in grupos[0].motivo
 
 
 # --------------------------------------------------------------------------
@@ -365,3 +371,271 @@ def test_todos_los_motivos_son_texto_no_vacio_en_todos_los_grupos(tmp_path):
         assert isinstance(g, Grupo)
         assert isinstance(g.motivo, str) and g.motivo.strip()
         assert g.confianza in ("alta", "media", "baja")
+
+
+# --------------------------------------------------------------------------
+# [INC-002] -- regresion de la mediana como umbral de corte, y de la
+# ceguera al color de pHash. Cada test de aqui abajo reproduce, EJECUTANDO
+# el codigo real (no en el papel), uno de los casos rotos del incidente.
+# --------------------------------------------------------------------------
+
+_PALETA_COLORES: list[tuple[int, int, int]] = [
+    (200, 30, 30),  # roja
+    (30, 30, 200),  # azul
+    (25, 25, 25),  # negra
+    (225, 225, 225),  # blanca
+]
+"""Paleta de colores CALIBRADA (ver docstring de
+`UMBRAL_COLORHASH_MUY_DISTINTA` en `core/grouping.py`): distancia MINIMA
+medida entre cualquier par de estos 4 colores = 3, por encima del umbral
+(2). Otros colores (verde, marron...) se probaron y algunos pares dieron
+distancia 0 -- `colorhash` usa solo 6 cubos de tono y colores adyacentes
+en el circulo cromatico pueden colisionar (limite documentado, no un bug
+de este test). Esta paleta es la que la evidencia real de [INC-002] usa,
+asi que ademas de segura es la mas representativa."""
+
+
+def _lote_multiples_productos(
+    tmp_path: Path,
+    n_productos: int,
+    fotos_por_producto: int,
+    intra: float,
+    inter: float,
+    jitter: float,
+    seed: int,
+) -> tuple[list[Path], dict[Path, int]]:
+    """Fabrica un lote de `n_productos`, cada uno con `fotos_por_producto`
+    fotos a un ritmo intra-producto `intra` s y un hueco entre productos
+    `inter` s -- ambos con jitter humano UNIFORME +-`jitter` s (nunca <=0,
+    un disparo no puede ir hacia atras en el tiempo). Cada producto tiene
+    un color DISTINTO (ciclando `_PALETA_COLORES`, misma silueta para
+    todos -- pHash por si solo NO puede distinguirlos, ver [INC-002]) para
+    poder comprobar despues que ningun grupo mezcla productos. Devuelve
+    las rutas en orden de disparo y el indice de producto de cada una."""
+    rnd = random.Random(seed)
+    rutas: list[Path] = []
+    producto_por_ruta: dict[Path, int] = {}
+    t = 0.0
+    for p in range(n_productos):
+        color = _PALETA_COLORES[p % len(_PALETA_COLORES)]
+        for f in range(fotos_por_producto):
+            ruta = tmp_path / f"prod{p}_{f}.jpg"
+            _guardar_con_fecha(
+                ruta, _imagen_producto(color_forma=color), BASE + timedelta(seconds=t)
+            )
+            rutas.append(ruta)
+            producto_por_ruta[ruta] = p
+            if f < fotos_por_producto - 1:
+                t += max(0.1, intra + rnd.uniform(-jitter, jitter))
+        if p < n_productos - 1:
+            t += max(0.1, inter + rnd.uniform(-jitter, jitter))
+    return rutas, producto_por_ruta
+
+
+def _grupos_alta_mezclan_productos(
+    grupos: list[Grupo], producto_por_ruta: dict[Path, int]
+) -> list[tuple[Grupo, set[int]]]:
+    """Grupos `confianza="alta"` cuyas fotos pertenecen a MAS DE UN
+    producto real -- si esta lista no esta vacia, el invariante duro del
+    modulo se ha roto."""
+    rotos = []
+    for g in grupos:
+        if g.confianza != "alta":
+            continue
+        productos = {producto_por_ruta[f] for f in g.fotos}
+        if len(productos) > 1:
+            rotos.append((g, productos))
+    return rotos
+
+
+@pytest.mark.parametrize("ratio", [2.0, 2.5, 3.0, 3.5, 4.0])
+def test_barrido_ratio_inter_intra_2_a_4_ningun_grupo_alta_mezcla_productos(tmp_path, ratio):
+    # El rango que el diseño ORIGINAL (mediana * 3, ratio de corte
+    # efectivo 3.0x) fallaba por debajo de -- y donde vivia el bug real de
+    # [INC-002] (ratio 3.0x con 8 prendas de 3 fotos ya mezclaba 8
+    # productos en un grupo "alta"). El invariante duro tiene que
+    # aguantar en TODO este rango, con jitter humano +-1s.
+    intra = 4.0
+    inter = intra * ratio
+    for seed in range(15):
+        sub = tmp_path / f"ratio_{ratio}_seed_{seed}"
+        sub.mkdir()
+        rutas, producto_por_ruta = _lote_multiples_productos(
+            sub,
+            n_productos=6,
+            fotos_por_producto=3,
+            intra=intra,
+            inter=inter,
+            jitter=1.0,
+            seed=seed,
+        )
+        grupos = agrupar(rutas)
+
+        # Ninguna foto se pierde ni se duplica -- invariante general de
+        # una superficie sensible, valido tambien aqui.
+        fotos_en_grupos = [f for g in grupos for f in g.fotos]
+        assert sorted(fotos_en_grupos) == sorted(rutas)
+
+        rotos = _grupos_alta_mezclan_productos(grupos, producto_por_ruta)
+        assert not rotos, (
+            f"ratio={ratio} seed={seed}: grupo(s) 'alta' mezclando productos: "
+            f"{[(productos, [f.name for f in g.fotos]) for g, productos in rotos]}"
+        )
+
+
+def test_invariante_duro_confianza_alta_nunca_mezcla_productos_distintos(tmp_path):
+    """El contrato no negociable del modulo (`.claude/rules/truth-loop.md`
+    SS E): un grupo `confianza="alta"` JAMAS puede tener fotos de dos
+    productos distintos. Se comprueba contra varios escenarios adversos a
+    la vez, incluida la reproduccion EXACTA de [INC-002] (8 prendas, 3
+    fotos c/u, 4s intra-producto / 12s inter-producto, SIN jitter -- el
+    caso que rompia el diseño anterior: mediana=4, umbral=4*3=12, y
+    `12 > 12` es falso, cero cortes, 8 productos en un solo grupo
+    "alta")."""
+    # 1) La reproduccion exacta del incidente, sin jitter.
+    sub1 = tmp_path / "inc002_exacto"
+    sub1.mkdir()
+    rutas1, productos1 = _lote_multiples_productos(
+        sub1, n_productos=8, fotos_por_producto=3, intra=4.0, inter=12.0, jitter=0.0, seed=0
+    )
+    grupos1 = agrupar(rutas1)
+    assert not _grupos_alta_mezclan_productos(grupos1, productos1)
+    # Ademas, en este caso limpio (sin jitter) el diseño nuevo SI debe
+    # separar los 8 productos correctamente (no solo evitar la mezcla a
+    # "alta" -- de hecho aqui deben poder llegar a "alta" porque el margen
+    # es holgado, ver docstring de FACTOR_MARGEN_ALTA).
+    assert len(grupos1) == 8
+    assert all(g.confianza == "alta" for g in grupos1)
+
+    # 2) Con jitter humano +-1s y ratio ajustado (2.0x, el mas dificil).
+    sub2 = tmp_path / "ratio_2_jitter"
+    sub2.mkdir()
+    rutas2, productos2 = _lote_multiples_productos(
+        sub2, n_productos=10, fotos_por_producto=4, intra=4.0, inter=8.0, jitter=1.0, seed=7
+    )
+    grupos2 = agrupar(rutas2)
+    assert not _grupos_alta_mezclan_productos(grupos2, productos2)
+
+    # 3) Rafaga: muchas fotos de productos distintos con hueco 0 (reloj
+    # de camara desincronizado o disparo multiple). Ver test dedicado mas
+    # abajo para el caso minimo; aqui se repite a mayor escala como parte
+    # del invariante combinado.
+    sub3 = tmp_path / "rafaga"
+    sub3.mkdir()
+    rutas3, productos3 = _lote_multiples_productos(
+        sub3, n_productos=4, fotos_por_producto=3, intra=0.0, inter=0.0, jitter=0.0, seed=0
+    )
+    grupos3 = agrupar(rutas3)
+    assert not _grupos_alta_mezclan_productos(grupos3, productos3)
+
+
+def test_dos_prendas_mismo_corte_distinto_color_en_medio_de_la_sesion_se_cazan_por_color(
+    tmp_path,
+):
+    # El caso EXACTO de la evidencia de [INC-002]: pHash es ciego al
+    # color (misma silueta, distinta camiseta -> distancia de Hamming de
+    # pHash = 0, medido). Una foto de OTRO color, MISMA forma, colada en
+    # medio de una sesion de fotos de un producto: si la confirmacion
+    # visual dependiera solo de pHash, esto pasaria colado en silencio.
+    roja = _imagen_producto(color_forma=(200, 30, 30))
+    azul_intrusa = _imagen_producto(color_forma=(30, 30, 200))  # MISMA forma, otro color
+    secuencia = [(0, roja), (3, roja), (6, azul_intrusa), (9, roja)]
+
+    rutas = []
+    for seg, img in secuencia:
+        ruta = tmp_path / f"foto_{seg}.jpg"
+        _guardar_con_fecha(ruta, img, BASE + timedelta(seconds=seg))
+        rutas.append(ruta)
+
+    grupos = agrupar(rutas)
+
+    # El timestamp (huecos uniformes de 3s) no da ningun motivo para
+    # cortar -- las 4 fotos siguen en UN solo grupo temporal.
+    assert len(grupos) == 1
+    grupo = grupos[0]
+    assert set(grupo.fotos) == set(rutas)
+
+    # Pero la confirmacion por COLOR (no por forma) la caza.
+    assert grupo.confianza == "baja"
+    assert rutas[2].name in grupo.motivo
+    assert "color" in grupo.motivo
+
+
+def test_umbral_corte_none_un_solo_hueco_no_puede_ser_alta(tmp_path):
+    # Dos fotos, MISMA forma y MISMO color (para aislar el fallo: aqui NO
+    # hay ninguna senal visual que las distinga, la UNICA red de
+    # seguridad posible es la ausencia de senal de tiempo), separadas por
+    # un unico hueco de 10 minutos. `_umbral_corte` no tiene distribucion
+    # de la que derivar "grande" con un solo dato -- devuelve `None` -- y
+    # el grupo NUNCA puede salir "alta" sin esa senal primaria [C2],
+    # aunque bien podrian ser dos productos distintos que comparten
+    # silueta y color (un patron muy comun en ropa basica).
+    producto = _imagen_producto()
+    ruta_1 = tmp_path / "p1.jpg"
+    ruta_2 = tmp_path / "p2.jpg"
+    _guardar_con_fecha(ruta_1, producto, BASE)
+    _guardar_con_fecha(ruta_2, producto, BASE + timedelta(minutes=10))
+
+    grupos = agrupar([ruta_1, ruta_2])
+
+    assert len(grupos) == 1
+    assert set(grupos[0].fotos) == {ruta_1, ruta_2}
+    assert grupos[0].confianza != "alta"
+    assert "huecos suficientes" in grupos[0].motivo
+
+
+def test_umbral_corte_none_rafaga_huecos_cero_con_producto_distinto_nunca_alta(tmp_path):
+    # Varias fotos con el MISMO timestamp EXIF exacto (rafaga extrema, o
+    # un reloj de camara mal calibrado que redondea al segundo) -- TODOS
+    # los huecos son 0. `_umbral_corte` no tiene ninguna base para cortar
+    # [C2]. Se cuela una foto de un producto claramente distinto (misma
+    # silueta, otro color): el invariante duro exige que, pase lo que
+    # pase con la confirmacion visual, esto NUNCA pueda salir "alta".
+    roja = _imagen_producto(color_forma=(200, 30, 30))
+    azul_distinta = _imagen_producto(color_forma=(30, 30, 200))
+    rutas = []
+    for i, img in enumerate([roja, roja, roja, azul_distinta, roja]):
+        ruta = tmp_path / f"foto_{i}.jpg"
+        _guardar_con_fecha(ruta, img, BASE)  # el mismo segundo para todas
+        rutas.append(ruta)
+
+    grupos = agrupar(rutas)
+
+    assert len(grupos) == 1
+    assert set(grupos[0].fotos) == set(rutas)
+    assert grupos[0].confianza != "alta"
+    # Con el color distinto colandose, la confirmacion visual SI la caza
+    # (ademas de que el techo por None ya lo impedia).
+    assert grupos[0].confianza == "baja"
+
+
+def test_lote_sin_exif_cuatro_colores_distintos_no_se_funden_en_uno(tmp_path):
+    # [INC-002], ruta sin EXIF: con distancia de pHash 0 (misma silueta),
+    # cuatro camisetas de colores CLARAMENTE distintos pasaban el umbral
+    # de casi-duplicado (5) y salian como UN producto, motivo
+    # "probablemente el mismo producto". Ahora hace falta TAMBIEN
+    # parecerse en color (`UMBRAL_COLORHASH_MUY_DISTINTA`).
+    colores = [(200, 30, 30), (30, 30, 200), (25, 25, 25), (225, 225, 225)]
+    rutas = []
+    for i, color in enumerate(colores):
+        ruta = tmp_path / f"prenda_{i}.jpg"
+        _guardar_sin_exif(ruta, _imagen_producto(color_forma=color))
+        rutas.append(ruta)
+
+    grupos = agrupar(rutas)
+
+    fotos_en_grupos = [f for g in grupos for f in g.fotos]
+    assert sorted(fotos_en_grupos) == sorted(rutas)  # nada se pierde ni se duplica
+
+    # Ninguna de las 4 camisetas de color distinto termina en el mismo
+    # grupo que otra -- cada una es su propio grupo dudoso, nunca "alta".
+    assert len(grupos) == 4
+    for g in grupos:
+        assert len(g.fotos) == 1
+        assert g.confianza == "baja"
+
+
+def test_umbral_colorhash_muy_distinta_esta_documentado_y_es_positivo():
+    # Guardarraíl minimo, igual que el de pHash: si alguien cambia la
+    # constante sin querer a algo sin sentido, que un test lo note.
+    assert UMBRAL_COLORHASH_MUY_DISTINTA > 0
