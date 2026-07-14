@@ -340,6 +340,77 @@ def _cajon_de_inciertas(fotos: list[Path], motivo: str) -> list[Grupo]:
     ]
 
 
+
+# --------------------------------------------------------------------------
+# LA CREMALLERA CON PESTILLO — el modelo de datos de `ui/curar.py`.
+#
+# `agrupar()` (arriba) sigue siendo quien PROPONE el estado inicial. Pero la
+# pantalla de curado no vuelve a llamarlo para cada click de Diego: en vez de
+# eso trabaja sobre una idea mas simple y mas dura de romper.
+#
+# Las fotos CON EXIF de un lote forman una secuencia con ORDEN TOTAL. Entre
+# cada dos fotos consecutivas hay una COSTURA, identificada por el PAR
+# `(foto_id_izquierda, foto_id_derecha)` — nunca por indice (un indice se
+# desplaza si cambia el orden o se descarta una foto, y eso fusionaria dos
+# productos en silencio sin que Diego haya tocado nada). Cada costura esta
+# ABIERTA (corta: son productos distintos) o CERRADA (une: mismo producto).
+#
+# `particion()` es TODA la logica de negocio de esta pantalla: dado el orden
+# total y el conjunto de costuras abiertas, los grupos son los "runs"
+# contiguos entre costuras abiertas. Es una funcion PURA — nada de I/O, nada
+# de Streamlit, nada de `core.store`. Eso es lo que hace que el espacio de
+# estados alcanzable sean EXACTAMENTE las particiones contiguas de la
+# secuencia: no existe ninguna mutacion (ver `ui/curar.py`) cuyo argumento
+# sea una foto suelta, asi que "meter la foto del producto 2 en el 7" no
+# esta "mal hecho" — no esta en el espacio de estados.
+#
+# `costuras_abiertas_de()` es el inverso: dada la particion YA GUARDADA en
+# el store (aqui, como `foto_id -> producto_id`), deriva que costuras estan
+# abiertas ahora mismo. Ninguna de las dos funciones persiste nada — eso
+# vive en `core.store.LoteStore.guardar_agrupacion`, que YA EXISTE con la
+# firma `(lote_id, list[list[foto_id]])` y no se toca.
+# --------------------------------------------------------------------------
+def particion(fotos_ordenadas: list[str], costuras_abiertas: set[tuple[str, str]]) -> list[list[str]]:
+    """Los grupos (runs contiguos) que resultan de cortar `fotos_ordenadas`
+    en cada costura de `costuras_abiertas`.
+
+    Propiedades que esta funcion garantiza (ver `tests/test_curar.py`,
+    property-based): la suma de las longitudes de los grupos devueltos es
+    igual a `len(fotos_ordenadas)`; el orden se conserva; ninguna foto se
+    pierde ni se duplica; `costuras_abiertas` vacio -> un solo grupo con
+    todas las fotos; todas las costuras abiertas -> `len(fotos_ordenadas)`
+    grupos de 1.
+    """
+    if not fotos_ordenadas:
+        return []
+    grupos: list[list[str]] = [[fotos_ordenadas[0]]]
+    for izquierda, derecha in zip(fotos_ordenadas, fotos_ordenadas[1:]):
+        if (izquierda, derecha) in costuras_abiertas:
+            grupos.append([])
+        grupos[-1].append(derecha)
+    return grupos
+
+
+def costuras_abiertas_de(
+    fotos_ordenadas: list[str], grupo_de_foto: dict[str, str]
+) -> set[tuple[str, str]]:
+    """El inverso de `particion()`: dada una particion ya materializada
+    (aqui, como `foto_id -> producto_id` — lo que YA persiste el store),
+    deriva que costuras estan abiertas.
+
+    Dos fotos consecutivas de `fotos_ordenadas` estan separadas por una
+    costura ABIERTA si pertenecen a productos distintos, o si a alguna de
+    las dos no le corresponde ningun producto en `grupo_de_foto` (una foto
+    que todavia no se ha propuesto/guardado no puede estar "en el mismo
+    grupo" que su vecina — degrada al lado seguro, sobre-cortar).
+    """
+    abiertas: set[tuple[str, str]] = set()
+    for izquierda, derecha in zip(fotos_ordenadas, fotos_ordenadas[1:]):
+        if grupo_de_foto.get(izquierda) != grupo_de_foto.get(derecha):
+            abiertas.add((izquierda, derecha))
+    return abiertas
+
+
 def _grupos_ilegibles(
     ilegibles: list[Path], metadatos: dict[Path, MetadatosImagen]
 ) -> list[Grupo]:

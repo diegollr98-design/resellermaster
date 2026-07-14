@@ -16,12 +16,12 @@ from __future__ import annotations
 import streamlit as st
 
 from core.store import DEFAULT_DATA_DIR, LoteStore
-from ui import confirmacion, ingesta
+from ui import curar, ingesta
 
 st.set_page_config(page_title="RESELLERMASTER", layout="wide")
 
 _PANTALLA_INGESTA = "1. Ingesta"
-_PANTALLA_CONFIRMACION = "2. Confirmación de grupos"
+_PANTALLA_CONFIRMACION = "2. Curar agrupación"
 
 
 @st.cache_resource
@@ -101,7 +101,7 @@ def main() -> None:
         if lote_id is None:
             st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
         else:
-            confirmacion.render(store, lote_id)
+            curar.render(store, lote_id)
 
 
 if __name__ == "__main__":
