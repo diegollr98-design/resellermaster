@@ -24,17 +24,28 @@
      "fotos": ["IMG_20260714_110842", "IMG_20260714_110846", "IMG_20260714_110856", "IMG_20260714_111030", "IMG_20260714_111141"]}
   ],
 
+  "_correccion_2026-07-14": "Los `hechos_medidos` de abajo se RECALCULARON tras dos `listing-audit` BLOQUEANTES sobre core/grouping.py v4: la versión anterior de este bloque citaba 'intra 4-8s / inter 14-36s', y AMBOS rangos eran FALSOS contra el EXIF real (ver abajo). Eran justo los números que hacían parecer seguro un umbral de 20s. Las asignaciones foto→producto NO se han tocado: ésa es la verdad de Diego y es intocable. Lo corregido son cálculos derivados que estaban mal.",
+
   "hechos_medidos_sobre_este_lote": {
     "fronteras_reales": [6, 12, 16, 20, 23, 28],
-    "regla_hueco_20s": {
-      "fronteras_encontradas": "6/6",
-      "fusiones_de_productos": 0,
-      "cortes_de_mas": [9, 10, 19, 31, 32],
-      "veredicto": "CERO fusiones (el error caro). 5 cortes de más (el error barato: Diego fusiona en ~5s c/u)."
+
+    "huecos_reales_INTRA_producto": [1, 4, 4, 4, 4, 4, 4, 4, 5, 5, 7, 7, 8, 8, 9, 10, 12, 14, 14, 14, 19, 28, 28, 35, 71, 94],
+    "huecos_reales_INTER_producto": [23, 29, 32, 32, 36, 2735],
+    "se_solapan": "SÍ, masivamente. El intra llega a 94s (metro/papel/detalle: Diego se para a colocarlos) y el inter empieza en 23s. NO hay separación bimodal: ningún umbral puede ser 'el correcto'. Sólo se puede elegir de qué lado equivocarse — y se elige SIEMPRE el de cortar de más.",
+    "jitter_real_de_diego": "+/- 2.4s",
+
+    "barrido_de_umbrales": {
+      "_como_reproducirlo": "pytest tests/test_grouping_golden.py::test_barrido_de_umbrales -s",
+      "1_a_23s": "0 fusiones (zona segura). Los cortes de más bajan de 18 (umbral 5s) a 5 (umbral 20-23s).",
+      "24s_o_mas": "FUSIONA los productos 1 y 2 (la frontera entre ellos es de 23s). A 30s fusiona 2 pares.",
+      "acantilado": 24,
+      "elegido": 15,
+      "por_que_15_y_no_20": "20 está en la zona segura pero deja sólo 4s hasta el acantilado — menos de dos jitters. 15 deja 9s (~3.7 jitters) y cuesta exactamente UN corte de más (6 en vez de 5): ~5 segundos de Diego, una vez, en todo el lote. Comprar el doble de colchón contra el fallo caro por 5s del barato es lo que manda la asimetría de truth-loop §E. El colchón NO es simétrico: hacia arriba hay acantilado, hacia abajo NO hay ninguno (bajar jamás fusiona)."
     },
-    "regla_hueco_25s": "FALLA: fusiona los productos 1 y 2. El umbral tiene poco margen — sesgar SIEMPRE a cortar de más.",
-    "jitter_real_de_diego": "+/- 2.4s. Los huecos intra-producto (4-8s) e inter-producto (14-36s) SE SOLAPAN: no hay separación bimodal limpia.",
-    "cortes_de_mas_son_predecibles": "Son la foto del METRO (+94s) y la del PAPEL (+71s) — Diego se para a colocarlos — y fotos de detalle. Un modelo de visión que clasifique el TIPO de foto los repara: una foto de metro/etiqueta/papel NUNCA puede empezar un producto."
+
+    "limite_del_reloj_que_NINGUN_umbral_arregla": "Si Diego cambia de producto MÁS RÁPIDO que el umbral, el reloj no lo ve y los dos productos se fusionan. No es un bug de calibración: sus huecos INTRA llegan a 19s dentro de un mismo grupo, así que ningún umbral separa un cambio de 9s sin triturar cada producto. Por eso `core/grouping.py` v5 NUNCA emite confianza='alta': el reloj puede PARTIR, pero no puede CONFIRMAR.",
+
+    "cortes_de_mas_son_predecibles": "Son la foto del METRO (+94s) y la del PAPEL (+71s) — Diego se para a colocarlos — y fotos de detalle. Un modelo de visión que clasifique el TIPO de foto los repara: una foto de metro/etiqueta/papel NUNCA puede empezar un producto. Es también la única señal que permitiría volver a emitir confianza='alta', porque sería INDEPENDIENTE del reloj."
   },
 
   "pendiente": "Falta la VERDAD DE ATRIBUTOS de cada producto (marca, talla, composición, color, estado, precio real de venta). Sin eso, /eval puede medir la AGRUPACIÓN pero todavía no la TASA DE ALUCINACIÓN de la extracción (Fase 2). Pedírsela a Diego cuando llegue la Fase 2."

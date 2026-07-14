@@ -87,9 +87,27 @@ El precio **no es un atributo del producto**: es una observación del mercado. P
 Por tanto la agrupación **no optimiza acierto: optimiza no-fusionar.** Sesgo siempre a cortar de más.
 
 ### La señal primaria: hueco temporal, sesgado a sobre-cortar
-Medido sobre el golden set: **"hueco ≥ 20 s = producto nuevo"** encuentra **6/6 fronteras, CERO fusiones**, y se pasa de corte 5 veces. `≥ 25 s` ya fusiona dos productos → **el margen es estrecho: ante la duda, bajar el umbral, nunca subirlo.**
+> **Corregido 2026-07-14** tras el barrido completo de umbrales (`tests/test_grouping_golden.py::test_barrido_de_umbrales`). La versión anterior de este párrafo daba dos rangos de huecos que eran **falsos contra el EXIF real** y proponía un umbral de 20 s. Ver `[INC-005]`.
 
-**El jitter real de Diego es ±2.4 s y los huecos intra-producto (4-8 s) e inter-producto (14-36 s) SE SOLAPAN.** No existe separación bimodal limpia. Cualquier diseño que busque "la frontera correcta" en la distribución de huecos **está condenado** — ya falló dos veces. El tiempo no decide: **propone, sobre-cortando.**
+Medido sobre el golden set, barriendo el umbral de 5 a 30 s:
+- **Zona segura: 1-23 s → CERO fusiones.** Los cortes de más bajan de 18 (a 5 s) a 5 (a 20-23 s).
+- **Acantilado: 24 s → fusiona** los productos 1 y 2 (la frontera entre ellos es de 23 s).
+- **Umbral en uso: 15 s** → 6/6 fronteras, 0 fusiones, 6 cortes de más.
+
+**Por qué 15 y no 20:** los dos están en la zona segura, pero 20 deja sólo **4 s de colchón** hasta el acantilado — **menos de dos jitters** (±2.4 s). 15 deja **9 s** (~3.7 jitters) y cuesta exactamente **un** corte de más: ~5 segundos de Diego, una vez, en todo el lote. Comprar el doble de colchón contra el fallo caro por 5 segundos del barato **es** la asimetría de esta sección.
+
+**El colchón no es simétrico, y eso hace fácil la decisión:** hacia arriba hay un acantilado; **hacia abajo no hay ninguno** — bajar el umbral jamás fusiona, sólo corta de más. Por eso: **ante la duda, BAJAR. Nunca subir.**
+
+**Los huecos intra-producto (1-94 s) e inter-producto (23-2735 s) SE SOLAPAN masivamente.** No existe separación bimodal. Cualquier diseño que busque "la frontera correcta" en la distribución de huecos **está condenado** — ya falló dos veces. El tiempo no decide: **propone, sobre-cortando.**
+
+### El reloj puede PARTIR, pero no puede CONFIRMAR
+> **Regla nueva, ganada con `[INC-005]`.** Es el hallazgo que hizo BLOQUEANTE la v4.
+
+Una pausa larga es evidencia razonable de un cambio de producto. Pero **la ausencia de pausa no es evidencia de nada**: si Diego fotografía dos productos seguidos sin pararse, el reloj no ve ninguna diferencia. Y sus huecos intra-producto llegan a 19 s dentro de un mismo grupo, así que **ningún umbral puede cazar un cambio de producto de 9 s** sin triturar cada producto en pedazos.
+
+**Consecuencia dura: mientras el tiempo sea la única señal, NINGÚN grupo puede salir con `confianza=alta`.** No es prudencia — es que la certeza **no es derivable** de esa señal. Y hay una razón perversa que lo hace crítico: **una fusión la causa un hueco pequeño**, y "hueco máximo pequeño" era exactamente lo que la v4 premiaba con `alta` → **la confianza estaba anti-correlacionada con el riesgo**, y `alta` es justo la que la UI confirma en bloque sin mirar.
+
+`alta` sólo podrá volver cuando exista una señal **independiente del reloj**: el clasificador de tipo de foto.
 
 ### La señal de reparación: TIPO de foto (aquí, y sólo aquí, se paga)
 Los cortes de más son **predecibles**: son la foto del **metro** (+94 s) y la del **papel con el desperfecto** (+71 s) — Diego se para a colocarlos — y fotos de detalle.
