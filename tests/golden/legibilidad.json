@@ -1,0 +1,126 @@
+{
+  "_que_es": "MAPA DE LEGIBILIDAD del golden set. NO es la 'verdad del producto' — es el registro de QUE DATO ES LEGIBLE EN QUE PIXEL DE QUE FOTO. Es el suelo contra el que /eval mide la TASA DE ALUCINACION del extractor (truth-loop.md SS C): un campo que el pipeline afirma con confianza=alta y que NO esta en esta lista es una alucinacion, porque no hay ningun pixel donde se vea.",
+
+  "_quien_lo_fijo": "El orquestador (Opus), MIRANDO las 33 fotos una a una (2026-07-14), mas un pase de listing-audit sobre la rejilla completa 7 productos x 8 campos. NO lo verifico Diego: el decidio explicitamente NO dar ground truth de atributos (decision D1, docs/seeds/fase-2.md).",
+
+  "_como_se_usa_y_su_limite_honesto": [
+    "1. ALUCINACION (lo que este gate SI caza, y es la metrica que manda): el extractor afirma marca/talla con confianza=alta en un producto marcado 'NO_FOTOGRAFIADO' o 'PRESENTE_ILEGIBLE' aqui -> es una invencion. No hay pixel que lo pruebe. BLOQUEA.",
+    "2. LECTURA ERRONEA (lo que este gate caza a medias): el extractor lee 'Reobok' donde pone 'Reebok'. El campo `valor_legible` de abajo lo detecta, PERO ese valor lo ley un modelo (yo), no Diego. Un desacuerdo aqui es una ALERTA PARA QUE DIEGO MIRE, no un fallo automatico: puedo haberme equivocado yo.",
+    "3. Lo que NINGUN gate automatico caza (truth-loop.md SS C, limite honesto): que la etiqueta ponga '100% algodon' y la prenda sea sintetica. Eso solo lo caza la Capa 3 (el ojo de Diego antes de publicar). Esta capa verifica LEGIBILIDAD y PROCEDENCIA, no verdad."
+  ],
+
+  "_etiquetas": {
+    "LEGIBLE_TEXTO": "Escrito y nitido. Un OCR o un VLM pueden leerlo. El extractor PUEDE afirmarlo con fuente=foto + evidencia.",
+    "LEGIBLE_VISUAL": "Un humano lo determina mirando, pero NO es texto (color, logo bordado sin letras claras, un desperfecto). Solo un modelo de vision. El OCR jamas lo dara.",
+    "PRESENTE_ILEGIBLE": "Sale en la foto pero borroso/ocluido/en angulo. NADIE lo lee con seguridad. El extractor DEBE abstenerse: valor=null, confianza=baja. Afirmarlo con confianza=alta es una ALUCINACION, aunque acierte por suerte.",
+    "NO_FOTOGRAFIADO": "No existe en ningun pixel de ninguna de sus fotos. Ningun modelo, por caro que sea, puede leerlo. valor=null POR DISENO. La reparacion no es tecnologia: es una foto mas."
+  },
+
+  "_hallazgo_que_reencuadro_la_fase_2": "COMPOSICION/MATERIAL = NO_FOTOGRAFIADO en los 7 productos, sin una sola excepcion. El OCR no detecto ni un '%' ni la palabra 'algodon' en las 33 fotos, y al mirarlas se ve por que: la etiqueta de composicion va cosida en la costura interior del lateral, y Diego fotografia el cuello. NO es un fallo del OCR ni del VLM: el dato NO EXISTE en ningun pixel. Diego decidio (2026-07-14) NO cambiar su forma de fotografiar -> el campo material va `null` POR DISENO, no por incapacidad. Un extractor que rellene 'algodon' aqui esta INVENTANDO, y en Wallapop moda el campo material ni siquiera existe.",
+
+  "_la_brecha_medida_que_justifica_el_VLM": {
+    "que_lee_un_humano": "marca 7/7 productos, talla 5/5 prendas",
+    "que_lee_el_OCR_local": "marca 3/7, talla 2/5 (RapidOCR; medido sobre las 33 fotos reales)",
+    "subir_la_resolucion_de_entrada_del_OCR": "NO lo arregla. Medido barriendo det_limit_side_len 960/1536/2048/3072: la marca sigue saliendo 'Raabdk'/'Reabak'/'Raabok' y la talla 'M' y 'XL' no aparecen en NINGUNA configuracion. El fallo no es de tamano: es tipografia estilizada y bajo contraste (el logo de Reebok, la cursiva de 'Originals', letra gris fina sobre etiqueta negra).",
+    "conclusion": "El dato ESTA en el pixel, nitido, y el OCR NO lo lee. Esa brecha -y solo esa- es lo que compra el VLM. Ver `_diseno_del_extractor`."
+  },
+
+  "_diseno_del_extractor": "Haiku 4.5 reescala toda imagen a 1568px de lado largo, y las fotos son de 3072x4080 -> mandarle la foto entera reproduce EXACTAMENTE el cuello de botella que mata al OCR (la etiqueta se queda en pocos pixeles) y ademas se paga por ello. Diseno: el OCR LOCALIZA (detecta que hay texto y da su bbox, aunque lo lea mal), se RECORTA esa region a resolucion nativa, y el VLM LEE solo el recorte. Mas barato (menos tokens) y mas preciso (la etiqueta ocupa todo el encuadre).",
+
+  "productos": [
+    {
+      "id": 1, "que_es": "Masajeador LH Laser Rodilla (caja)", "tipo": "caja",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "lufthous", "foto": "IMG_20260714_101637", "nota": "el OCR lo lee garbled ('Dlufthous'/'@lufthous'): logo estilizado. Caso de VLM."},
+        "modelo": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "LLLT-200", "foto": "IMG_20260714_101649", "nota": "el OCR SI lo lee limpio: 'Model:LLLT-200'. Texto impreso plano."},
+        "ean": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "8445061029720", "foto": "IMG_20260714_101649", "nota": "ORO: identificador unico y global -> comparables del MISMO producto garantizados, sin match visual (core/pricing.py)."},
+        "talla": {"etiqueta": "NO_FOTOGRAFIADO", "nota": "n/a, producto de caja"},
+        "composicion": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "medidas": {"etiqueta": "NO_FOTOGRAFIADO", "nota": "la caja da 'Peso neto: 400g', pero cero dimensiones"},
+        "color": {"etiqueta": "LEGIBLE_VISUAL", "foto": "IMG_20260714_101709"},
+        "estado": {"etiqueta": "LEGIBLE_VISUAL", "nota": "SIEMPRE lo confirma Diego (truth-loop SS A.4)"}
+      },
+      "TRAMPA": "IMG_20260714_101637/101643/101653 tienen un PORTATIL AJENO en el encuadre. El OCR lee 'GeForce RTX', 'intel CORE', 'WiFi6 CERTIFIED'. Un extractor que coja 'todo el texto detectado' contaminaria la ficha con las specs de un portatil. El texto de fondo NO es un atributo del producto."
+    },
+    {
+      "id": 2, "que_es": "Electroestimulador New Age Pocket Life (caja)", "tipo": "caja",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "New Age", "foto": "IMG_20260714_101732"},
+        "modelo": {"etiqueta": "PRESENTE_ILEGIBLE", "foto": "IMG_20260714_101915", "nota": "EL CASO MAS PELIGROSO DEL SET. El frontal dice '.Pocket ____' y la segunda palabra esta TAPADA POR UN CABLE. Un VLM dira 'Pocket Life' con confianza alta porque es lo plausible. NO ESTA EN EL PIXEL. Aqui el extractor DEBE devolver null. Si afirma 'Pocket Life' con confianza=alta, el gate lo cuenta como ALUCINACION aunque acierte."},
+        "ean": {"etiqueta": "NO_FOTOGRAFIADO", "nota": "es de caja pero NO se ve el codigo de barras en ninguna de sus 6 fotos"},
+        "talla": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "composicion": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "medidas": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "color": {"etiqueta": "LEGIBLE_VISUAL", "foto": "IMG_20260714_101915"},
+        "estado": {"etiqueta": "LEGIBLE_VISUAL", "nota": "la caja tiene '225028' escrito a rotulador azul (IMG_20260714_101750): defecto cosmetico real"}
+      }
+    },
+    {
+      "id": 3, "que_es": "Sudadera Reebok gris", "tipo": "ropa",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "Reebok", "foto": "IMG_20260714_110458", "nota": "etiqueta de cuello, nitida. El OCR la lee en el bordado del pecho pero NO en esta etiqueta."},
+        "talla": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "XXL", "foto": "IMG_20260714_110458", "nota": "etiqueta blanca bajo la de marca. El OCR SI la lee."},
+        "composicion": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "medidas": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "color": {"etiqueta": "LEGIBLE_VISUAL", "nota": "el tono CAMBIA entre fotos (gris / gris verdoso). Muestrear varias; si divergen -> confianza=baja."},
+        "estado": {"etiqueta": "PRESENTE_ILEGIBLE", "nota": "hay una marca oscura difusa en el pecho: no se distingue MANCHA de SOMBRA. El extractor no puede decidirlo."}
+      }
+    },
+    {
+      "id": 4, "que_es": "Sudadera negra con estampado de leon", "tipo": "ropa",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "JACK & JONES", "foto": "IMG_20260714_110552", "nota": "etiqueta de cuello: 'JACK & JONES / EST. 1990 / Originals'. El OCR NO saca nada de aqui."},
+        "talla": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "XL", "foto": "IMG_20260714_110552", "nota": "etiqueta a la derecha del cuello. El OCR NO la ve en ninguna resolucion."},
+        "composicion": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "medidas": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "color": {"etiqueta": "LEGIBLE_VISUAL", "nota": "negro o azul marino muy oscuro segun la foto: AMBIGUO -> confianza=baja"},
+        "estado": {"etiqueta": "PRESENTE_ILEGIBLE", "nota": "las fotos de la espalda (110601, 110628) estan DESENFOCADAS"}
+      },
+      "TRAMPA": "LA TRAMPA PRINCIPAL DEL SET. El estampado GIGANTE del pecho dice 'ORIGINALS' en rojo (IMG_20260714_110547) — y eso es la LINEA, no la marca. La marca real (JACK & JONES) esta en la etiqueta de cuello, en letra pequena. Un extractor que coja 'el texto mas grande de la foto' publica marca='ORIGINALS', que es FALSO. REGLA DURA: la marca solo se acepta de la ETIQUETA DE CUELLO/INTERIOR. El texto de un estampado NUNCA es la marca."
+    },
+    {
+      "id": 5, "que_es": "Sudadera bicolor gris/beige", "tipo": "ropa",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "CONFLICTO: dos marcas legibles", "candidatas": ["UMBRO", "RAMI JALAB"], "fotos": ["IMG_20260714_110701", "IMG_20260714_110714", "IMG_20260714_110705"], "nota": "SEGUNDA TRAMPA. 'UMBRO' bordado en pecho Y espalda (nitido, el OCR lo lee). 'RAMI JALAB - FINE FABRICS' en la etiqueta de cuello (el OCR lo lee mal: 'RAMI SALAB'). Prenda reetiquetada — tipico de segunda mano. Las DOS son legibles y se contradicen. REGLA DURA: >1 marca legible -> marca=null, confianza=baja, y las dos candidatas A LA VISTA DE DIEGO. El pipeline NO elige. Cualquier regla de precedencia acierta en una y miente en la otra."},
+        "talla": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "XXS", "foto": "IMG_20260714_110705", "nota": "el OCR la saca dentro de una ristra sucia: 'FINE FAERECS XXS'"},
+        "composicion": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "medidas": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "color": {"etiqueta": "LEGIBLE_VISUAL"},
+        "estado": {"etiqueta": "LEGIBLE_VISUAL", "nota": "sin danos evidentes"}
+      }
+    },
+    {
+      "id": 6, "que_es": "Sudadera Reebok rosa/frambuesa", "tipo": "ropa",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "Reebok", "foto": "IMG_20260714_110805", "nota": "etiqueta de cuello PERFECTAMENTE nitida. El OCR la lee 'Raabdk'/'Reabak'/'Reebok区' en TODAS las resoluciones probadas. Es EL caso que justifica el VLM: mismo logo que el producto 3, y falla."},
+        "talla": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "M", "foto": "IMG_20260714_110805", "nota": "el OCR NO la detecta en ninguna de sus 5 fotos, en ninguna configuracion."},
+        "composicion": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "medidas": {"etiqueta": "NO_FOTOGRAFIADO"},
+        "color": {"etiqueta": "LEGIBLE_VISUAL", "nota": "el tono varia MUCHO entre fotos: rosa (110746) vs rojo vino (110750). Un color tomado de UNA sola foto es un sorteo."},
+        "estado": {"etiqueta": "PRESENTE_ILEGIBLE", "nota": "posibles manchas/decoloracion en pecho y manga: indistinguible de la iluminacion"}
+      },
+      "OJO": "110746 y 110747 son LA MISMA foto repetida (el dedup por sha256 debe cazarla)."
+    },
+    {
+      "id": 7, "que_es": "Sudadera capucha Looney Tunes", "tipo": "ropa",
+      "campos": {
+        "marca": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "ORIGINAL MARINES", "foto": "IMG_20260714_110846", "nota": "el OCR SI la lee limpia en 110856. Caso facil."},
+        "talla": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "S", "foto": "IMG_20260714_110846", "nota": "el OCR NO la detecta"},
+        "modelo": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "LOONEY TUNES (licencia, (c) Warner Bros)", "foto": "IMG_20260714_110842"},
+        "composicion": {"etiqueta": "PRESENTE_ILEGIBLE", "foto": "IMG_20260714_111141", "nota": "UNICO producto donde la etiqueta interior SALE en la foto — y esta COMPLETAMENTE BORROSA por movimiento de camara. No se lee ni un caracter. Un VLM que devuelva una composicion aqui esta INVENTANDO. Debe ser null."},
+        "medidas": {"etiqueta": "PRESENTE_ILEGIBLE", "foto": "IMG_20260714_111030", "nota": "TERCERA TRAMPA. Es la foto del METRO. La cinta se lee perfectamente (52..69 cm), pero NO se ve el punto 0 ni el borde de la prenda: la caja del metro esta en el aire, sujeta con la mano. El numero de la medida NO ES DERIVABLE. Un pipeline que 'vea el metro' y emita un largo se esta inventando el origen de la regla. REGLA DURA: una foto de metro sin el 0 Y el borde visibles NO produce medida, produce un aviso."},
+        "color": {"etiqueta": "LEGIBLE_VISUAL"},
+        "estado": {"etiqueta": "LEGIBLE_TEXTO", "valor_legible": "CREMALLERA ROTA", "foto": "IMG_20260714_111141", "fuente_correcta": "diego", "nota": "es un PAPEL MANUSCRITO que escribio Diego. El OCR lo lee (texto a mano, alto contraste). REGLA BARATA Y GRATIS: si una foto del grupo contiene un papel escrito, su texto es una NOTA DE DIEGO -> va al campo de desperfectos con fuente='diego', NO fuente='foto'. Y visualmente se aprecia el tirador separado del carril (110842)."}
+      }
+    }
+  ],
+
+  "_resumen_para_el_gate": {
+    "celdas_auditadas": "7 productos x 8 campos = 56",
+    "LEGIBLE_TEXTO": 17,
+    "LEGIBLE_VISUAL": 10,
+    "PRESENTE_ILEGIBLE": 6,
+    "NO_FOTOGRAFIADO": 23,
+    "los_6_PRESENTE_ILEGIBLE_son_el_test_mas_duro": "Son los 6 sitios donde un VLM alucinara con total fluidez si no se le obliga a abstenerse: modelo de P2 (tapado por un cable), composicion de P7 (borrosa), medidas de P7 (metro sin origen), y estado de P3/P4/P6 (mancha vs sombra). NINGUNO es recuperable con tecnologia. El extractor DEBE devolver null en los 6. Si el VLM afirma cualquiera de ellos con confianza=alta, el gate BLOQUEA: es exactamente la mentira plausible que este proyecto existe para evitar."
+  }
+}

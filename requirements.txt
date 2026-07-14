@@ -22,6 +22,11 @@ open-clip-torch>=3.0
 torch>=2.0                 # CPU-only, ver nota de instalacion arriba
 numpy>=1.24
 
+# Fase 2 — COSTURA 1 (core/llm.py): unico SDK de proveedor permitido en todo
+# el repo, y solo detras de esa costura. Haiku 4.5 con vision (~0,2 cts/foto,
+# cacheado por hash) — ver docstring de core/llm.py y architecture.md.
+anthropic>=0.40
+
 # Dev
 pytest>=8.0
 ruff>=0.8
