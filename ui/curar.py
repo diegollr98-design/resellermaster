@@ -422,8 +422,15 @@ def _dialog_dividir(
         "partir de ahí."
     )
 
-    pares = list(zip(grupo, grupo[1:]))
-    anchos = [4] * len(grupo) + [1] * len(pares)
+    # Anchos INTERCALADOS foto/tijera/foto/tijera... — no "todas las fotos y
+    # luego todas las tijeras": el bucle de abajo los consume alternando, así
+    # que la lista tiene que estar en ese mismo orden o las últimas fotos salen
+    # con ancho de tijera (diminutas).
+    anchos: list[int] = []
+    for i in range(len(grupo)):
+        anchos.append(4)
+        if i < len(grupo) - 1:
+            anchos.append(1)
     columnas = st.columns(anchos)
 
     idx = 0
