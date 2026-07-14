@@ -114,7 +114,14 @@ Los cortes de más son **predecibles**: son la foto del **metro** (+94 s) y la d
 
 > **Regla dura: una foto de METRO, ETIQUETA o PAPEL nunca puede EMPEZAR un producto. Sólo un plano general puede.**
 
-Clasificar el tipo de foto requiere un **modelo de visión de verdad**. Medido: **CLIP falla** — dice "prenda entera 100%" ante un primer plano de etiqueta, y su similitud entre fotos consecutivas está casi **invertida** (dos prendas distintas colgadas = 0.90; el plano y la etiqueta del MISMO producto = 0.61). Es el único punto del proyecto donde una API de pago está justificada, y se paga sólo por eso (y de paso lee marca/talla para la Fase 2).
+Clasificar el tipo de foto requiere un **modelo de visión de verdad**. Es el único punto del proyecto donde una API de pago está justificada. **Las dos alternativas gratuitas están MEDIDAS y DESCARTADAS — no las reintentes:**
+
+- **CLIP falla** (medido 2×): dice "prenda entera 100%" ante un primer plano de etiqueta, y su similitud entre fotos consecutivas está casi **invertida** (dos prendas distintas colgadas = 0.90; el plano y la etiqueta del MISMO producto = 0.61). `[INC-004]`
+- **OCR falla** (medido, `[INC-007]`): parecía la señal correcta (etiqueta/papel/metro *son* texto), pero los caracteres detectados en las fotos que **abren un producto real** `[5, 9, 9, 20, 28, 39, 72]` y en las que **abren un corte de más** `[0, 18, 32, 33, 36, 176]` **se solapan por completo**. Los productos de caja tienen el plano general lleno de texto impreso; las sudaderas casi no tienen texto, así que un plano general (`Reebok`, 9 chars) es indistinguible de una foto de detalle (0 chars). **El discriminante real es la COMPOSICIÓN de la imagen** — ¿se ve la prenda entera o un trozo? — y eso el texto no lo captura.
+
+**Lo que el OCR SÍ da, gratis:** (1) el **metro** se delata solo — el OCR lee una ristra de dígitos (`69899995999291909698925959556575`): regla trivial que caza 1 de los 6 cortes de más sin pagar nada; (2) **lee marcas y tallas** (`Reebok`, `XXL`, `UMBRO`, `ORIGINAL MARINES`, `New Age`, `XXS`) → buena parte de la Fase 2 puede salir a coste cero.
+
+**Coste medido del de pago:** Haiku 4.5 con visión, ~1.600 tokens/imagen a $1/MTok ≈ **0,2 cts/foto ≈ 1 ct/producto**, y con caché por hash de imagen **se paga una sola vez**. La suscripción Pro/Max de Claude **no vale** — Anthropic prohíbe explícitamente enrutar peticiones de apps de terceros por credenciales de plan de consumidor; hace falta API key de Console, facturada aparte.
 
 **Degradación honesta:** si el modelo no está o falla, la app **sigue funcionando** — sólo hay más cortes de más. **Nunca** produce una ficha contaminada. El suelo determinista no depende de nadie.
 

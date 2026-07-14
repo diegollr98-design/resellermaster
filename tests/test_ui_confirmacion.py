@@ -21,11 +21,14 @@ de verdad (widgets reales, callbacks reales) contra un `LoteStore` real en
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
+from core import grouping
+from core.images import MetadatosImagen
 from core.store import Foto, LoteStore
 
 
@@ -77,6 +80,112 @@ def _script(data_dir: str, lote_id: str) -> None:
 
     _store = _LoteStore(data_dir=_Path(data_dir))
     _confirmacion.render(_store, lote_id)
+
+
+# --------------------------------------------------------------------------
+# Helpers para el rediseño de dos columnas (izquierda = "sueltas"
+# `confianza="baja"`, derecha = "grupos" `confianza="media"/"alta"`).
+#
+# A diferencia de `_preparar_lote_dos_grupos` (que escribe la agrupación a
+# mano vía `guardar_agrupacion`, sin EXIF), estos tests necesitan que
+# `core/grouping.agrupar` produzca de verdad grupos "baja" (fotos sueltas)
+# junto a grupos "media" — así que se fija el reloj con `monkeypatch` y se
+# deja que `ui.confirmacion._proponer_grupo_inicial` (dentro de `render()`)
+# haga la propuesta real. El resultado es el mismo patrón que ya usa
+# `tests/test_grouping_golden.py::test_cambio_rapido_de_producto_*`
+# (`monkeypatch.setattr(grouping, "leer_metadatos", ...)`), no una nueva
+# convención inventada aquí.
+# --------------------------------------------------------------------------
+def _metadatos_falsos_por_ruta(mapa: dict[Path, datetime]):
+    def _leer(ruta: Path) -> MetadatosImagen:
+        return MetadatosImagen(
+            ruta=ruta,
+            legible=True,
+            formato="JPEG",
+            ancho=64,
+            alto=64,
+            orientacion_exif=1,
+            fecha_captura_exif=mapa[ruta],
+            mtime_fichero=None,
+            error=None,
+        )
+
+    return _leer
+
+
+def _preparar_lote_con_sueltas(tmp_path: Path, monkeypatch) -> tuple[str, list[str]]:
+    """Lote con UN grupo `media` de 2 fotos (gap corto, 5 s) y DOS fotos
+    `baja` sueltas y aisladas (gap largo, >= `UMBRAL_HUECO_SEGUNDOS`, a
+    ambos lados) — exactamente la forma real que motiva el rediseño
+    (`core/grouping.py` docstring, §Confianza: casi todo corte de más de
+    Diego es una foto SOLA).
+
+    Devuelve `(lote_id, [A0, A1, S0, S1])` (ids de foto, en ese orden).
+    """
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote UI sueltas", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    nombres_colores = [
+        ("A0", (200, 0, 0)),
+        ("A1", (200, 50, 50)),
+        ("S0", (0, 150, 0)),
+        ("S1", (0, 0, 200)),
+    ]
+    fotos: list[Foto] = []
+    rutas: list[Path] = []
+    for nombre, color in nombres_colores:
+        ruta = carpeta / f"{nombre}.jpg"
+        _crear_foto_real(ruta, color)
+        rutas.append(ruta)
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}"))
+    foto_ids = store.añadir_fotos(lote_id, fotos)
+
+    base = datetime(2026, 7, 1, 12, 0, 0)
+    # A0-A1: 5 s de separación (mismo segmento). A1->S0: 95 s (corte). S0->S1:
+    # 200 s (corte). S0 y S1 quedan cada una encajonada entre dos pausas
+    # largas (o al final de la secuencia) -> singleton "baja".
+    segundos = [0, 5, 100, 300]
+    mapa = {ruta: base + timedelta(seconds=s) for ruta, s in zip(rutas, segundos)}
+    monkeypatch.setattr(grouping, "leer_metadatos", _metadatos_falsos_por_ruta(mapa))
+
+    return lote_id, foto_ids
+
+
+def _preparar_lote_general(tmp_path: Path, monkeypatch) -> tuple[str, list[str]]:
+    """Lote con DOS grupos `media` (A y B, 2 fotos cada uno) y UNA foto
+    `baja` suelta (S0) — para el barrido que ejercita las cinco acciones
+    (marca, mueve, fusiona, parte, confirma) en un único lote realista.
+
+    Devuelve `(lote_id, [A0, A1, B0, B1, S0])`.
+    """
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote UI barrido", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    nombres_colores = [
+        ("A0", (200, 0, 0)),
+        ("A1", (200, 50, 50)),
+        ("B0", (0, 150, 0)),
+        ("B1", (0, 180, 0)),
+        ("S0", (0, 0, 200)),
+    ]
+    fotos: list[Foto] = []
+    rutas: list[Path] = []
+    for nombre, color in nombres_colores:
+        ruta = carpeta / f"{nombre}.jpg"
+        _crear_foto_real(ruta, color)
+        rutas.append(ruta)
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}"))
+    foto_ids = store.añadir_fotos(lote_id, fotos)
+
+    base = datetime(2026, 7, 1, 12, 0, 0)
+    # A0-A1 (gap 5s) | corte (45s) | B0-B1 (gap 5s) | corte (145s) | S0 sola.
+    segundos = [0, 5, 50, 55, 200]
+    mapa = {ruta: base + timedelta(seconds=s) for ruta, s in zip(rutas, segundos)}
+    monkeypatch.setattr(grouping, "leer_metadatos", _metadatos_falsos_por_ruta(mapa))
+
+    return lote_id, foto_ids
 
 
 # --------------------------------------------------------------------------
@@ -192,3 +301,149 @@ def test_partir_grupo_no_lanza_excepcion_y_crea_un_grupo_mas(tmp_path):
     # A(1 foto), B(2 fotos), nuevo(1 foto) = 3 grupos.
     assert len(no_confirmados) == 3
     assert at.checkbox(key=f"sel_{foto_a1}").value is False
+
+
+# --------------------------------------------------------------------------
+# 5. LA OPERACIÓN ESTRELLA: marcar UNA foto suelta (columna izquierda) y
+#    pulsar "⬅️ Añadir aquí" en un grupo (columna derecha) — sin excepción,
+#    el store la mueve a ESE grupo concreto, y el checkbox queda
+#    DESMARCADO (mismo bug hermano de `[INC-006]` que test 2/3, pero para
+#    el botón NUEVO de este rediseño).
+# --------------------------------------------------------------------------
+def test_anadir_suelta_a_grupo_sin_excepcion_mueve_y_desmarca(tmp_path, monkeypatch):
+    lote_id, foto_ids = _preparar_lote_con_sueltas(tmp_path, monkeypatch)
+    foto_a0, foto_a1, foto_s0, _foto_s1 = foto_ids
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    store = LoteStore(data_dir=tmp_path)
+    estado = store.cargar_lote(lote_id)
+    grupo_media = next(
+        p for p in estado["productos"] if not p["confirmado"] and len(p["fotos"]) > 1
+    )
+    assert set(grupo_media["fotos"]) == {foto_a0, foto_a1}
+
+    # Sin nada marcado, el botón "Añadir aquí" no existe todavía. `at.button`
+    # sin `key=` devuelve la lista completa de botones del render actual;
+    # `at.button(key=...)` (usado más abajo) lanza `KeyError` si no
+    # encuentra ninguno, así que aquí se recorre la lista en vez de indexar.
+    assert not any(
+        b.key == f"anadir_sueltas_{grupo_media['id']}" for b in at.button
+    )
+
+    at.checkbox(key=f"sel_{foto_s0}").check().run()
+    assert not at.exception
+
+    at.button(key=f"anadir_sueltas_{grupo_media['id']}").click().run()
+    assert not at.exception, f"'Añadir aquí' lanzó: {at.exception}"
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupo_destino = next(p for p in no_confirmados if foto_s0 in p["fotos"])
+    assert set(grupo_destino["fotos"]) == {foto_a0, foto_a1, foto_s0}
+
+    assert at.checkbox(key=f"sel_{foto_s0}").value is False
+
+
+# --------------------------------------------------------------------------
+# 6. Marcar VARIAS sueltas a la vez: una sola pulsación de "Añadir aquí"
+#    las mueve TODAS al mismo grupo, y desmarca las DOS.
+# --------------------------------------------------------------------------
+def test_anadir_varias_sueltas_una_pulsacion_mueve_todas(tmp_path, monkeypatch):
+    lote_id, foto_ids = _preparar_lote_con_sueltas(tmp_path, monkeypatch)
+    foto_a0, foto_a1, foto_s0, foto_s1 = foto_ids
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+
+    store = LoteStore(data_dir=tmp_path)
+    estado = store.cargar_lote(lote_id)
+    grupo_media = next(
+        p for p in estado["productos"] if not p["confirmado"] and len(p["fotos"]) > 1
+    )
+
+    at.checkbox(key=f"sel_{foto_s0}").check().run()
+    at.checkbox(key=f"sel_{foto_s1}").check().run()
+    assert not at.exception
+
+    at.button(key=f"anadir_sueltas_{grupo_media['id']}").click().run()
+    assert not at.exception, f"'Añadir aquí' (varias) lanzó: {at.exception}"
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    assert len(no_confirmados) == 1
+    assert set(no_confirmados[0]["fotos"]) == {foto_a0, foto_a1, foto_s0, foto_s1}
+
+    assert at.checkbox(key=f"sel_{foto_s0}").value is False
+    assert at.checkbox(key=f"sel_{foto_s1}").value is False
+
+
+# --------------------------------------------------------------------------
+# 7. BARRIDO: marca, mueve (añadir-aquí), fusiona, parte, confirma — en
+#    un único lote realista (2 grupos + 1 suelta) — ningún paso lanza
+#    `StreamlitAPIException`. Es el barrido pedido explícitamente por la
+#    tarea, no un único camino feliz.
+# --------------------------------------------------------------------------
+def test_barrido_de_acciones_no_lanza_streamlit_api_exception(tmp_path, monkeypatch):
+    lote_id, foto_ids = _preparar_lote_general(tmp_path, monkeypatch)
+    foto_a0, foto_a1, foto_b0, foto_b1, foto_s0 = foto_ids
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    store = LoteStore(data_dir=tmp_path)
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupo_a = next(p for p in no_confirmados if foto_a0 in p["fotos"])
+    grupo_b = next(p for p in no_confirmados if foto_b0 in p["fotos"])
+    assert set(grupo_a["fotos"]) == {foto_a0, foto_a1}
+    assert set(grupo_b["fotos"]) == {foto_b0, foto_b1}
+
+    # --- MARCA: la foto suelta S0, para añadirla más tarde. ---
+    at.checkbox(key=f"sel_{foto_s0}").check().run()
+    assert not at.exception
+
+    # --- FUSIONA: el grupo A con el grupo B (la selección de S0, de otro
+    #     grupo, no debe verse afectada por esto). ---
+    at.button(key=f"btn_fusion_{grupo_a['id']}").click().run()
+    assert not at.exception, f"'Fusionar' lanzó: {at.exception}"
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupo_ab = next(p for p in no_confirmados if foto_a0 in p["fotos"])
+    assert set(grupo_ab["fotos"]) == {foto_a0, foto_a1, foto_b0, foto_b1}
+    # S0 seguía marcada tras fusionar A con B (grupos independientes).
+    assert at.checkbox(key=f"sel_{foto_s0}").value is True
+
+    # --- MUEVE (añadir-aquí): S0 se incorpora al grupo AB fusionado. ---
+    at.button(key=f"anadir_sueltas_{grupo_ab['id']}").click().run()
+    assert not at.exception, f"'Añadir aquí' lanzó: {at.exception}"
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupo_abs = next(p for p in no_confirmados if foto_s0 in p["fotos"])
+    assert set(grupo_abs["fotos"]) == {foto_a0, foto_a1, foto_b0, foto_b1, foto_s0}
+    assert len(no_confirmados) == 1
+
+    # --- PARTE: se marca B1 dentro del grupo fusionado y se manda a un
+    #     grupo nuevo. ---
+    at.checkbox(key=f"sel_{foto_b1}").check().run()
+    assert not at.exception
+    at.selectbox(key=f"destino_{grupo_abs['id']}").select_index(0).run()
+    assert not at.exception
+    at.button(key=f"mover_{grupo_abs['id']}").click().run()
+    assert not at.exception, f"'Partir' lanzó: {at.exception}"
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    assert len(no_confirmados) == 2
+    grupo_nuevo = next(p for p in no_confirmados if p["fotos"] == [foto_b1])
+
+    # --- CONFIRMA: el grupo recién partido, sin excepción, y aparece
+    #     como confirmado en el store. ---
+    at.button(key=f"confirmar_{grupo_nuevo['id']}").click().run()
+    assert not at.exception, f"'Confirmar grupo' lanzó: {at.exception}"
+
+    estado = store.cargar_lote(lote_id)
+    confirmados = [p for p in estado["productos"] if p["confirmado"]]
+    assert any(p["id"] == grupo_nuevo["id"] for p in confirmados)

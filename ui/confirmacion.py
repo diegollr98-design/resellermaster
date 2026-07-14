@@ -6,13 +6,33 @@ propuesta y traduce los clicks de Diego en llamadas a
 `core.store.LoteStore` — la agrupación real, la que cuenta, vive siempre
 en el store (`fotos.producto_id`), nunca en `st.session_state`.
 
+## El layout (rediseño pedido por Diego, ver seed de la tarea)
+`core/grouping.py` v5 **sobre-corta a propósito** (la asimetría de §E: un
+corte de más lo fusiona Diego en segundos, una fusión de más es una venta
+perdida y nadie la caza). Eso significa que, en un lote real, la operación
+que Diego hace MÁS VECES no es "revisar un grupo": es **fusionar un corte
+de más con el grupo al que pertenece de verdad**. Esta pantalla existe
+para que esa operación cueste dos clicks, no un drag-and-drop ni un
+formulario:
+
+  - **IZQUIERDA — "Fotos sueltas"**: los grupos `confianza="baja"`. En el
+    lote real de Diego son casi siempre UNA foto cada uno (el metro, la
+    etiqueta, el papel del desperfecto — `core/grouping.py` docstring,
+    §Confianza). Cada foto: miniatura, nombre de fichero, el `motivo` del
+    corte, y un checkbox.
+  - **DERECHA — "Grupos"**: los grupos `confianza="media"` (y `"alta"` si
+    `core/grouping.py` alguna día vuelve a poder emitirla — no se asume
+    aquí que nunca habrá ninguna). Rejilla de TODAS sus fotos — Diego
+    tiene que poder ver de un vistazo que una no pega — más el `motivo` y
+    sus acciones: confirmar, mover/partir, fusionar con otro grupo Y
+    (la operación estrella) **"⬅️ Añadir aquí"** para tragarse de un click
+    las fotos sueltas que Diego haya marcado a la izquierda.
+
 Reglas de diseño no negociables (dadas por la tarea, no inventadas aquí):
   - El error tiene que ser VISIBLE: fotos de un grupo juntas y a tamaño
     suficiente (no miniaturas de 60px).
-  - Los grupos `confianza="baja"`/`"media"` van arriba y destacados, con
-    su `motivo`. Los de `"alta"` se pueden confirmar en bloque sin mirar
-    foto a foto.
-  - Mover una foto, partir un grupo, fusionar dos grupos: pocos clicks.
+  - Mover una foto, partir un grupo, fusionar dos grupos, añadir una
+    suelta a un grupo: pocos clicks.
   - Al confirmar, `store.confirmar_producto()` — hecho, no se re-agrupa.
   - Reanudable: todo se recalcula a partir del store en cada rerun, nunca
     de un estado guardado sólo en memoria.
@@ -257,6 +277,24 @@ def _etiqueta_grupo(producto: dict) -> str:
 
 
 # --------------------------------------------------------------------------
+# Render de una foto SUELTA (columna izquierda, confianza "baja"). Casi
+# siempre un grupo de 1 sola foto (el reloj de `core/grouping.py` nunca
+# junta una foto sin fecha o encajonada entre dos pausas largas con nada
+# más) — pero se itera `producto["fotos"]` en vez de asumir longitud 1,
+# por si el módulo real algún día cambia esa forma.
+# --------------------------------------------------------------------------
+def _render_suelta(producto: dict, motivo: str, fotos_por_id: dict[str, dict]) -> None:
+    for foto in _fotos_en_orden([fotos_por_id[fid] for fid in producto["fotos"]]):
+        with st.container(border=True):
+            st.image(_miniatura_de(foto["ruta"], foto["hash"]), width=220)
+            # El label del checkbox ES el nombre del fichero: Diego necesita
+            # verlo para reconocer "esto es el metro de tal prenda" sin una
+            # línea de caption aparte.
+            st.checkbox(Path(foto["ruta"]).name, key=f"sel_{foto['id']}")
+            st.caption(motivo)
+
+
+# --------------------------------------------------------------------------
 # Render de un grupo (fila de fotos + acciones)
 # --------------------------------------------------------------------------
 def _fotos_en_orden(fotos_grupo: list[dict]) -> list[dict]:
@@ -284,6 +322,7 @@ def _render_grupo(
     motivo: str,
     fotos_por_id: dict[str, dict],
     otros_no_confirmados: list[dict],
+    ids_sueltas: list[str],
 ) -> None:
     aviso = {"baja": st.error, "media": st.warning, "alta": st.success}[confianza]
     fotos_grupo = _fotos_en_orden([fotos_por_id[fid] for fid in producto["fotos"]])
@@ -306,6 +345,32 @@ def _render_grupo(
                 if marcada:
                     seleccionadas.append(foto["id"])
                 st.caption(Path(foto["ruta"]).name)
+
+        # --------------------------------------------------------------
+        # LA OPERACIÓN ESTRELLA (`truth-loop.md` §E: fusionar debe ser
+        # TRIVIAL — es la que Diego hará más veces, por diseño). Leer
+        # `st.session_state` aquí, en el cuerpo del script, es legal:
+        # SÓLO escribirlo después de instanciar un widget está prohibido
+        # (`_limpiar_seleccion`, más arriba, `[INC-006]`). El botón sólo
+        # aparece si hay algo marcado a la izquierda — si no, no hay nada
+        # que añadir y mostrarlo vacío sería ruido.
+        #
+        # Se reutiliza `_accion_mover` tal cual: recibe la lista COMPLETA
+        # de candidatas (`ids_sueltas`), y ES ELLA la que relee en el
+        # callback qué sigue marcado en ese momento — el mismo patrón que
+        # ya usa "Mover N foto(s)" más abajo con `fotos_grupo` completo.
+        # --------------------------------------------------------------
+        sueltas_marcadas = [
+            fid for fid in ids_sueltas if st.session_state.get(f"sel_{fid}", False)
+        ]
+        if sueltas_marcadas:
+            st.button(
+                f"⬅️ Añadir aquí ({len(sueltas_marcadas)} foto(s) sueltas)",
+                key=f"anadir_sueltas_{producto['id']}",
+                type="primary",
+                on_click=_accion_mover,
+                args=(store, lote_id, ids_sueltas, producto["id"]),
+            )
 
         col_confirmar, col_mover, col_fusionar = st.columns(3)
 
@@ -443,39 +508,60 @@ def render(store: LoteStore, lote_id: str) -> None:
             grupos_anotados.append((producto, "media", _MOTIVO_AJUSTE_MANUAL))
 
     grupos_anotados.sort(key=lambda t: _ORDEN_CONFIANZA[t[1]])
-    grupos_atencion = [g for g in grupos_anotados if g[1] in ("baja", "media")]
-    grupos_alta = [g for g in grupos_anotados if g[1] == "alta"]
+    grupos_sueltas = [g for g in grupos_anotados if g[1] == "baja"]
+    grupos_derecha = [g for g in grupos_anotados if g[1] in ("media", "alta")]
+    grupos_alta = [g for g in grupos_derecha if g[1] == "alta"]
+
+    # Candidatas a "⬅️ Añadir aquí": TODAS las fotos que hoy están en un
+    # grupo `baja`, sea cual sea ese grupo. `_render_grupo` filtra por lo
+    # que esté marcado de verdad en el momento del click.
+    ids_sueltas = [fid for producto, _, _ in grupos_sueltas for fid in producto["fotos"]]
 
     st.caption(
-        f"{len(no_confirmados)} grupo(s) pendiente(s) de confirmar "
-        f"({len(grupos_atencion)} requieren atención) · "
+        f"{len(ids_sueltas)} foto(s) suelta(s) · "
+        f"{len(grupos_derecha)} grupo(s) pendiente(s) de confirmar · "
         f"{len(confirmados)} confirmado(s)."
     )
 
-    if grupos_atencion:
-        st.subheader(f"⚠️ Requieren atención ({len(grupos_atencion)})")
-        for producto, confianza, motivo in grupos_atencion:
-            otros = [p for p in no_confirmados if p["id"] != producto["id"]]
-            _render_grupo(store, lote_id, producto, confianza, motivo, fotos_por_id, otros)
+    col_izq, col_der = st.columns(2)
 
-    if grupos_alta:
-        with st.expander(
-            f"✅ Confianza alta — revisar en bloque ({len(grupos_alta)})", expanded=False
-        ):
-            # Tampoco limpia `sel_*` — igual de inocuo que "Confirmar
-            # grupo" arriba: confirmar en bloque también quita los
-            # checkboxes del render (pasan a `_render_grupo_confirmado`),
-            # así que no queda ningún widget vivo que lea la key stale.
-            if st.button(
-                f"Confirmar los {len(grupos_alta)} grupos de confianza alta",
-                key="confirmar_todos_alta",
-            ):
-                for producto, _, _ in grupos_alta:
-                    store.confirmar_producto(producto["id"])
-                st.rerun()
-            for producto, confianza, motivo in grupos_alta:
-                otros = [p for p in no_confirmados if p["id"] != producto["id"]]
-                _render_grupo(store, lote_id, producto, confianza, motivo, fotos_por_id, otros)
+    with col_izq:
+        st.subheader(f"📌 Fotos sueltas ({len(ids_sueltas)})")
+        st.caption(
+            "Casi siempre pertenecen a un grupo de la derecha: márcalas y pulsa "
+            "«⬅️ Añadir aquí» en ese grupo."
+        )
+        if grupos_sueltas:
+            with st.container(height=650, border=True):
+                for producto, _, motivo in grupos_sueltas:
+                    _render_suelta(producto, motivo, fotos_por_id)
+        else:
+            st.caption("No hay fotos sueltas pendientes.")
+
+    with col_der:
+        st.subheader(f"🗂️ Grupos ({len(grupos_derecha)})")
+        if grupos_derecha:
+            with st.container(height=650, border=True):
+                if grupos_alta:
+                    # Tampoco limpia `sel_*` — igual de inocuo que
+                    # "Confirmar grupo": confirmar en bloque también quita
+                    # los checkboxes del render (pasan a
+                    # `_render_grupo_confirmado`), así que no queda ningún
+                    # widget vivo que lea la key stale.
+                    if st.button(
+                        f"Confirmar los {len(grupos_alta)} grupos de confianza alta",
+                        key="confirmar_todos_alta",
+                    ):
+                        for producto, _, _ in grupos_alta:
+                            store.confirmar_producto(producto["id"])
+                        st.rerun()
+                for producto, confianza, motivo in grupos_derecha:
+                    otros = [p for p, _, _ in grupos_derecha if p["id"] != producto["id"]]
+                    _render_grupo(
+                        store, lote_id, producto, confianza, motivo, fotos_por_id, otros, ids_sueltas
+                    )
+        else:
+            st.caption("No hay grupos con más de una foto todavía.")
 
     if confirmados:
         with st.expander(f"🔒 Confirmados ({len(confirmados)})", expanded=False):
