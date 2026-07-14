@@ -497,6 +497,122 @@ def test_foto_ilegible_no_entra_en_ningun_grupo_y_se_puede_descartar(tmp_path):
 
 
 # --------------------------------------------------------------------------
+# Eliminar una foto (mala / casi-duplicada): `core.store.archivar_foto`,
+# RECUPERABLE (mueve a 'descartadas/', nunca borra del disco). El botón
+# "🗑" abre `_dialog_eliminar_foto` (confirmación obligatoria); la mutación
+# real vive en `_accion_archivar_foto`, llamada SÓLO dentro del diálogo
+# (`[INC-006]`) — mismo límite de `AppTest` con `@st.dialog` documentado al
+# principio del módulo: se comprueba que el botón "🗑" ABRE el diálogo con
+# la foto correcta, y la mutación se ejercita llamando a la función que el
+# botón "Quitar" invoca directamente.
+# --------------------------------------------------------------------------
+def test_boton_borrar_abre_dialogo_con_la_foto_correcta(tmp_path):
+    lote_id, por_nombre = _preparar_lote_dos_grupos_y_suelta(tmp_path)
+    a0 = por_nombre["A0"]
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    boton = next(b for b in at.button if b.key == f"borrar_{a0}")
+    boton.click().run()
+    assert not at.exception, f"abrir el diálogo de borrar lanzó: {at.exception}"
+
+    textos = " ".join([m.value for m in at.markdown] + [c.value for c in at.caption])
+    assert "A0.jpg" in textos
+    assert "descartadas" in textos  # el aviso de que es recuperable, no un borrado
+    assert any("Quitar" in b.label for b in at.button if b.label)
+    assert any(b.label == "cancelar" for b in at.button if b.label)
+
+
+def test_accion_archivar_foto_quita_la_foto_sin_fusionar_grupos(tmp_path):
+    """La mutación real del botón "🗑 Quitar" dentro del diálogo:
+    `ui.curar._accion_archivar_foto` es exactamente lo que ese botón llama.
+    Quitar UNA foto de un grupo de 2 no puede fusionar nada — sólo elimina
+    un nodo; los grupos restantes siguen contiguos y separados por
+    producto (`core.store.archivar_foto` sólo borra una fila, nunca toca
+    `producto_id` de las demás)."""
+    lote_id, por_nombre = _preparar_lote_dos_grupos_y_suelta(tmp_path)
+    a0, a1, b0, b1, s0 = (
+        por_nombre["A0"],
+        por_nombre["A1"],
+        por_nombre["B0"],
+        por_nombre["B1"],
+        por_nombre["S0"],
+    )
+    store = LoteStore(data_dir=tmp_path)
+
+    ok = curar._accion_archivar_foto(store, lote_id, a1)
+    assert ok is True
+
+    estado = store.cargar_lote(lote_id)
+    assert all(f["id"] != a1 for f in estado["fotos"]), "la foto archivada sigue en el lote"
+
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupos = {frozenset(p["fotos"]) for p in no_confirmados}
+    # A quedó con una sola foto (A0); B y S0 intactos. NINGÚN grupo mezcla
+    # fotos de A con B o S0 — la asimetría de la cremallera se mantiene.
+    assert frozenset({a0}) in grupos
+    assert frozenset({b0, b1}) in grupos
+    assert frozenset({s0}) in grupos
+    assert len(grupos) == 3
+    for grupo in grupos:
+        assert not ({a0} & grupo and {b0, b1} & grupo), "A se fusionó con B"
+
+
+def test_archivar_la_unica_foto_de_un_producto_lo_hace_desaparecer_sin_fusionar(tmp_path):
+    """Caso límite REGLA de la tarea: si el grupo se queda sin fotos, el
+    producto desaparece — no se fusiona con su vecino. La partición se
+    recomputa sola desde el store en el siguiente render (no hay estado
+    nuevo que persistir aparte)."""
+    lote_id, por_nombre = _preparar_lote_dos_grupos_y_suelta(tmp_path)
+    a0, a1, b0, b1, s0 = (
+        por_nombre["A0"],
+        por_nombre["A1"],
+        por_nombre["B0"],
+        por_nombre["B1"],
+        por_nombre["S0"],
+    )
+    store = LoteStore(data_dir=tmp_path)
+
+    ok = curar._accion_archivar_foto(store, lote_id, s0)
+    assert ok is True
+
+    estado = store.cargar_lote(lote_id)
+    assert all(f["id"] != s0 for f in estado["fotos"])
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupos = {frozenset(p["fotos"]) for p in no_confirmados}
+    assert grupos == {frozenset({a0, a1}), frozenset({b0, b1})}, (
+        "el producto de S0 debía desaparecer, no fusionarse con A ni con B"
+    )
+
+    # Sigue funcionando el render (sin la foto, sin ese producto).
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+
+def test_archivar_foto_de_producto_confirmado_falla_y_no_toca_nada(tmp_path):
+    """`_accion_archivar_foto` propaga el rechazo con dientes de
+    `core.store.archivar_foto` para un producto ya confirmado — es un
+    `StoreError`, así que aquí se traduce a `ok is False` + mensaje, nunca
+    un traceback."""
+    lote_id, por_nombre = _preparar_lote_dos_grupos_y_suelta(tmp_path)
+    a0, a1 = por_nombre["A0"], por_nombre["A1"]
+    store = LoteStore(data_dir=tmp_path)
+    producto_a = next(
+        p["id"] for p in store.cargar_lote(lote_id)["productos"] if a0 in p["fotos"]
+    )
+    store.confirmar_producto(producto_a)
+
+    ok = curar._accion_archivar_foto(store, lote_id, a0)
+    assert ok is False
+
+    estado = store.cargar_lote(lote_id)
+    assert any(f["id"] == a0 for f in estado["fotos"])
+    prod = next(p for p in estado["productos"] if p["id"] == producto_a)
+    assert sorted(prod["fotos"]) == sorted([a0, a1])
+
+
+# --------------------------------------------------------------------------
 # Lote SIN EXIF: degrada a N grupos de 1, N-1 costuras — y es curable.
 # --------------------------------------------------------------------------
 def _preparar_lote_sin_exif(tmp_path: Path) -> tuple[str, list[str]]:

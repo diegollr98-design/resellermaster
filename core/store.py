@@ -58,6 +58,8 @@ confirmación es un hecho, no una sugerencia." Por eso:
 from __future__ import annotations
 
 import json
+import logging
+import shutil
 import sqlite3
 import uuid
 from contextlib import contextmanager
@@ -65,6 +67,8 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+
+logger = logging.getLogger(__name__)
 
 # --------------------------------------------------------------------------
 # Ubicación por defecto de los datos: <raíz del repo>/data/
@@ -246,16 +250,38 @@ class LoteStore:
         lock de escritura de inmediato (evita condiciones de "database is
         locked" a mitad de una transacción concurrente).
         """
-        conn = self._conectar()
+        # `_conectar()` va DENTRO del try: un fallo al abrir la conexión
+        # ('database is locked' al tomar el lock, disco lleno) es justo el
+        # caso que hay que envolver — si quedara fuera, escaparía como
+        # sqlite3.Error crudo y la UI no lo capturaría.
+        conn: sqlite3.Connection | None = None
         try:
+            conn = self._conectar()
             conn.execute("BEGIN IMMEDIATE")
             yield conn
             conn.execute("COMMIT")
-        except BaseException:
-            conn.execute("ROLLBACK")
+        except BaseException as exc:
+            if conn is not None:
+                try:
+                    conn.execute("ROLLBACK")
+                except sqlite3.Error:
+                    # El ROLLBACK falló (conexión ya muerta, etc.). Se registra
+                    # pero NO se deja que enmascare el error original que abortó
+                    # la transacción — ese es el que le importa a quien llama.
+                    logger.exception("ROLLBACK falló tras un error en la transacción")
+            # Un fallo CRUDO de SQLite ('database is locked', disco lleno...)
+            # debe salir como StoreError para que la capa UI lo capture con su
+            # `except StoreError` y nunca le pinte un traceback a Diego
+            # ([INC-006], `decision-making.md` §13). Un StoreError INTENCIONADO
+            # que se lanzó dentro del bloque (FotoDuplicadaError, etc.) sale
+            # tal cual — no se re-envuelve. Cualquier otra cosa (bug de
+            # programación) sube sin tocar, para que se vea.
+            if isinstance(exc, sqlite3.Error):
+                raise StoreError(f"error de base de datos: {exc}") from exc
             raise
         finally:
-            conn.close()
+            if conn is not None:
+                conn.close()
 
     def _migrar(self) -> None:
         conn = self._conectar()
@@ -566,6 +592,146 @@ class LoteStore:
                     ).fetchone()
                     if producto_fila is not None and not producto_fila["confirmado"]:
                         conn.execute("DELETE FROM productos WHERE id = ?", (producto_id,))
+
+    def archivar_foto(self, lote_id: str, foto_id: str) -> Path:
+        """Quita una foto MALA o CASI-duplicada del lote a petición de Diego —
+        RECUPERABLE, nunca un borrado del disco (a diferencia de
+        `descartar_foto`, que sí borra el fichero de un ILEGIBLE y sólo vale
+        para eso). Mueve el fichero a `<carpeta_del_lote>/descartadas/` y
+        SÓLO ENTONCES borra su fila de `fotos` — nunca al revés: si algo
+        falla a mitad, el fallo correcto es "queda un fichero de más en
+        `descartadas/`", nunca "desapareció una foto de la que Diego seguía
+        teniendo trabajo hecho".
+
+        Vale tanto para fotos LEGIBLES (es su razón de ser: una foto
+        borrosa, repetida o mal encuadrada que Diego no quiere en la ficha)
+        como para ilegibles — para éstas es una alternativa a
+        `descartar_foto` que además conserva el fichero por si hace falta
+        inspeccionarlo luego.
+
+        Orden fichero-antes-que-DB, deliberado: `shutil.move` se ejecuta
+        FUERA de cualquier transacción de la base de datos. Si falla (disco
+        lleno, antivirus de Windows bloqueando el fichero, permiso
+        denegado), la excepción se propaga ANTES de tocar una sola fila —
+        el lote de Diego no pierde nada (`decision-making.md` §13: nunca
+        un fallback silencioso ni un estado a medias). Si el fichero se
+        movió bien pero la escritura en la DB falla después (el caso raro:
+        SQLite bloqueada, disco lleno un instante más tarde), se intenta
+        devolver el fichero a su sitio original; si ESO también falla, se
+        deja constancia ruidosa con `logger.exception` (nunca en silencio)
+        y se propaga la excepción igualmente — el fichero puede quedar
+        huérfano en `descartadas/` sin fila que lo referencie, y eso tiene
+        que quedar en el log para que Diego (o el propio store, en un
+        arreglo posterior) lo pueda reconciliar a mano.
+
+        Rechaza con dientes (`AgrupacionBloqueadaError`) archivar una foto
+        de un producto YA CONFIRMADO: Diego ya cerró esa ficha; tocarle una
+        foto ahora es una operación distinta (editar un producto
+        confirmado), no este flujo de curado — la guardia vive aquí, no
+        confía en que la UI no ofrezca el botón.
+
+        Devuelve la ruta nueva del fichero en `descartadas/`.
+        """
+        # Lectura de validación por conexión directa (no necesita transacción).
+        # Un fallo CRUDO de SQLite aquí ('database is locked' al abrir) se
+        # envuelve en StoreError como el resto del módulo, para que la UI lo
+        # capture y nunca sea un traceback ([INC-006]). Los StoreError
+        # intencionados de dentro (FotoNoEncontradaError, AgrupacionBloqueadaError)
+        # NO se re-envuelven: `except sqlite3.Error` no los toca.
+        try:
+            conn = self._conectar()
+            try:
+                self._lote_existe(conn, lote_id)
+                fila = conn.execute(
+                    "SELECT id, ruta, producto_id FROM fotos WHERE id = ? AND lote_id = ?",
+                    (foto_id, lote_id),
+                ).fetchone()
+                if fila is None:
+                    raise FotoNoEncontradaError(
+                        f"foto no encontrada en el lote {lote_id}: {foto_id}"
+                    )
+                producto_id = fila["producto_id"]
+                if producto_id is not None:
+                    producto_fila = conn.execute(
+                        "SELECT confirmado FROM productos WHERE id = ?", (producto_id,)
+                    ).fetchone()
+                    if producto_fila is not None and producto_fila["confirmado"]:
+                        raise AgrupacionBloqueadaError(
+                            f"foto {foto_id} pertenece a un producto ya confirmado "
+                            f"({producto_id}); Diego ya cerró esa ficha, archivar_foto "
+                            "no es el camino para tocarla"
+                        )
+                ruta_original = Path(fila["ruta"])
+            finally:
+                conn.close()
+        except sqlite3.Error as exc:
+            raise StoreError(
+                f"error de base de datos al validar la foto {foto_id}: {exc}"
+            ) from exc
+
+        directorio_descartadas = self.lotes_dir / lote_id / "descartadas"
+        directorio_descartadas.mkdir(parents=True, exist_ok=True)
+        ruta_destino = directorio_descartadas / ruta_original.name
+        if ruta_destino.exists():
+            # No machacar un fichero ya descartado con el mismo nombre: el
+            # foto_id (uuid hex) es único por fila, así que el sufijo nunca
+            # puede colisionar entre dos fotos distintas del mismo lote.
+            ruta_destino = (
+                directorio_descartadas / f"{ruta_original.stem}_{foto_id}{ruta_original.suffix}"
+            )
+
+        try:
+            shutil.move(str(ruta_original), str(ruta_destino))
+        except OSError as exc:
+            logger.exception(
+                "No se pudo mover %s a %s al archivar la foto %s; la DB no se toca",
+                ruta_original,
+                ruta_destino,
+                foto_id,
+            )
+            # Se envuelve en StoreError (no se re-lanza el OSError crudo) para
+            # que la UI lo capture con su `except StoreError` — en la máquina
+            # de Diego este fallo es real (antivirus de Windows reteniendo el
+            # .jpg, disco lleno, permiso denegado) y nunca puede pintarle un
+            # traceback ([INC-006]). La DB no se ha tocado: sin pérdida.
+            raise StoreError(
+                f"no se pudo mover el fichero de la foto {foto_id} a 'descartadas': {exc}"
+            ) from exc
+
+        try:
+            with self._transaccion() as conn2:
+                conn2.execute("DELETE FROM fotos WHERE id = ?", (foto_id,))
+                if producto_id is not None:
+                    restante = conn2.execute(
+                        "SELECT COUNT(*) AS n FROM fotos WHERE producto_id = ?", (producto_id,)
+                    ).fetchone()["n"]
+                    if restante == 0:
+                        producto_fila = conn2.execute(
+                            "SELECT confirmado FROM productos WHERE id = ?", (producto_id,)
+                        ).fetchone()
+                        if producto_fila is not None and not producto_fila["confirmado"]:
+                            conn2.execute("DELETE FROM productos WHERE id = ?", (producto_id,))
+        except BaseException:
+            logger.exception(
+                "El fichero de la foto %s ya se movió a %s pero la DB falló al "
+                "borrar su fila; intentando devolverlo a %s",
+                foto_id,
+                ruta_destino,
+                ruta_original,
+            )
+            try:
+                shutil.move(str(ruta_destino), str(ruta_original))
+            except OSError:
+                logger.exception(
+                    "No se pudo devolver %s a %s tras el fallo de DB: el fichero "
+                    "queda en 'descartadas/' SIN fila en la base de datos — "
+                    "requiere reconciliación manual",
+                    ruta_destino,
+                    ruta_original,
+                )
+            raise
+
+        return ruta_destino
 
     def confirmar_producto(self, producto_id: str, detalle: dict[str, Any] | None = None) -> None:
         """Registra que Diego confirmó la agrupación de un producto.

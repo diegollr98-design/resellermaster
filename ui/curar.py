@@ -281,6 +281,25 @@ def _accion_descartar(store: LoteStore, lote_id: str, foto_id: str) -> None:
         _registrar_error(f"No se pudo descartar la foto: {exc}")
 
 
+def _accion_archivar_foto(store: LoteStore, lote_id: str, foto_id: str) -> bool:
+    """Mutación real del botón "🗑 Quitar" de `_dialog_eliminar_foto`: mueve
+    el fichero a `descartadas/` y borra su fila (`core.store.archivar_foto`,
+    RECUPERABLE, nunca un borrado del disco). Vive SÓLO dentro del diálogo,
+    llamada directamente tras el click — nunca en un `on_click` fuera de él
+    ni escribiendo la key de un widget ya instanciado (`[INC-006]`). No usa
+    `_registrar_error` (eso es para callbacks `on_click`, donde `st.error`
+    se descarta): esto corre en el mismo script run que el click, así que
+    `st.error` directo es correcto — mismo patrón que `_guardar_particion(
+    ..., desde_callback=False)`."""
+    try:
+        store.archivar_foto(lote_id, foto_id)
+        return True
+    except StoreError as exc:
+        logger.exception("No se pudo archivar la foto %s del lote %s", foto_id, lote_id)
+        st.error(f"No se pudo quitar la foto: {exc}")
+        return False
+
+
 def _costuras_propuestas_inicialmente(
     fotos_ordenadas: list[str], fotos_por_id: dict[str, dict]
 ) -> set[tuple[str, str]]:
@@ -360,12 +379,37 @@ def _accion_confirmar_todo(store: LoteStore, lote_id: str) -> bool:
 # Render de fotos en fila (filmstrip) — reutilizado por la tarjeta de un
 # grupo, por el modal del pestillo y por el modal de revisión final.
 # --------------------------------------------------------------------------
-def _render_filmstrip(foto_ids: list[str], fotos_por_id: dict[str, dict], ancho: int) -> None:
+def _boton_eliminar_foto(store: LoteStore, lote_id: str, foto: dict) -> None:
+    """Botón pequeño "🗑" que abre `_dialog_eliminar_foto` — nunca mueve el
+    fichero directamente desde aquí, siempre pasa por la confirmación
+    obligatoria del modal."""
+    if st.button(
+        "🗑",
+        key=f"borrar_{foto['id']}",
+        help="Quitar esta foto del lote (se mueve a 'descartadas', recuperable).",
+    ):
+        _dialog_eliminar_foto(store, lote_id, foto)
+
+
+def _render_filmstrip(
+    foto_ids: list[str],
+    fotos_por_id: dict[str, dict],
+    ancho: int,
+    *,
+    store: LoteStore | None = None,
+    lote_id: str | None = None,
+) -> None:
+    """`store`/`lote_id` son opcionales: sólo cuando se pasan (tarjeta de
+    grupo) se pinta el botón "🗑" bajo cada foto. Los usos de este
+    filmstrip dentro de los modales de fusionar/confirmar no lo pasan —
+    son vistas de revisión, no de curado activo."""
     columnas = st.columns(max(len(foto_ids), 1))
     for i, fid in enumerate(foto_ids):
         with columnas[i]:
             _render_imagen_segura(fotos_por_id[fid], width=ancho)
             st.caption(Path(fotos_por_id[fid]["ruta"]).name)
+            if store is not None and lote_id is not None:
+                _boton_eliminar_foto(store, lote_id, fotos_por_id[fid])
 
 
 # --------------------------------------------------------------------------
@@ -469,6 +513,30 @@ def _dialog_dividir(
             st.rerun()
 
 
+@st.dialog("¿Quitar esta foto del lote?", width="large")
+def _dialog_eliminar_foto(store: LoteStore, lote_id: str, foto: dict) -> None:
+    """Confirmación OBLIGATORIA antes de archivar una foto — nunca un
+    click directo. Enseña la foto A TAMAÑO GRANDE para que Diego vea
+    EXACTAMENTE cuál va a quitar (que no sea un mis-click entre fotos
+    parecidas de un mismo producto). La mutación real
+    (`_accion_archivar_foto`) vive SÓLO dentro de este modal, igual que
+    `_dialog_fusionar`/`_dialog_dividir` (`[INC-006]`)."""
+    st.write(f"**{Path(foto['ruta']).name}**")
+    _render_imagen_segura(foto, width=400)
+    st.caption(
+        "Se mueve a la carpeta 'descartadas' del lote — no se borra del "
+        "disco, puedes recuperarla a mano si te equivocas."
+    )
+    col_si, col_no = st.columns(2)
+    with col_si:
+        if st.button("🗑 Quitar", type="primary", use_container_width=True):
+            if _accion_archivar_foto(store, lote_id, foto["id"]):
+                st.rerun()
+    with col_no:
+        if st.button("cancelar", use_container_width=True):
+            st.rerun()
+
+
 @st.dialog("Revisión antes de confirmar", width="large")
 def _dialog_confirmar(
     store: LoteStore,
@@ -516,9 +584,10 @@ def _render_tarjeta_grupo(
         if len(grupo) == 1:
             _render_imagen_segura(fotos_por_id[grupo[0]], width=130)
             st.caption(Path(fotos_por_id[grupo[0]]["ruta"]).name)
+            _boton_eliminar_foto(store, lote_id, fotos_por_id[grupo[0]])
             return
 
-        _render_filmstrip(grupo, fotos_por_id, ancho=130)
+        _render_filmstrip(grupo, fotos_por_id, ancho=130, store=store, lote_id=lote_id)
 
         if st.button(
             "✂ Dividir este grupo…",

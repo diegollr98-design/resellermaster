@@ -8,6 +8,7 @@ una escritura (simula el proceso muriendo dentro de una transacción).
 from __future__ import annotations
 
 import sqlite3
+from unittest.mock import patch
 
 import pytest
 
@@ -15,6 +16,7 @@ from core.store import (
     AgrupacionBloqueadaError,
     Foto,
     FotoDuplicadaError,
+    FotoNoEncontradaError,
     LoteNoEncontradoError,
     LoteStore,
     ProductoNoEncontradoError,
@@ -398,3 +400,140 @@ def test_crash_a_mitad_de_confirmar_producto_no_deja_estado_a_medias(tmp_path):
     assert producto["confirmado_en"] is None
     assert all(not f["confirmada"] for f in estado["fotos"])
     assert estado["confirmaciones"] == []
+
+
+# --------------------------------------------------------------------------
+# `archivar_foto` — quitar una foto mala/casi-duplicada, RECUPERABLE
+# (nunca un borrado del disco), pedido explícitamente por Diego.
+# --------------------------------------------------------------------------
+
+
+def test_archivar_foto_mueve_el_fichero_y_borra_la_fila(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=3)
+    ruta_original = store.lotes_dir / lote_id / "IMG_0000.jpg"
+    assert ruta_original.exists()
+
+    store.guardar_agrupacion(lote_id, [foto_ids])
+
+    ruta_destino = store.archivar_foto(lote_id, foto_ids[0])
+
+    # El fichero se movió de verdad: ya no está en el origen, sí en destino.
+    assert not ruta_original.exists()
+    assert ruta_destino.exists()
+    assert ruta_destino.parent == store.lotes_dir / lote_id / "descartadas"
+
+    # La foto ya no está en el lote (fila borrada), pero el producto sigue
+    # existiendo con las otras dos fotos (no se vació).
+    estado = store.cargar_lote(lote_id)
+    assert all(f["id"] != foto_ids[0] for f in estado["fotos"])
+    assert len(estado["fotos"]) == 2
+    assert len(estado["productos"]) == 1
+    assert sorted(estado["productos"][0]["fotos"]) == sorted(foto_ids[1:])
+
+
+def test_archivar_foto_limpia_el_producto_huerfano_si_se_queda_vacio(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=1)
+    store.guardar_agrupacion(lote_id, [foto_ids])
+
+    store.archivar_foto(lote_id, foto_ids[0])
+
+    estado = store.cargar_lote(lote_id)
+    assert estado["fotos"] == []
+    assert estado["productos"] == []
+
+
+def test_archivar_foto_no_machaca_si_el_destino_ya_existe(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=2)
+
+    # Un fichero previo con el MISMO nombre ya vive en 'descartadas/' (p.
+    # ej. de un lote reabierto tras mover a mano). No debe machacarse.
+    carpeta_descartadas = store.lotes_dir / lote_id / "descartadas"
+    carpeta_descartadas.mkdir(parents=True, exist_ok=True)
+    colisión = carpeta_descartadas / "IMG_0000.jpg"
+    colisión.write_bytes(b"contenido-preexistente")
+
+    ruta_destino = store.archivar_foto(lote_id, foto_ids[0])
+
+    assert colisión.read_bytes() == b"contenido-preexistente"
+    assert ruta_destino != colisión
+    assert ruta_destino.exists()
+
+
+def test_archivar_foto_rechaza_producto_ya_confirmado(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=2)
+    productos = store.guardar_agrupacion(lote_id, [foto_ids])
+    store.confirmar_producto(productos[0])
+
+    ruta_original = store.lotes_dir / lote_id / "IMG_0000.jpg"
+
+    with pytest.raises(AgrupacionBloqueadaError):
+        store.archivar_foto(lote_id, foto_ids[0])
+
+    # Nada se tocó: ni el fichero se movió, ni la fila desapareció.
+    assert ruta_original.exists()
+    estado = store.cargar_lote(lote_id)
+    assert len(estado["fotos"]) == 2
+    assert estado["productos"][0]["confirmado"] is True
+
+
+def test_archivar_foto_inexistente_falla_ruidosamente(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, _ = _crear_lote_con_fotos(store, n=1)
+
+    with pytest.raises(FotoNoEncontradaError):
+        store.archivar_foto(lote_id, "foto-que-no-existe")
+
+
+def test_archivar_foto_si_falla_el_move_no_toca_la_db(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=2)
+    store.guardar_agrupacion(lote_id, [foto_ids])
+
+    # El fallo del move (disco lleno, antivirus de Windows) se envuelve en
+    # StoreError — NO se propaga el OSError crudo — para que la UI lo capture
+    # con su `except StoreError` y nunca le pinte un traceback a Diego
+    # ([INC-006]). Se cazó en un listing-audit: era la única garantía de UI
+    # que este flujo rompía.
+    from core.store import StoreError
+
+    with patch("core.store.shutil.move", side_effect=OSError("disco lleno (simulado)")):
+        with pytest.raises(StoreError):
+            store.archivar_foto(lote_id, foto_ids[0])
+
+    # La DB no se tocó: la foto sigue en el lote, en su producto.
+    estado = store.cargar_lote(lote_id)
+    assert len(estado["fotos"]) == 2
+    assert any(f["id"] == foto_ids[0] for f in estado["fotos"])
+    assert sorted(estado["productos"][0]["fotos"]) == sorted(foto_ids)
+
+
+@pytest.mark.parametrize(
+    "metodo, construir_args",
+    [
+        ("guardar_agrupacion", lambda ids: (lambda lote: [[ids[0]], [ids[1]]])),
+        ("archivar_foto", lambda ids: (lambda lote: ids[0])),
+        ("descartar_foto", lambda ids: (lambda lote: ids[0])),
+        ("confirmar_producto", lambda ids: (lambda lote: ids[0])),
+    ],
+)
+def test_un_error_crudo_de_sqlite_sale_como_StoreError(tmp_path, metodo, construir_args):
+    """Un fallo CRUDO de SQLite ('database is locked' con dos pestañas, disco
+    lleno) desde CUALQUIER método de mutación debe salir como StoreError —
+    nunca un sqlite3.Error crudo, que la UI (`except StoreError`) no captura y
+    acabaría en un traceback en la pantalla de Diego ([INC-006]). Lo cazó un
+    listing-audit sobre `archivar_foto`; el predicado vive en `_transaccion` y
+    lo comparten TODAS las escrituras (`decision-making.md` §11)."""
+    from core.store import StoreError
+
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=2)
+    args = construir_args(foto_ids)(lote_id)
+    llamada = (lote_id, args) if metodo != "confirmar_producto" else (args,)
+
+    with patch.object(store, "_conectar", side_effect=sqlite3.OperationalError("database is locked")):
+        with pytest.raises(StoreError):
+            getattr(store, metodo)(*llamada)
