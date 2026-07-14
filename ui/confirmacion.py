@@ -183,8 +183,73 @@ def _mover_fotos(
 
 
 def _limpiar_seleccion(foto_ids: list[str]) -> None:
+    """Desmarca los checkboxes `sel_{foto_id}` de `foto_ids`.
+
+    SOLO es legal llamar a esto desde un callback `on_click` (ver
+    `_accion_mover`/`_accion_fusionar`, justo abajo) — nunca desde el
+    cuerpo normal del script. Streamlit prohíbe escribir la key de un
+    widget DESPUÉS de haberlo instanciado en el mismo rerun
+    (`StreamlitAPIException`), y los checkboxes ya se instanciaron más
+    arriba en `_render_grupo` antes de llegar aquí si esto se llamara
+    desde el cuerpo del script.
+    """
     for fid in foto_ids:
         st.session_state[f"sel_{fid}"] = False
+
+
+def _accion_mover(
+    store: LoteStore,
+    lote_id: str,
+    foto_ids_candidatas: list[str],
+    producto_destino_id: str | None,
+) -> None:
+    """Callback `on_click` del botón "Mover N foto(s)".
+
+    Por qué un callback y no el `if st.button(...):` de antes: los
+    callbacks corren en la fase `on_script_will_rerun`, ANTES de que el
+    script vuelva a instanciar ningún widget de este rerun
+    (`widget_ids_this_run` está vacío en ese punto) — así que aquí SÍ es
+    legal escribir las keys `sel_*` vía `_limpiar_seleccion`, al contrario
+    que en el cuerpo del script tras la línea que crea los checkboxes.
+    `st.session_state` ya trae, en este punto, el valor fresco que el
+    navegador acaba de enviar para cada checkbox, así que la selección se
+    relee aquí dentro (`foto_ids_candidatas` filtrado por su estado
+    ACTUAL) en vez de fiarse de una lista capturada en el render anterior.
+    No hace falta `st.rerun()`: Streamlit rerunea solo tras un callback.
+    """
+    seleccionadas = [
+        fid for fid in foto_ids_candidatas if st.session_state.get(f"sel_{fid}", False)
+    ]
+    if not seleccionadas:
+        return
+    estado_actual = store.cargar_lote(lote_id)
+    _mover_fotos(store, lote_id, estado_actual, seleccionadas, producto_destino_id)
+    _limpiar_seleccion(seleccionadas)
+
+
+def _accion_fusionar(
+    store: LoteStore,
+    lote_id: str,
+    foto_ids_grupo: list[str],
+    producto_destino_id: str,
+) -> None:
+    """Callback `on_click` del botón "🔗 Fusionar".
+
+    Fusionar mueve TODO el grupo, se haya marcado alguna foto o no — por
+    eso `foto_ids_grupo` es la lista completa del grupo, no una selección.
+    El bug que esto arregla (`truth-loop.md` §E, superficie `agrupacion`):
+    antes de este callback, fusionar NUNCA limpiaba `sel_*`, así que si
+    Diego había marcado una foto de este grupo en un render anterior (p.
+    ej. para considerarla suelta y luego decidirse por fusionar el grupo
+    entero), esa key seguía en `True` y esa foto aparecía PREMARCADA en
+    el grupo destino tras la fusión, sin que él la hubiera tocado ahí.
+    Mismo motivo que `_accion_mover` para por qué esto es legal aquí y no
+    en el cuerpo del script: corre antes de que se instancie ningún
+    widget de este rerun.
+    """
+    estado_actual = store.cargar_lote(lote_id)
+    _mover_fotos(store, lote_id, estado_actual, foto_ids_grupo, producto_destino_id)
+    _limpiar_seleccion(foto_ids_grupo)
 
 
 def _etiqueta_grupo(producto: dict) -> str:
@@ -245,6 +310,11 @@ def _render_grupo(
         col_confirmar, col_mover, col_fusionar = st.columns(3)
 
         with col_confirmar:
+            # Sin `on_click`/`_limpiar_seleccion` a propósito: un grupo
+            # confirmado se pinta con `_render_grupo_confirmado` (sin
+            # checkboxes), así que sus keys `sel_*` quedan sin widget que
+            # las lea — Streamlit las descarta como stale. Inocuo, no
+            # necesita el patrón callback de mover/fusionar.
             if st.button("✅ Confirmar grupo", key=f"confirmar_{producto['id']}", type="primary"):
                 store.confirmar_producto(producto["id"])
                 st.rerun()
@@ -257,15 +327,16 @@ def _render_grupo(
                 destino_label = st.selectbox(
                     "Mover seleccionadas a", opciones, key=f"destino_{producto['id']}"
                 )
-                if st.button(f"Mover {len(seleccionadas)} foto(s)", key=f"mover_{producto['id']}"):
-                    destino_id = None
-                    if destino_label != opciones[0]:
-                        idx = opciones.index(destino_label) - 1
-                        destino_id = otros_no_confirmados[idx]["id"]
-                    estado_actual = store.cargar_lote(lote_id)
-                    _mover_fotos(store, lote_id, estado_actual, seleccionadas, destino_id)
-                    _limpiar_seleccion(seleccionadas)
-                    st.rerun()
+                destino_id = None
+                if destino_label != opciones[0]:
+                    idx = opciones.index(destino_label) - 1
+                    destino_id = otros_no_confirmados[idx]["id"]
+                st.button(
+                    f"Mover {len(seleccionadas)} foto(s)",
+                    key=f"mover_{producto['id']}",
+                    on_click=_accion_mover,
+                    args=(store, lote_id, [f["id"] for f in fotos_grupo], destino_id),
+                )
             else:
                 st.caption("Marca fotos para moverlas a otro grupo o partir éste.")
 
@@ -275,14 +346,14 @@ def _render_grupo(
                 fusion_label = st.selectbox(
                     "Fusionar este grupo con", opciones_fusion, key=f"fusion_{producto['id']}"
                 )
-                if st.button("🔗 Fusionar", key=f"btn_fusion_{producto['id']}"):
-                    idx = opciones_fusion.index(fusion_label)
-                    destino_id = otros_no_confirmados[idx]["id"]
-                    estado_actual = store.cargar_lote(lote_id)
-                    _mover_fotos(
-                        store, lote_id, estado_actual, list(producto["fotos"]), destino_id
-                    )
-                    st.rerun()
+                idx = opciones_fusion.index(fusion_label)
+                destino_id = otros_no_confirmados[idx]["id"]
+                st.button(
+                    "🔗 Fusionar",
+                    key=f"btn_fusion_{producto['id']}",
+                    on_click=_accion_fusionar,
+                    args=(store, lote_id, list(producto["fotos"]), destino_id),
+                )
             else:
                 st.caption("No hay otro grupo sin confirmar con el que fusionar.")
 
@@ -391,6 +462,10 @@ def render(store: LoteStore, lote_id: str) -> None:
         with st.expander(
             f"✅ Confianza alta — revisar en bloque ({len(grupos_alta)})", expanded=False
         ):
+            # Tampoco limpia `sel_*` — igual de inocuo que "Confirmar
+            # grupo" arriba: confirmar en bloque también quita los
+            # checkboxes del render (pasan a `_render_grupo_confirmado`),
+            # así que no queda ningún widget vivo que lea la key stale.
             if st.button(
                 f"Confirmar los {len(grupos_alta)} grupos de confianza alta",
                 key="confirmar_todos_alta",

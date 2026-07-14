@@ -39,6 +39,16 @@ def _aplicar_navegacion_pendiente() -> None:
     rerun en vez de requerir un click extra de Diego."""
     pendiente = st.session_state.pop("_navegar_a", None)
     if pendiente:
+        # Esto SOLO es legal porque `main()` llama a esta función ANTES
+        # de instanciar `st.sidebar.radio(key="sb_pantalla")` y
+        # `st.sidebar.selectbox(key="sb_lote_id")` más abajo — igual que
+        # el bug de `ui/confirmacion.py::_limpiar_seleccion` (escribir la
+        # key de un widget DESPUÉS de instanciarlo en el mismo rerun
+        # lanza `StreamlitAPIException`). El ORDEN de las líneas de
+        # `main()` es una condición de CORRECCIÓN, no un detalle de
+        # estilo: si algún día se instancian esos widgets antes de llamar
+        # a `_aplicar_navegacion_pendiente()`, esto revienta igual que
+        # aquel bug. No reordenar sin mover esto también.
         st.session_state["sb_pantalla"] = pendiente["pantalla"]
         st.session_state["sb_lote_id"] = pendiente["lote_id"]
 
@@ -65,6 +75,9 @@ def main() -> None:
             for lote in lotes
         }
         ids = list(etiquetas.keys())
+        # Misma condición de CORRECCIÓN que en `_aplicar_navegacion_pendiente`:
+        # legal SOLO porque esto corre antes de la línea de abajo que
+        # instancia `st.sidebar.selectbox(key="sb_lote_id", ...)`.
         if st.session_state.get("sb_lote_id") not in ids:
             st.session_state["sb_lote_id"] = ids[0]  # más reciente primero
         lote_id = st.sidebar.selectbox(
