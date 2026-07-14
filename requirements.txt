@@ -27,6 +27,12 @@ numpy>=1.24
 # cacheado por hash) — ver docstring de core/llm.py y architecture.md.
 anthropic>=0.40
 
+# Fase 2 — core/extract.py: "el OCR LOCALIZA. El VLM LEE." OCR local, CPU,
+# gratis, cero llamadas a proveedor. Instancia perezosa (solo se carga la
+# primera vez que hace falta localizar texto de verdad) — un test que
+# mockea el OCR no descarga ni carga nada.
+rapidocr-onnxruntime>=1.2
+
 # Dev
 pytest>=8.0
 ruff>=0.8
