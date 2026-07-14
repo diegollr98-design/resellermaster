@@ -51,7 +51,20 @@ Sonnet 4.6: implementación, UI Streamlit, pipeline, cambios rutinarios
 Sonnet tiende a: no verificar supuestos, dar por hecho que el LLM "acertó" sin mirar la foto
 Opus tiende a: conservadurismo excesivo — recordar "Anclar en el plan del usuario"
 ```
-Elección del proveedor de visión: **se decide MIDIENDO sobre las fotos reales, nunca por intuición** — y antes de proponer nada de pago, `decision-making.md` §7 (lleva 3 incidencias). Hardware de Diego: RTX 3050 Laptop **4 GB VRAM** / 16 GB RAM → **visión local descartada** (no entra un VLM que lea logos y etiquetas). Coste medido del candidato de pago: Haiku 4.5 con visión ≈ **0,2 cts/foto ≈ 1 ct/producto**, y con caché por hash se paga **una sola vez**. La suscripción Pro/Max **no vale** (Anthropic prohíbe enrutar apps de terceros por credenciales de consumidor): hace falta API key de Console.
+Elección del proveedor de visión: **se decide MIDIENDO sobre las fotos reales, nunca por intuición** — y antes de proponer nada de pago, `decision-making.md` §7 (lleva 3 incidencias). Hardware de Diego: RTX 3050 Laptop **4 GB VRAM** / 16 GB RAM → **visión local descartada** (no entra un VLM que lea logos y etiquetas). La suscripción Pro/Max **no vale** (Anthropic prohíbe enrutar apps de terceros por credenciales de consumidor): hace falta API key de Console.
+
+**Coste — MEDIDO sobre las 33 fotos reales (2026-07-14), no estimado.** El "≈1 ct/producto" que decía aquí antes **era falso**: sale de `LLMEngine.estimar_coste_lote` sobre el pipeline real (`core/extract.py` manda **un recorte por región de texto**, no una llamada por foto):
+
+| | llamadas | coste |
+|---|---|---|
+| Lote entero (33 fotos, 7 productos) | 62 | **19,2 cts** |
+| Media por producto | 8,9 | **2,75 cts** |
+| Peor caso (producto 1, caja con texto denso) | 21 | **6,5 cts** |
+| Ropa (productos 3-7) | 3-10 | 0,9-3,1 cts |
+
+Con **caché por hash de imagen** se paga **una sola vez**: reprocesar el mismo lote cuesta **0 €**. La caché **nunca se borra sin permiso** — cada entrada es dinero ya gastado.
+
+**Toda cifra de coste de este fichero sale de `estimar_coste_lote`, no de una estimación a ojo.** Si el pipeline cambia cuántas llamadas hace por producto, esta tabla se recalcula y se dice — un cambio de prompt que duplica el coste es un cambio de arquitectura disfrazado (`change-loop.md` §C5).
 
 ## LO QUE NUNCA DEBES HACER
 - **Afirmar un atributo del producto (marca, talla, material, medidas) que no sea legible en una foto.** Un campo vacío es recuperable; una ficha con la talla equivocada es una devolución.

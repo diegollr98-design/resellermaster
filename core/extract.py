@@ -1,15 +1,80 @@
 """core/extract.py -- COSTURA 1 aplicada: `ExtractorEngine`.
 
 `.claude/rules/architecture.md` (Costura 1) + `.claude/rules/truth-loop.md` SS A
-+ `.claude/rules/product.md` + `docs/seeds/fase-2.md` (decisiones D1/D2/D3).
++ `.claude/rules/product.md` + `docs/seeds/fase-2.md`.
 
-Esta es LA pieza donde vive el modo de fallo del proyecto entero: que el
-pipeline afirme algo falso sobre el producto con total fluidez y Diego lo
-publique sin mirar. Todo lo que sigue esta escrito para que la respuesta
-por defecto, ante cualquier ambiguedad, sea abstenerse (`valor=None,
-confianza="baja"`) -- nunca un valor plausible.
+REDISENO ESTRUCTURAL (2026-07-15, decision de Diego, tras dos `listing-audit`
+BLOQUEANTE seguidos sobre la version anterior de este modulo).
+------------------------------------------------------------------------
+La version anterior intentaba que el pipeline DECIDIERA LA VERDAD: leia una
+etiqueta, la corroboraba con una segunda senal (OCR crudo de la misma region,
+o la misma foto repetida) y, si corroboraba, publicaba `confianza="alta"`.
+Dos auditorias independientes tumbaron esa premisa por la misma causa raiz:
+la "corroboracion" NO era independiente (los dos lectores miran el MISMO
+crop; si el crop esta mal, se equivocan igual y se dan la razon), la
+similitud de cadenas no separa "XL" de "XXL" (0.80, y esas son las tallas
+reales del lote), y con un modelo PERFECTO la cobertura util (cuantos campos
+llegan a Diego con algo que confirmar) era marca 2/5 prendas y talla 1/5 --
+aunque el modelo acertara siempre, el diseno no servia.
 
-EL DISENO: "el OCR LOCALIZA. El VLM LEE. Diego CIERRA."
+La causa raiz de fondo: este proyecto YA aprendio (`core/grouping.py`,
+"el reloj puede PARTIR, pero no puede CONFIRMAR") que un algoritmo que
+intenta decidir la verdad por su cuenta es la premisa equivocada -- lo que
+funciona es que la maquina PROPONGA y el humano CONFIRME, con el fallo caro
+hecho INEXPRESABLE, no meramente avisado. `core/pricing.py` ya vive de la
+misma ley: no tasa, ensena donde mirar.
+
+LA LEY NUEVA DE ESTE MODULO
+------------------------------------------------------------------------
+    EL EXTRACTOR NO AFIRMA. PROPONE un valor y ENSENA EL PIXEL del que lo
+    saco. Diego confirma de un vistazo.
+
+En la practica:
+  1. `confianza="alta"` PRACTICAMENTE DESAPARECE de este modulo. Solo puede
+     salir para un dato DETERMINISTA y VERIFICABLE POR UNA REGLA MATEMATICA,
+     no por un modelo: un EAN cuyo checksum GS1 valida (`_validar_checksum_ean`).
+     Nada mas -- ni la corroboracion multi-foto, ni el atajo de "modelo" por
+     regex, ni el papel manuscrito repetido en dos fotos. Que emitir "alta"
+     desde una lectura de VLM/OCR sea IMPOSIBLE de escribir, no desaconsejado:
+     no existe ningun camino en este archivo que construya un `Campo` con
+     `confianza="alta"` salvo `_agregar_campo_texto` sobre candidatos de
+     `ean` ya filtrados por checksum (ver `_filtrar_ean_checksum_valido`).
+  2. Cada campo trae una `Propuesta` (ademas del `Campo` de exportacion):
+     el VALOR propuesto, el RECORTE guardado en disco (el pixel, ampliado,
+     listo para pintar en pantalla), TODAS las lecturas (lo que dijo el VLM
+     Y lo que leyo el OCR crudo -- nunca se descarta una a favor de la otra),
+     las ALTERNATIVAS en conflicto (cada una con su propio recorte: nunca se
+     elige entre "UMBRO" y "RAMI JALAB", las dos llegan a Diego) y el MOTIVO
+     de por que se propone esto o por que no hay valor.
+  3. El recorte que se ENSENA es EXACTAMENTE el que se mando al modelo: se
+     capturan los MISMOS bytes en el momento de construir el `Imagen` que se
+     envia a `core/llm.py`, y esos mismos bytes son los que se escriben a
+     disco (`data/lotes/<lote>/crops/`, o la carpeta que indique quien llama).
+     Nunca se re-genera el recorte para "ensenarlo" -- eso podria mostrar un
+     pixel distinto del que vio el modelo, y la evidencia seria una mentira.
+  4. UN CROP PUEDE PRODUCIR VARIOS CAMPOS. La version anterior solo permitia
+     un `texto`/`contenido_probable` por recorte -- un crop real del golden
+     set trae la marca Y la talla juntas (misma etiqueta de cuello) y la
+     segunda era estructuralmente INALCANZABLE. Ahora el VLM devuelve una
+     LISTA de `hallazgos` por recorte (`_parsear_lectura_crop` devuelve una
+     lista de `LecturaCrop`, una por hallazgo), y esto sube la cobertura
+     util sin gastar una llamada extra.
+  5. El atajo "el OCR ya lee limpio" (EAN/modelo por patron, D2) YA NO ES
+     UNA CARRETERA PARALELA que bypasea la deteccion de conflictos: sus
+     candidatos entran al MISMO pool de lecturas que las del VLM y pasan
+     por la MISMA agregacion (`_agregar_campo_texto`) -- dos EAN validos y
+     distintos (uno por atajo, otro leido por el VLM en otra foto) generan
+     un conflicto real, nunca "el primero que se encontro" en silencio.
+  6. Conflictos: SIEMPRE se muestran TODOS, nunca se elige uno.
+  7. La coherencia entre campos de identidad (C2/INC-011, "LA FICHA
+     FRANKENSTEIN") ya no se apaga con que UNA foto ligue dos campos --
+     ahora exige que TODOS los campos de identidad con valor esten en la
+     MISMA componente conexa del grafo "campos que comparten una foto"
+     (`_detectar_fotos_disjuntas`, union-find). Antes, una foto que ligara
+     marca+talla apagaba la defensa entera aunque el modelo viniera de una
+     foto disjunta de las otras dos -- quedaba sin auditar.
+
+EL DISENO DE LOCALIZACION (sin cambios: "el OCR LOCALIZA. El VLM LEE.")
 ------------------------------------------------------------------------
 Medido sobre las 33 fotos reales de Diego (`tests/golden/legibilidad.json`):
 un humano lee marca 7/7 y talla 5/5; el OCR local (RapidOCR) solo lee marca
@@ -26,36 +91,15 @@ el mismo cuello de botella que mata al OCR. Por eso:
        METRO -- se descarta, nunca produce un atributo (regla gratis,
        medida en el golden set).
     4. Si el OCR YA lee limpio y sin ambiguedad un patron reconocible (EAN,
-       "Model:XXX") con score alto, se acepta DIRECTO -- sin gastar en el
-       VLM: ya se tiene el dato, gratis (D2).
+       "Model:XXX") con score alto, se acepta como candidato SIN gastar en
+       el VLM -- entra al mismo pool que las lecturas de VLM (punto 5 de
+       arriba), gratis.
     5. Lo que queda se RECORTA (con margen, a resolucion NATIVA, nunca la
        foto entera) y SOLO el recorte se manda al VLM (`core/llm.py`), que
-       LEE lo que el OCR no pudo.
-    6. Diego CIERRA: un conflicto (dos marcas legibles) no lo resuelve el
-       pipeline -- sale `marca=None` + las dos candidatas expuestas
-       (`ResultadoExtraccion.conflictos`) para que el decida.
-
-LA LEY DE CORROBORACION (INC-010/INC-011, corregida 2026-07-14)
-------------------------------------------------------------------------
-Dos `listing-audit` independientes convergieron en la misma causa raiz:
-`confianza="alta"` salia con UNA SOLA SENAL -- un candidato unico, o
-varias fotos que coinciden PORQUE COMPARTEN EL MISMO SESGO (la camara, no
-el producto). Cuanto menos sabia el pipeline, mas confiado sonaba.
-
-    EL VLM PUEDE PROPONER, PERO NO PUEDE CONFIRMAR EL SOLO.
-
-Es la misma ley que ya rige `core/grouping.py` ("el reloj puede PARTIR,
-pero no puede CONFIRMAR"), aplicada a los atributos: ninguna afirmacion de
-texto (marca/talla/modelo/ean) sale con `confianza="alta"` sin
-CORROBORACION INDEPENDIENTE (`_confianza_corroborada`). Corroboracion
-valida, ambas gratis:
-  1. El OCR crudo de la MISMA region se parece (`_similitud_normalizada`,
-     calibrada sobre pares reales del golden set) a lo que leyo el VLM.
-  2. El MISMO valor aparece en >=2 fotos DISTINTAS del grupo.
-Sin ninguna de las dos, techo `"media"`. El color (histograma de pixeles)
-es la UNICA excepcion que queda SIEMPRE en `"media"` incluso con varias
-fotos de acuerdo -- porque el acuerdo entre fotos puede ser el mismo sesgo
-del sensor repetido (ver `_extraer_color`), no corroboracion real.
+       LEE lo que el OCR no pudo -- y puede devolver VARIOS hallazgos.
+    6. Diego CIERRA: un conflicto (dos marcas legibles, o mas de un valor
+       en general) no lo resuelve el pipeline -- las candidatas quedan en
+       `Propuesta.alternativas`, cada una con su recorte, para que el decida.
 
 REGLAS DURAS QUE ESTE MODULO ENCIERRA EN CODIGO, NO EN EL PROMPT
 ------------------------------------------------------------------------
@@ -63,19 +107,23 @@ Un prompt es una peticion; un `if` es una garantia. Las trampas reales del
 golden set (`tests/golden/legibilidad.json`) se enfrentan ASI:
 
   1. Estampado != marca, EN LA PUBLICACION: un candidato de
-     "estampado_o_grafico" NUNCA es, EL SOLO, lo que se publica en
-     `marca`/`talla` -- la exclusion en la publicacion es estructural
-     (`_UBICACIONES_VALIDAS_MARCA`). Pero (corregido, INC-010: "la regla #1
-     se comia a la regla #2") la ubicacion NUNCA borra evidencia de un
-     posible conflicto: si el estampado dice algo DISTINTO de la etiqueta,
-     eso es un conflicto real (regla #2), no una senal que se descarta en
-     silencio -- el pipeline no puede saber a priori si el estampado es un
-     print decorativo o si es la etiqueta la que miente (prenda
-     reetiquetada).
-  2. Mas de una marca/talla legible (candidatos que NO normalizan igual,
-     vengan de la ubicacion que vengan) -> el campo sale `None` +
-     `confianza="baja"`, y AMBAS candidatas se exponen en
-     `ResultadoExtraccion.conflictos`. El pipeline NUNCA elige.
+     "estampado_o_grafico" NUNCA es, EL SOLO, lo que se PUBLICA en
+     `Campo.valor` de marca/talla -- la exclusion en la publicacion es
+     estructural (`_UBICACIONES_VALIDAS_MARCA`). Pero la ubicacion NUNCA
+     borra evidencia de un posible conflicto: si el estampado dice algo
+     DISTINTO de la etiqueta, eso es un conflicto real, no una senal que se
+     descarta en silencio -- el pipeline no puede saber a priori si el
+     estampado es un print decorativo o si es la etiqueta la que miente
+     (prenda reetiquetada). Y aunque el estampado NO compita con ninguna
+     etiqueta, su recorte SI se ensena (como `representante` de una
+     Propuesta cuyo `Campo.valor` sigue siendo `None`) -- "el extractor no
+     afirma, propone y ensena el pixel", incluso cuando lo que propone no
+     es publicable.
+  2. Mas de una marca/talla/modelo/ean legible (candidatos que NO
+     normalizan igual, vengan de la ubicacion que vengan) -> `Campo.valor`
+     sale `None` + `confianza="baja"`, y TODAS las candidatas se exponen en
+     `Propuesta.alternativas`, cada una con su propio recorte. El pipeline
+     NUNCA elige.
   3. `legible=False` fuerza `texto=None` EN CODIGO (`_parsear_lectura_crop`),
      pase lo que pase en el JSON del modelo -- un VLM que ignore la
      instruccion y devuelva un texto plausible de todos modos no puede
@@ -92,40 +140,42 @@ golden set (`tests/golden/legibilidad.json`) se enfrentan ASI:
      visibles -- si cualquiera de los dos falta, `medidas=None`.
   6. Un papel manuscrito en el grupo (`ubicacion="papel_manuscrito"`) nunca
      entra en ningun campo del producto: va a `desperfectos` con
-     `fuente="diego"`, nunca `fuente="foto"` (es una nota de Diego, no una
-     etiqueta del producto).
+     `fuente="foto"` (es una transcripcion de un pixel real, no un dato
+     tecleado por Diego), techo `confianza="media"` SIEMPRE (la version
+     anterior subia a "alta" si la misma nota aparecia en 2+ fotos -- esa
+     via murio con el resto de la maquinaria de corroboracion, regla 1).
   7. `pertenece_al_producto=False` descarta la lectura ENTERA, pase lo que
      sea `ubicacion`/`contenido_probable` -- el texto de fondo (un
      portatil ajeno en el encuadre) no es un atributo del producto.
   8. `estado` SIEMPRE sale con `fuente="inferido"` -- nunca "foto", pase lo
      que declare el VLM. Lo confirma Diego (`truth-loop.md` SS A.4).
-  9. `color` se muestrea en varias fotos; si divergen, `confianza="baja"`
-     (nunca se saca de una sola foto: es un sorteo).
+  9. `color` se muestrea en varias fotos; si divergen, `confianza="baja"`.
+     NUNCA "alta", ni siquiera si TODAS las fotos coinciden -- el acuerdo
+     puede ser el mismo sesgo del sensor repetido (ver `_extraer_color`).
   10. Un fallo del VLM (rate limit, sin API key, error de red, respuesta no
       valida) en un recorte NUNCA rellena ese campo con un valor plausible:
       se registra en `ResultadoExtraccion.fallos` (log + marca), y el resto
-      del producto sigue procesandose -- un fallo tecnico no puede tirar
-      todo el producto ni disfrazarse de "no legible" (son cosas distintas:
-      `fuente="foto"+valor=None+confianza=baja` es "lo mire y no se lee";
-      un fallo tecnico es "no lo pude mirar", y eso se ve en `fallos`, no
-      se enmascara).
+      del producto sigue procesandose.
 
-COSTE -- dos correcciones (no optimizaciones opinables) sobre la primera
-version de este modulo, pedidas tras re-derivar el gasto por ejecucion:
-  - EL COLOR NUNCA PASA POR EL VLM. `architecture.md` Costura 1 (tabla de
-    proveedores) es literal: "color por pixeles". Un histograma de pixeles
-    (`_color_dominante_rgb`) lo resuelve gratis y sin posibilidad de
-    alucinar -- pagarle a un modelo por esto era gastar dinero en una
-    pregunta que el proveedor `local` ya tenia asignada por diseno.
+LA SIMILITUD OCR<->VLM: DE "CORROBORA" A "SOLO ORDENA/AVISA"
+------------------------------------------------------------------------
+La version anterior usaba la similitud entre el OCR crudo de una region y
+lo que el VLM dijo haber leido para CONCEDER `confianza="alta"`
+(`_confianza_corroborada`, ya eliminada de este archivo). Esa funcion, el
+umbral que la alimentaba, y la via "misma foto x2 -> alta" murieron con la
+ley nueva. Lo que SI se conserva -- `_similitud_normalizada` y
+`UMBRAL_SIMILITUD_DUDOSO` -- vive ahora SOLO como senal de aviso dentro del
+`motivo` de la Propuesta ("el OCR leyo algo que no se parece a lo que dice
+el VLM: revisa este recorte con mas cuidado"), nunca para tocar
+`confianza`. Es informativo, no decisorio.
+
+COSTE -- sin cambios respecto a la version anterior (medido, no opinable):
+  - EL COLOR NUNCA PASA POR EL VLM (`architecture.md` Costura 1: "color por
+    pixeles"). `_color_dominante_rgb` lo resuelve gratis.
   - EL PRESUPUESTO DEL VLM VA DONDE EL OCR FALLA (la ropa), NO DONDE SOBRA
-    TEXTO (las cajas). Medido: los productos "de caja" (especificaciones
-    tecnicas en varios idiomas) se llevaban el 45% del coste del lote real
-    mandando al VLM parrafos de 30-130 palabras que NUNCA iban a ser
-    marca/talla/modelo/ean/desperfecto, y repitiendo un EAN/modelo que el
-    atajo YA habia resuelto. `_es_bloque_de_texto_largo` y
-    `_es_repeticion_de_un_campo_ya_resuelto` descartan esas dos clases de
-    region ANTES de llamar al VLM -- ninguna de las 10 reglas duras de
-    arriba cambia: siguen aplicando igual sobre lo que SI se manda.
+    TEXTO (las cajas): `_es_bloque_de_texto_largo` y
+    `_es_repeticion_de_un_campo_ya_resuelto` descartan bloques largos y
+    repeticiones de un dato ya resuelto por el atajo, ANTES de llamar al VLM.
 
 Sin dependencias de red directas: la unica llamada a un proveedor pasa por
 `core/llm.py` (`LLMEngine.consultar`), inyectado -- este modulo NUNCA
@@ -162,7 +212,8 @@ class ExtractorError(Exception):
 
 class RespuestaVLMInvalidaError(ExtractorError):
     """El VLM devolvio un JSON que no cumple el contrato minimo esperado
-    (falta una clave obligatoria, un enum con un valor desconocido...).
+    (falta una clave obligatoria, un enum con un valor desconocido, la
+    lista de `hallazgos` viene vacia...).
 
     Esto NUNCA se traga en silencio ni se completa con un valor plausible
     (decision-making.md SS 13): se propaga para que quien orquesta la
@@ -174,14 +225,14 @@ class RespuestaVLMInvalidaError(ExtractorError):
 # ============================================================================
 # CONSTANTES -- umbrales y version_prompt (cada TIPO de llamada VLM lleva su
 # propio version_prompt: `LLMEngine._clave_cache` hashea bytes+modelo+
-# version_prompt+EL TEXTO DEL PROMPT (C6: antes NO incluia el texto, asi que
+# version_prompt+EL TEXTO DEL PROMPT (antes NO incluia el texto, asi que
 # endurecer un prompt sin subir version_prompt respondia con el prompt VIEJO
 # en silencio), asi que dos llamadas de distinto tipo con bytes identicos
 # (p.ej. la MISMA foto completa usada para color Y para estado) colisionarian
 # en cache si compartieran version_prompt Y prompt.
 # ============================================================================
 
-VERSION_PROMPT_CROP = "extract-crop-v1"
+VERSION_PROMPT_CROP = "extract-crop-v2"  # v2: hallazgos como LISTA (regla 4)
 VERSION_PROMPT_METRO = "extract-metro-v1"
 VERSION_PROMPT_ESTADO = "extract-estado-v1"
 # NO existe VERSION_PROMPT_COLOR: el color sale de pixeles
@@ -203,53 +254,39 @@ MARGEN_FUSION_HORIZONTAL_MINIMO_PX = -400  # solape horizontal minimo exigido
 
 # Atajo "el OCR YA lee limpio" (D2): solo se acepta sin pasar por el VLM si
 # el score de RapidOCR es alto Y el patron es inequivoco (EAN, "Model:").
+# Sus candidatos entran al MISMO pool que los del VLM (regla 5 del docstring
+# del modulo) -- no conceden "alta" por si solos salvo EAN con checksum
+# valido (unico camino a "alta" de todo este archivo).
 UMBRAL_SCORE_OCR_LIMPIO = 0.85
 
-# LEY DE CORROBORACION (INC-010): similitud minima entre el OCR crudo de una
-# region y lo que el VLM dijo haber leido para que cuente como corroboracion
-# independiente (ver `_confianza_corroborada`). Calibrado con
-# `difflib.SequenceMatcher` sobre los pares REALES del golden set (no a ojo):
-#   DEBEN corroborar     Reebok/Raabdk=0.500  Reebok/Reabak=0.667
-#                        RAMI JALAB/RAMI SALAB=0.900  MARINES/MARINES=1.000
-#   NO deben corroborar  JACK & JONES/ESTI550=0.211  JACK & JONES/Orioinae=0.200
-#                        UMBRO/RAMI JALAB=0.267 (marcas REALMENTE distintas)
-# El hueco entre el "debe" mas bajo (0.500) y el "no debe" mas alto (0.267)
-# es de 0.233 -- 0.4 deja margen simetrico razonable a ambos lados (0.1 por
-# debajo del primero, 0.133 por encima del segundo).
-UMBRAL_SIMILITUD_CORROBORACION = 0.4
+# Similitud MINIMA (calibrada sobre pares REALES del golden set, no a ojo)
+# entre el OCR crudo de una region y lo que el VLM dijo haber leido, para
+# considerar que NO hay senal de aviso ("dudoso"). YA NO concede confianza
+# -- ver "LA SIMILITUD OCR<->VLM" en el docstring del modulo. Calibracion:
+#   DEBEN parecerse    Reebok/Raabdk=0.500  Reebok/Reabak=0.667
+#                      RAMI JALAB/RAMI SALAB=0.900  MARINES/MARINES=1.000
+#   NO deben parecerse JACK & JONES/ESTI550=0.211  JACK & JONES/Orioinae=0.200
+#                      UMBRO/RAMI JALAB=0.267 (marcas REALMENTE distintas)
+UMBRAL_SIMILITUD_DUDOSO = 0.4
 
-# NO es lo mismo "sin testigo" (el OCR no leyo nada en esa region -- no hay
-# contradiccion, solo falta corroboracion) que "testigo QUE CONTRADICE" (el
-# OCR leyo algo SUSTANCIAL que no se parece a lo que el VLM afirma -- eso es
-# evidencia ACTIVA de que el modelo esta inventando o leyendo otra cosa).
-# `UMBRAL_MIN_CHARS_TESTIGO_OCR` es el minimo de caracteres alfanumericos en
-# `texto_ocr_crudo` para que cuente como "testigo" en vez de ruido -- por
-# debajo, se trata como "sin testigo" (media, nunca contradiccion).
-# Calibrado sobre los pares REALES, no a ojo:
-#   Reebok/Raabdk (6 alnum), Reebok/Reabak (6), RAMI JALAB/RAMI SALAB
-#   (9 alnum) y ORIGINAL MARINES/ORIGINAL MARINES (15 alnum) DEBEN poder
-#   corroborar -- sus testigos tienen 6-15 caracteres.
-#   Nike/Raabdk (6 alnum, similitud 0.200) y Adidas/XXL (3 alnum, similitud
-#   0.000) DEBEN poder contradecir -- 'XXL' (el testigo mas corto de los
-#   casos reales que SI debe contar) tiene exactamente 3 caracteres, asi
-#   que 3 es el maximo umbral que no lo excluye. Por debajo de 3 (1-2
-#   caracteres) es indistinguible de ruido de OCR (un trazo suelto, un
-#   caracter mal segmentado) y se trata como "sin testigo".
+# Minimo de caracteres alfanumericos en `texto_ocr_crudo` para que cuente
+# como "testigo" real (en vez de ruido de OCR: un trazo suelto, un caracter
+# mal segmentado) al construir el aviso de "dudoso" en el motivo de una
+# Propuesta. Calibrado sobre los pares reales (ver constante de arriba):
+# 'XXL' (3 alnum) es el testigo mas corto que SI debe contar.
 UMBRAL_MIN_CHARS_TESTIGO_OCR = 3
 
 # EAN/UPC: longitudes con checksum GS1 valido (C5). El algoritmo (modulo 10,
 # pesos 3/1 alternando desde la DERECHA) es el mismo para las cuatro.
 _LONGITUDES_EAN_VALIDAS: frozenset[int] = frozenset({8, 12, 13, 14})
 
-# C9: backstop de coste, NO la defensa primaria (esa son
+# Backstop de coste, NO la defensa primaria (esa son
 # `_es_bloque_de_texto_largo`/`_es_repeticion_de_un_campo_ya_resuelto`, que ya
 # filtran ANTES de llegar aqui). Medido sobre el lote real: 19.5 cts totales,
 # 6.8 cts solo en el producto 1 -- ~6 llamadas se fueron en el portatil de
 # fondo que el VLM luego descarta via `pertenece_al_producto=False` (no se
 # puede filtrar ANTES: solo el VLM juzga pertenencia). Este limite solo debe
-# dispararse en escenas patologicamente ruidosas; 20 da margen de sobra sobre
-# el numero de candidatos reales de un producto normal (marca+talla+modelo+
-# ean+desperfectos, incluso repartidos en varias fotos).
+# dispararse en escenas patologicamente ruidosas.
 MAX_LLAMADAS_VLM_POR_PRODUCTO: int = 20
 
 _EAN_OCR_RE = re.compile(r"EAN\w*\W*\*?(\d{8,14})\*?", re.IGNORECASE)
@@ -259,11 +296,7 @@ _MODELO_OCR_RE = re.compile(r"\bmodel\w*\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-]{2,
 # TEXTO (las cajas). Medido sobre el golden set: los productos "de caja"
 # (masajeador, electroestimulador) traen especificaciones tecnicas en
 # varios idiomas -- parrafos de 30-130 palabras -- que NUNCA van a ser
-# marca/talla/modelo/ean/desperfecto (esos son SIEMPRE tokens cortos:
-# "Reebok", "XXL", "JACK & JONES", incluso fusionados "ORIGINAL MARINES").
-# Filtrar esto ANTES de llamar al VLM ahorra una llamada que nunca iba a
-# producir un campo de la ficha -- no es una relajacion de ninguna regla
-# dura, es no preguntarle al modelo algo cuya respuesta no se va a usar.
+# marca/talla/modelo/ean/desperfecto (esos son SIEMPRE tokens cortos).
 UMBRAL_MAX_PALABRAS_CANDIDATO_TEXTO = 6
 UMBRAL_MAX_CHARS_CANDIDATO_TEXTO = 40
 
@@ -280,6 +313,11 @@ N_FOTOS_MUESTRA_COLOR = 3
 
 CALIDAD_JPEG_RECORTE = 92
 
+# Nombre de la subcarpeta de recortes dentro de la carpeta de un lote
+# (`data/lotes/<lote_id>/crops/`) cuando quien llama no especifica una
+# carpeta explicita -- ver `ExtractorEngine`.
+NOMBRE_CARPETA_CROPS = "crops"
+
 
 # ============================================================================
 # ESTRUCTURAS DE DATOS
@@ -288,7 +326,7 @@ CALIDAD_JPEG_RECORTE = 92
 Ubicacion = Literal[
     "etiqueta_interior",  # etiqueta de cuello/costura interior -- fuente de marca/talla/modelo validos
     "estampado_o_grafico",  # texto grande impreso/bordado en el frontal/espalda -- NUNCA marca
-    "papel_manuscrito",  # nota escrita a mano por Diego -- va a desperfectos, fuente=diego
+    "papel_manuscrito",  # nota escrita a mano por Diego -- va a desperfectos, fuente=foto
     "codigo_o_modelo_impreso",  # texto plano impreso (caja, EAN, modelo) -- no es etiqueta de prenda
     "otro",
 ]
@@ -333,18 +371,20 @@ class RegionOCR:
 
 @dataclass(frozen=True)
 class LecturaCrop:
-    """Lo que el VLM devolvio al leer UN recorte (o `None` si no se llego a
-    consultar -- ver `ExtractorEngine._leer_crop`, que puede devolver
-    `None` tras un fallo tecnico registrado en `fallos`).
+    """UN hallazgo dentro de un recorte -- un mismo recorte puede producir
+    VARIOS `LecturaCrop` (regla dura #4 del docstring del modulo: una
+    etiqueta de cuello real trae la marca Y la talla juntas).
+
+    `origen` distingue si este hallazgo vino de una lectura real del VLM
+    ("vlm") o del atajo de OCR limpio sin pasar por el VLM ("atajo_ocr",
+    D2) -- lo necesita `Propuesta` para etiquetar correctamente sus
+    `Lectura` (nunca se le atribuye al VLM algo que nunca vio).
 
     `texto_ocr_crudo`: lo que el OCR local leyo en ESA MISMA region ANTES
-    de mandarla al VLM (puede ser garbled -- por eso se manda al VLM). Es
-    la mitad GRATIS de la ley de corroboracion (INC-010,
-    `_confianza_corroborada`): si el OCR ya sugeria algo parecido a lo que
-    el VLM afirma, eso es una segunda lectura INDEPENDIENTE del mismo
-    pixel. `None` cuando no hubo region OCR de origen (p.ej. en tests
-    sinteticos) -- entonces esta via de corroboracion simplemente no
-    aplica, no se inventa una similitud.
+    de mandarla al VLM (puede ser garbled). Ya NO concede confianza (esa
+    maquinaria murio, ver docstring del modulo) -- ahora solo alimenta el
+    aviso "dudoso" informativo en `Propuesta.motivo`. `None` cuando no hubo
+    region OCR de origen (p.ej. en tests sinteticos).
     """
 
     fichero: str
@@ -355,15 +395,70 @@ class LecturaCrop:
     contenido_probable: ContenidoProbable
     texto: str | None
     texto_ocr_crudo: str | None = None
+    origen: Literal["vlm", "atajo_ocr"] = "vlm"
 
 
 @dataclass(frozen=True)
-class CandidatoConflicto:
-    """Un candidato de un campo con MAS DE UN valor legible y contradictorio
-    (regla dura #2). El pipeline no elige: ambos se exponen para Diego."""
+class Lectura:
+    """Una lectura CRUDA sobre un candidato -- lo que dijo el VLM, o lo que
+    leyo el OCR local en la misma region. Nunca se elige entre lecturas:
+    TODAS viven juntas en `Propuesta.lecturas` para que Diego las compare."""
+
+    origen: Literal["vlm", "ocr"]
+    texto: str | None
+
+
+@dataclass(frozen=True)
+class Candidato:
+    """Un valor candidato para un campo, EN CONFLICTO con otro(s) -- cada
+    uno con su PROPIO recorte y evidencia (nunca se elige entre ellos).
+
+    Nota de diseno: el contrato original de este rediseno pedia
+    `alternativas: tuple[str, ...]` (solo el valor). Se amplia aqui a un
+    `Candidato` completo porque un string solo no basta para que Diego
+    pueda MIRAR el pixel de CADA candidata por separado -- y esa es la ley
+    de este modulo entero ("UMBRO y RAMI JALAB salen las dos como
+    alternativas CON SUS RECORTES", verificacion pedida explicitamente).
+    """
 
     valor: str
+    recorte: Path | None
     evidencia: Evidencia
+    lecturas: tuple[Lectura, ...] = ()
+
+
+@dataclass(frozen=True)
+class Propuesta:
+    """La entrega real de este modulo: NO una afirmacion, una PROPUESTA con
+    el pixel del que sale, para que Diego confirme en segundos.
+
+    `campo`: nombre del campo ("marca", "talla", "modelo", "ean", "color",
+        "medidas", "estado", "desperfectos", "composicion").
+    `valor`: lo que se PROPONE -- `None` es un resultado correcto, nunca un
+        fallo (puede haber conflicto, o simplemente no haber nada legible).
+    `recorte`: EL PIXEL, guardado en disco, EXACTAMENTE el mismo que se
+        mando al modelo (o, si no hubo VLM -- atajo OCR o un valor por
+        pixeles/nota manuscrita ilegible-pero-vista --, el recorte de la
+        region que originó la propuesta). `None` si no hay ningun recorte
+        que mostrar (p.ej. `composicion`, que nunca se fotografia).
+    `evidencia`: foto + bbox, mismo sistema de coordenadas que `recorte`.
+    `lecturas`: TODAS las lecturas crudas disponibles sobre el valor
+        propuesto (la del VLM y la del OCR, si las hay) -- nunca se
+        descarta una a favor de la otra.
+    `alternativas`: candidatas EN CONFLICTO con el valor propuesto (vacio
+        si no hubo conflicto). Cada una es un `Candidato` completo, con su
+        propio recorte -- el pipeline nunca elige entre ellas.
+    `motivo`: por que se propone este valor (o por que no hay ninguno) --
+        texto corto y legible para Diego, no un codigo interno.
+    """
+
+    campo: str
+    valor: str | None
+    recorte: Path | None
+    evidencia: Evidencia | None
+    lecturas: tuple[Lectura, ...] = ()
+    alternativas: tuple[Candidato, ...] = ()
+    motivo: str = ""
 
 
 @dataclass(frozen=True)
@@ -372,27 +467,28 @@ class ResultadoExtraccion:
     (un grupo de fotos ya confirmado por Diego en la Fase 1).
 
     `campos`: nombre_campo -> `Campo` (la estructura de procedencia de
-        `core/schema.py`). Siempre incluye las mismas claves
-        (`CAMPOS_PRODUCIDOS`), nunca faltan ni sobran.
-    `conflictos`: solo para los campos donde hubo mas de un valor legible y
-        contradictorio -- vacio si no hubo ninguno.
+        `core/schema.py`) -- LA COSTURA para exportar a Wallapop/Vinted.
+        Siempre incluye las mismas claves (`CAMPOS_PRODUCIDOS`).
+    `propuestas`: nombre_campo -> `Propuesta` -- LA ENTREGA para la UI de
+        revision de Diego: el recorte, todas las lecturas, las alternativas
+        en conflicto (cada una con su recorte) y el motivo. Mismas claves
+        que `campos`.
     `fallos`: fallos TECNICOS (VLM, OCR, foto corrupta) durante la
         extraccion -- distinto de "no legible" (eso es un `Campo` normal
         con `valor=None`). Un fallo tecnico se ve aqui, nunca se disfraza.
     `coste_usd`: lo que costo esta extraccion en llamadas reales al VLM
         (0.0 si todo vino de cache o de atajos gratis).
-    `aviso_coherencia`: C2/INC-011 ("LA FICHA FRANKENSTEIN") -- `None` si
-        no hay senal de riesgo. Si los campos de IDENTIDAD del producto
-        (marca/talla/modelo/ean) proceden de fotos DISJUNTAS (ninguna foto
-        liga dos campos entre si), esto lleva el aviso CON DIENTES: la UI
-        ESTA OBLIGADA a mostrarlo (no es un pie de foto,
-        `decision-making.md` SS12), y `campos` ya viene degradado (techo
+    `aviso_coherencia`: "LA FICHA FRANKENSTEIN" -- `None` si no hay senal
+        de riesgo. Si los campos de IDENTIDAD del producto (marca/talla/
+        modelo/ean) no estan todos en la MISMA componente conexa de "fotos
+        que comparten campos", esto lleva el aviso CON DIENTES: la UI ESTA
+        OBLIGADA a mostrarlo, y `campos` ya viene degradado (techo
         `confianza="media"` en los campos de identidad) -- ver
         `_detectar_fotos_disjuntas`.
     """
 
     campos: dict[str, Campo]
-    conflictos: dict[str, tuple[CandidatoConflicto, ...]] = field(default_factory=dict)
+    propuestas: dict[str, Propuesta] = field(default_factory=dict)
     fallos: tuple[str, ...] = ()
     coste_usd: float = 0.0
     aviso_coherencia: str | None = None
@@ -409,6 +505,8 @@ CAMPOS_PRODUCIDOS: tuple[str, ...] = (
     "estado",
     "desperfectos",
 )
+
+_CAMPOS_IDENTIDAD_PRODUCTO: tuple[str, ...] = ("marca", "talla", "modelo", "ean")
 
 
 # ============================================================================
@@ -539,13 +637,14 @@ def fusionar_regiones_cercanas(regiones: Sequence[RegionOCR]) -> list[RegionOCR]
 
 
 def _validar_checksum_ean(digitos: str) -> bool:
-    """C5: checksum GS1 (EAN-8, UPC-12, EAN-13, GTIN-14) -- mismo algoritmo
+    """Checksum GS1 (EAN-8, UPC-12, EAN-13, GTIN-14) -- mismo algoritmo
     modulo-10 para las cuatro longitudes, contando pesos 3/1 alternando
     desde la DERECHA. Un EAN con un solo digito mal leido (el fallo nativo
     del OCR) NUNCA debe pasar como "identidad garantizada": `pricing.py` lo
     usa tal cual como termino de busqueda de comparables, y un digito
     equivocado trae el precio de OTRO producto. Si no valida, no es un EAN
-    -- no hay excepcion."""
+    -- no hay excepcion. Es el UNICO camino de este modulo entero hacia
+    `confianza="alta"` (ver docstring del modulo)."""
     if not digitos.isdigit() or len(digitos) not in _LONGITUDES_EAN_VALIDAS:
         return False
     cuerpo, check_esperado = digitos[:-1], int(digitos[-1])
@@ -554,11 +653,11 @@ def _validar_checksum_ean(digitos: str) -> bool:
 
 
 def _validar_campo_ean(campo: Campo) -> Campo:
-    """Anula (a `valor=None`) un `Campo` de `ean` cuyo checksum no valida,
-    venga de donde venga (atajo OCR o lectura VLM). Preserva `fuente` y
-    `evidencia` si las habia -- hubo un intento real (PRESENTE_ILEGIBLE),
-    solo que el resultado no es un EAN fiable; degrada a
-    `confianza="baja"`."""
+    """Defensa en profundidad: anula (a `valor=None`) un `Campo` de `ean`
+    cuyo checksum no valida, venga de donde venga. Se aplica DESPUES de
+    `_agregar_campo_texto` (que ya trabaja sobre candidatos pre-filtrados
+    por `_filtrar_ean_checksum_valido`) como red de seguridad barata, no
+    como el filtro primario. Preserva `fuente`/`evidencia` si las habia."""
     if campo.valor is None:
         return campo
     digitos = re.sub(r"\D", "", str(campo.valor))
@@ -567,39 +666,51 @@ def _validar_campo_ean(campo: Campo) -> Campo:
     return Campo(valor=None, fuente=campo.fuente, confianza="baja", evidencia=campo.evidencia)
 
 
-def _intentar_atajo_ocr(region: RegionOCR) -> tuple[str, Campo] | None:
+def _intentar_atajo_ocr(region: RegionOCR) -> LecturaCrop | None:
     """Si el texto detectado por el OCR es limpio e inequivoco (EAN, o
-    "Model:XXX" con score alto), se acepta DIRECTO sin gastar en el VLM --
-    ya se tiene el dato (D2, medido: 'EANCODE:*8445061029720*' score=0.91,
-    'Model:LLLT-200' score=0.88). Devuelve `(nombre_campo, Campo)` o `None`
-    si no aplica ningun atajo -- en ese caso el recorte SIGUE su camino
-    normal hacia el VLM.
+    "Model:XXX" con score alto), se genera un candidato SIN gastar en el
+    VLM -- ya se tiene el dato (D2, medido: 'EANCODE:*8445061029720*'
+    score=0.91, 'Model:LLLT-200' score=0.88). Devuelve un `LecturaCrop`
+    (origen="atajo_ocr") que entra al MISMO pool de candidatos que las
+    lecturas del VLM -- `None` si no aplica ningun atajo (el recorte sigue
+    su camino normal hacia el VLM).
 
-    EAN (C5): el atajo SOLO se acepta si el checksum GS1 valida. Un EAN
-    con checksum invalido no es "el OCR ya lee limpio" -- es un digito mal
-    leido, y ese caso NO se cuela gratis: cae al camino normal (VLM), que
-    en el peor caso tambien fallara el checksum en `_validar_campo_ean` y
-    el campo saldra `None`, nunca un codigo erroneo con `confianza=alta`.
+    EAN: el atajo SOLO se acepta si el checksum GS1 valida -- un EAN con
+    checksum invalido no es "el OCR ya lee limpio", es un digito mal leido,
+    y no se cuela ni siquiera como candidato (no compite ni como conflicto).
+
+    Modelo: YA NO produce `confianza="alta"` (esa via murio, docstring del
+    modulo) -- es un candidato mas, capado a "media" cuando se agregue.
     """
     if region.score < UMBRAL_SCORE_OCR_LIMPIO:
         return None
 
     m = _EAN_OCR_RE.search(region.texto_ocr)
     if m and _validar_checksum_ean(m.group(1)):
-        return "ean", Campo(
-            valor=m.group(1),
-            fuente="foto",
-            confianza="alta",
-            evidencia=Evidencia(fichero=region.fichero, bbox=region.bbox),
+        return LecturaCrop(
+            fichero=region.fichero,
+            bbox=region.bbox,
+            legible=True,
+            pertenece_al_producto=True,
+            ubicacion="codigo_o_modelo_impreso",
+            contenido_probable="ean",
+            texto=m.group(1),
+            texto_ocr_crudo=region.texto_ocr,
+            origen="atajo_ocr",
         )
 
     m = _MODELO_OCR_RE.search(region.texto_ocr)
     if m:
-        return "modelo", Campo(
-            valor=m.group(1),
-            fuente="foto",
-            confianza="alta",
-            evidencia=Evidencia(fichero=region.fichero, bbox=region.bbox),
+        return LecturaCrop(
+            fichero=region.fichero,
+            bbox=region.bbox,
+            legible=True,
+            pertenece_al_producto=True,
+            ubicacion="codigo_o_modelo_impreso",
+            contenido_probable="modelo",
+            texto=m.group(1),
+            texto_ocr_crudo=region.texto_ocr,
+            origen="atajo_ocr",
         )
 
     return None
@@ -622,17 +733,18 @@ def _es_bloque_de_texto_largo(texto: str) -> bool:
     )
 
 
-def _es_repeticion_de_un_campo_ya_resuelto(texto: str, campos_atajo: dict[str, Campo]) -> bool:
+def _es_repeticion_de_un_campo_ya_resuelto(
+    texto: str, candidatos_atajo: Sequence[LecturaCrop]
+) -> bool:
     """Si este texto contiene, como substring, el valor de un `ean`/`modelo`
     que el atajo YA resolvio (D2), es una repeticion del mismo dato en
     otra parte de la caja (medido: el producto 1 imprime el EAN dos veces,
     una limpia ('EANCODE:*8445061029720*', capturada por el atajo) y otra
     junto a una referencia interna ('THO8LASLHR_UDS *8445061029720')). No
     aporta nada nuevo -- no hace falta gastar una llamada al VLM para
-    confirmar un dato que ya se tiene con `confianza='alta'`."""
-    for nombre_campo in ("ean", "modelo"):
-        campo = campos_atajo.get(nombre_campo)
-        if campo is not None and campo.valor and str(campo.valor) in texto:
+    confirmar un dato que ya se tiene como candidato."""
+    for candidato in candidatos_atajo:
+        if candidato.contenido_probable in ("ean", "modelo") and candidato.texto and candidato.texto in texto:
             return True
     return False
 
@@ -683,6 +795,29 @@ def foto_completa_a_bytes(imagen_pil: Image.Image) -> bytes:
     return buffer.getvalue()
 
 
+def _nombre_recorte(fichero: str, bbox: tuple[int, int, int, int]) -> str:
+    """Nombre trazable del recorte guardado en disco: de que foto sale y
+    que region exacta -- se puede reconstruir a mano el origen sin abrir
+    ningun indice."""
+    x, y, w, h = bbox
+    return f"{Path(fichero).stem}_{x}-{y}-{w}-{h}.jpg"
+
+
+def _guardar_recorte(
+    bytes_: bytes, carpeta: Path, fichero: str, bbox: tuple[int, int, int, int]
+) -> Path:
+    """Escribe `bytes_` (los MISMOS bytes que se mandaron o se mandarian al
+    VLM -- nunca un recorte re-generado aparte, ver docstring del modulo,
+    punto 3) a `carpeta/<nombre trazable>.jpg`. Determinista: el mismo
+    fichero+bbox siempre produce el mismo nombre, asi que volver a extraer
+    el mismo producto sobreescribe el mismo fichero en vez de acumular
+    basura."""
+    carpeta.mkdir(parents=True, exist_ok=True)
+    ruta = carpeta / _nombre_recorte(fichero, bbox)
+    ruta.write_bytes(bytes_)
+    return ruta
+
+
 # ============================================================================
 # ETAPA 3B -- COLOR POR PIXELES (`architecture.md` Costura 1, tabla de
 # proveedores: "color por pixeles" -- NUNCA VLM. Cero llamadas a proveedor,
@@ -731,7 +866,7 @@ def _bbox_recorte_central(
     `fraccion` central (por defecto, la mitad en cada eje) -- separado de
     `_recorte_central` para que `_color_dominante_rgb` pueda traducir
     `bboxes_excluir` (en coords originales, p.ej. el bbox de un estampado
-    ya localizado por el OCR) a coordenadas del recorte (C3d)."""
+    ya localizado por el OCR) a coordenadas del recorte."""
     ancho, alto = tamano
     mitad_x = max(int(ancho * fraccion / 2), 1)
     mitad_y = max(int(alto * fraccion / 2), 1)
@@ -756,7 +891,7 @@ def _color_dominante_rgb(
     incapaz de alucinar: el resultado es una cuenta de bytes, no la
     opinion de un modelo.
 
-    `bboxes_excluir` (C3d, en coordenadas de la imagen ORIGINAL, formato
+    `bboxes_excluir` (en coordenadas de la imagen ORIGINAL, formato
     `(x, y, w, h)`): regiones a EXCLUIR del histograma antes de contar --
     p.ej. el bbox de un `estampado_o_grafico` que el OCR ya localizo en
     esta misma foto (medido: producto 4, el recorte central al 50% cae
@@ -796,8 +931,8 @@ def _linearizar_srgb(c: float) -> float:
 
 
 def _rgb_a_lab(rgb: tuple[int, int, int]) -> tuple[float, float, float]:
-    """sRGB (D65) -> CIE Lab, formula estandar. C3b: Lab separa luminosidad
-    (L) de crominancia (a, b) -- a diferencia de la distancia euclidiana en
+    """sRGB (D65) -> CIE Lab, formula estandar. Lab separa luminosidad (L)
+    de crominancia (a, b) -- a diferencia de la distancia euclidiana en
     RGB, un tono desaturado con hue real (rosa bajo poca saturacion) no
     colapsa sobre el gris neutro solo por tener los tres canales RGB
     parecidos entre si; medido: con RGB puro, un rosa (232,160,180) podia
@@ -822,11 +957,11 @@ _PALETA_COLORES_LAB: tuple[tuple[str, tuple[float, float, float]], ...] = tuple(
 
 def _nombre_color_mas_cercano(rgb: tuple[int, int, int]) -> str:
     """El nombre de `_PALETA_COLORES_REFERENCIA` mas cercano en distancia
-    euclidiana en espacio Lab (C3b, no RGB) -- SIEMPRE uno de esa lista
-    cerrada, nunca una descripcion libre inventada.
+    euclidiana en espacio Lab, no RGB -- SIEMPRE uno de esa lista cerrada,
+    nunca una descripcion libre inventada.
 
-    Limite honesto que esto NO arregla (C3a): un negro sobreexpuesto por
-    la autoexposicion del movil a RGB~(80,80,80) sigue siendo, en CUALQUIER
+    Limite honesto que esto NO arregla: un negro sobreexpuesto por la
+    autoexposicion del movil a RGB~(80,80,80) sigue siendo, en CUALQUIER
     metrica razonable, mas cercano a 'gris oscuro' (75,75,75) que a 'negro'
     (25,25,25) -- no es un fallo de distancia, es que el sensor realmente
     capturo un gris. Por eso ese caso no se corrige aqui: se corrige en
@@ -848,17 +983,17 @@ def _nombre_color_mas_cercano(rgb: tuple[int, int, int]) -> str:
 PROMPT_LECTURA_CROP = """Estas viendo el RECORTE de una foto de un producto de segunda mano.
 Tu trabajo es describir que hay en este recorte, no adivinar lo que "deberia" decir.
 
+Puede haber MAS DE UN dato distinto en este mismo recorte (por ejemplo, una
+etiqueta de cuello que trae la marca Y la talla juntas, o una caja que trae
+el modelo Y el codigo de barras). Reporta TODOS los que veas por separado en
+la lista `hallazgos` -- no elijas solo el primero.
+
 Responde:
-- legible: true solo si puedes leer el texto con seguridad. false es una
-  respuesta CORRECTA y ESPERADA si el texto esta borroso, ocluido, en
-  angulo imposible, o tapado por algo (un cable, un dedo, un pliegue). NO
-  completes lo plausible: si no se lee con seguridad, legible=false y
-  texto=null, aunque creas adivinar que dice.
-- pertenece_al_producto: false si este texto es de un objeto de FONDO
+- pertenece_al_producto: false si este recorte es de un objeto de FONDO
   ajeno al producto (por ejemplo, las specs de un portatil que sale detras
   en el encuadre). true si es del propio producto o de una nota/papel que
-  el vendedor puso junto al producto.
-- ubicacion: elige UNA:
+  el vendedor puso junto al producto. Aplica a TODO el recorte.
+- ubicacion: elige UNA para todo el recorte (es una unica superficie fisica):
   - "etiqueta_interior": una etiqueta cosida de cuello o costura interior
     (la etiqueta OFICIAL de fabricante, con marca/talla/composicion).
   - "estampado_o_grafico": un texto o grafico grande IMPRESO/BORDADO en el
@@ -869,24 +1004,47 @@ Responde:
   - "codigo_o_modelo_impreso": texto plano impreso en una caja o adhesivo
     (codigo de barras, numero de modelo, referencia).
   - "otro": cualquier otra cosa.
-- contenido_probable: tu mejor estimacion de que TIPO de informacion es
-  esto, incluso si legible=false (por el contexto visual: posicion, estilo,
-  tamano de letra). Elige UNA: "marca", "talla", "modelo", "ean",
-  "desperfecto" (una nota describiendo un dano/defecto), "otro".
-- texto: la transcripcion EXACTA si legible=true; null si legible=false.
+- hallazgos: una lista, MINIMO un elemento. Cada elemento:
+  - contenido_probable: tu mejor estimacion de que TIPO de informacion es
+    este hallazgo, incluso si legible=false (por el contexto visual:
+    posicion, estilo, tamano de letra). Elige UNA: "marca", "talla",
+    "modelo", "ean", "desperfecto" (una nota describiendo un dano/defecto),
+    "otro".
+  - legible: true solo si puedes leer el texto de ESTE hallazgo con
+    seguridad. false es una respuesta CORRECTA y ESPERADA si el texto esta
+    borroso, ocluido, en angulo imposible, o tapado por algo (un cable, un
+    dedo, un pliegue). NO completes lo plausible: si no se lee con
+    seguridad, legible=false y texto=null, aunque creas adivinar que dice.
+  - texto: la transcripcion EXACTA de ESTE hallazgo si legible=true; null
+    si legible=false. Si hay dos hallazgos distintos (marca y talla), cada
+    uno lleva su propio texto, no los mezcles en uno.
+
+Si no hay nada reconocible en el recorte, devuelve un unico hallazgo con
+contenido_probable="otro", legible=false, texto=null.
 
 Responde SOLO el JSON pedido."""
 
 ESQUEMA_LECTURA_CROP: dict = {
     "type": "object",
     "properties": {
-        "legible": {"type": "boolean"},
         "pertenece_al_producto": {"type": "boolean"},
         "ubicacion": {"type": "string", "enum": sorted(_UBICACIONES_VALIDAS)},
-        "contenido_probable": {"type": "string", "enum": sorted(_CONTENIDOS_VALIDOS)},
-        "texto": {"type": ["string", "null"]},
+        "hallazgos": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "type": "object",
+                "properties": {
+                    "contenido_probable": {"type": "string", "enum": sorted(_CONTENIDOS_VALIDOS)},
+                    "legible": {"type": "boolean"},
+                    "texto": {"type": ["string", "null"]},
+                },
+                "required": ["contenido_probable", "legible", "texto"],
+                "additionalProperties": False,
+            },
+        },
     },
-    "required": ["legible", "pertenece_al_producto", "ubicacion", "contenido_probable", "texto"],
+    "required": ["pertenece_al_producto", "ubicacion", "hallazgos"],
     "additionalProperties": False,
 }
 
@@ -955,55 +1113,78 @@ def _parsear_lectura_crop(
     fichero: str,
     bbox: tuple[int, int, int, int],
     texto_ocr_crudo: str | None = None,
-) -> LecturaCrop:
-    """Convierte el dict crudo del VLM en un `LecturaCrop`, validando el
-    contrato minimo y aplicando la red de seguridad de la regla dura #3:
-    si `legible` es false, `texto` se fuerza a `None` EN CODIGO sin
-    importar lo que el modelo haya puesto ahi -- un VLM que ignore la
-    instruccion del prompt y devuelva un texto plausible de todos modos NO
-    puede colarlo en una ficha.
+) -> list[LecturaCrop]:
+    """Convierte el dict crudo del VLM en una LISTA de `LecturaCrop` -- una
+    por cada hallazgo (regla dura #4: un mismo recorte puede traer varios
+    datos, p.ej. marca Y talla en la misma etiqueta de cuello).
+
+    Aplica el contrato minimo y la red de seguridad de la regla dura #3:
+    si `legible` de un hallazgo es false, su `texto` se fuerza a `None` EN
+    CODIGO sin importar lo que el modelo haya puesto ahi.
 
     `texto_ocr_crudo`: lo que el OCR local leyo en esta MISMA region antes
-    de mandarla al VLM -- se traslada tal cual al `LecturaCrop` para que
-    `_confianza_corroborada` (INC-010) pueda comparar las dos lecturas."""
-    for clave in ("legible", "pertenece_al_producto", "ubicacion", "contenido_probable", "texto"):
+    de mandarla al VLM -- se traslada a CADA `LecturaCrop` resultante (ya
+    no concede confianza, solo alimenta el aviso "dudoso" informativo, ver
+    docstring del modulo)."""
+    for clave in ("pertenece_al_producto", "ubicacion", "hallazgos"):
         if clave not in datos:
             raise RespuestaVLMInvalidaError(f"falta la clave {clave!r} en la respuesta del VLM: {datos!r}")
 
     if datos["ubicacion"] not in _UBICACIONES_VALIDAS:
         raise RespuestaVLMInvalidaError(f"ubicacion desconocida: {datos['ubicacion']!r}")
-    if datos["contenido_probable"] not in _CONTENIDOS_VALIDOS:
-        raise RespuestaVLMInvalidaError(f"contenido_probable desconocido: {datos['contenido_probable']!r}")
 
-    legible = bool(datos["legible"])
-    texto = datos["texto"] if legible else None
-    if texto is not None and not str(texto).strip():
-        texto = None
+    hallazgos = datos["hallazgos"]
+    if not isinstance(hallazgos, list) or not hallazgos:
+        raise RespuestaVLMInvalidaError(f"'hallazgos' debe ser una lista no vacia: {datos!r}")
 
-    return LecturaCrop(
-        fichero=fichero,
-        bbox=bbox,
-        legible=legible,
-        pertenece_al_producto=bool(datos["pertenece_al_producto"]),
-        ubicacion=datos["ubicacion"],
-        contenido_probable=datos["contenido_probable"],
-        texto=str(texto).strip() if texto is not None else None,
-        texto_ocr_crudo=texto_ocr_crudo,
-    )
+    pertenece = bool(datos["pertenece_al_producto"])
+    ubicacion = datos["ubicacion"]
+    resultado: list[LecturaCrop] = []
+
+    for hallazgo in hallazgos:
+        for clave in ("contenido_probable", "legible", "texto"):
+            if clave not in hallazgo:
+                raise RespuestaVLMInvalidaError(f"falta la clave {clave!r} en un hallazgo: {hallazgo!r}")
+        if hallazgo["contenido_probable"] not in _CONTENIDOS_VALIDOS:
+            raise RespuestaVLMInvalidaError(
+                f"contenido_probable desconocido: {hallazgo['contenido_probable']!r}"
+            )
+
+        legible = bool(hallazgo["legible"])
+        texto = hallazgo["texto"] if legible else None
+        if texto is not None and not str(texto).strip():
+            texto = None
+
+        resultado.append(
+            LecturaCrop(
+                fichero=fichero,
+                bbox=bbox,
+                legible=legible,
+                pertenece_al_producto=pertenece,
+                ubicacion=ubicacion,
+                contenido_probable=hallazgo["contenido_probable"],
+                texto=str(texto).strip() if texto is not None else None,
+                texto_ocr_crudo=texto_ocr_crudo,
+                origen="vlm",
+            )
+        )
+
+    return resultado
 
 
 # ============================================================================
-# ETAPA 6 -- AGREGACION: de lecturas de recorte a Campo (aqui viven las
-# reglas duras #1 y #2, EN CODIGO)
+# ETAPA 6 -- AGREGACION: de lecturas de recorte a `_GrupoCampo` (Campo +
+# lo necesario para construir la Propuesta). Aqui viven las reglas duras
+# #1 y #2, EN CODIGO -- y la ley nueva: confianza NUNCA "alta" salvo EAN.
 # ============================================================================
 
 
 def _candidatos_legibles(lecturas: Sequence[LecturaCrop], contenido: ContenidoProbable) -> list[LecturaCrop]:
     """TODAS las lecturas legibles de este `contenido` -- SIN filtrar por
-    `ubicacion` (C1/INC-010: la ubicacion prioriza y explica que se
-    PUBLICA, pero nunca debe borrar evidencia antes de comprobar si hay un
-    conflicto real). Exige `pertenece_al_producto`, `legible`, `texto` no
-    vacio y `contenido_probable == contenido`."""
+    `ubicacion` (la ubicacion prioriza y explica que se PUBLICA, pero nunca
+    debe borrar evidencia antes de comprobar si hay un conflicto real).
+    Exige `pertenece_al_producto`, `legible`, `texto` no vacio y
+    `contenido_probable == contenido`."""
     return [
         lectura
         for lectura in lecturas
@@ -1011,26 +1192,13 @@ def _candidatos_legibles(lecturas: Sequence[LecturaCrop], contenido: ContenidoPr
     ]
 
 
-def _candidatos_de_campo(
-    lecturas: Sequence[LecturaCrop],
-    contenido: ContenidoProbable,
-    ubicaciones_validas: frozenset[str],
-) -> list[LecturaCrop]:
-    """Subconjunto de `_candidatos_legibles` cuya `ubicacion` esta en
-    `ubicaciones_validas` -- los unicos PUBLICABLES como valor final de
-    `contenido` (regla dura #1: un "estampado_o_grafico" jamas publica
-    marca/talla el solo, sin importar que `contenido_probable` diga el
-    VLM)."""
-    return [lectura for lectura in _candidatos_legibles(lecturas, contenido) if lectura.ubicacion in ubicaciones_validas]
-
-
 def _intentos_de_campo(
     lecturas: Sequence[LecturaCrop],
     contenido: ContenidoProbable,
     ubicaciones_validas: frozenset[str],
 ) -> list[LecturaCrop]:
-    """Recortes que el VLM clasifico como sobre `contenido` (en una
-    ubicacion valida) AUNQUE no fueran legibles -- distingue
+    """Recortes que el VLM (o el atajo OCR) clasifico como sobre `contenido`
+    (en una ubicacion valida) AUNQUE no fueran legibles -- distingue
     PRESENTE_ILEGIBLE (hubo una foto de esto, no se pudo leer) de
     NO_FOTOGRAFIADO (no hubo ninguna foto de esto)."""
     return [
@@ -1045,8 +1213,9 @@ def _intentos_de_campo(
 def _similitud_normalizada(a: str, b: str) -> float:
     """Similitud de cadenas normalizada (minusculas, sin espacios en los
     extremos) via `difflib.SequenceMatcher.ratio()` -- 1.0 identico, 0.0
-    sin nada en comun. Calibracion y pares reales en
-    `UMBRAL_SIMILITUD_CORROBORACION`."""
+    sin nada en comun. YA NO concede confianza (ver docstring del modulo);
+    solo alimenta el aviso "dudoso" informativo en el motivo de una
+    Propuesta. Calibracion y pares reales junto a `UMBRAL_SIMILITUD_DUDOSO`."""
     return difflib.SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
 
 
@@ -1061,145 +1230,164 @@ def _es_testigo_valido(texto_ocr_crudo: str | None) -> bool:
     return alfanumericos >= UMBRAL_MIN_CHARS_TESTIGO_OCR
 
 
-def _confianza_corroborada(
-    miembros: Sequence[LecturaCrop], representante: LecturaCrop
-) -> Literal["alta", "media", "contradicho"]:
-    """LA LEY DE CORROBORACION (INC-010, matiz anadido tras validar el
-    rediseno): el VLM puede PROPONER, pero no puede CONFIRMAR el solo.
-    TRES estados, no dos -- "sin testigo" y "testigo que CONTRADICE" NO son
-    lo mismo:
+@dataclass(frozen=True)
+class _GrupoCampo:
+    """Resultado PURO (sin tocar disco ni abrir imagenes) de agregar los
+    candidatos de un campo de texto -- el `Campo` ya listo para exportar,
+    mas lo que hace falta para construir la `Propuesta` una vez que quien
+    llama tenga acceso a las imagenes abiertas (`ExtractorEngine`).
 
-      - "alta": corroboracion INDEPENDIENTE real. O bien (1) multi-foto --
-        el mismo valor (ya normalizado -- `miembros` es precisamente el
-        grupo que comparte la clave normalizada) aparece en >=2 fotos
-        DISTINTAS; o bien (2) OCR<->VLM -- el OCR crudo de la MISMA region
-        tiene senal suficiente (`_es_testigo_valido`) Y se parece a lo que
-        el VLM afirmo leer (>= `UMBRAL_SIMILITUD_CORROBORACION`).
-      - "media": SIN TESTIGO -- el OCR no leyo nada sustancial en esa
-        region (vacio, o por debajo del umbral de senal). No hay
-        contradiccion: solo falta corroboracion. Es el caso legitimo de
-        una etiqueta de bajo contraste que el OCR simplemente no lee.
-      - "contradicho": TESTIGO EN CONTRA -- el OCR leyo algo SUSTANCIAL en
-        esa MISMA region y NO se parece a lo que el VLM afirma. Eso no es
-        ausencia de evidencia: es evidencia ACTIVA de que el VLM esta
-        inventando (o leyendo una region distinta). Tratar esto igual que
-        "sin testigo" vaciaria la ley de corroboracion de contenido --
-        quien llama (`_construir_campo_texto`) debe exponer AMBAS lecturas
-        como conflicto, nunca publicar ninguna con `confianza` intermedia.
+    `representante`: el `LecturaCrop` cuyo recorte se convierte en
+        `Propuesta.recorte` -- puede ser un candidato NO publicable (p.ej.
+        un estampado sin etiqueta que lo respalde): se ensena igual, solo
+        que `campo.valor` sigue siendo `None` (regla dura #1). `None` si no
+        hay ningun recorte razonable que mostrar.
+    `alternativas`: un `LecturaCrop` por cada candidato en CONFLICTO
+        (>1 valor normalizado distinto) -- vacio si no hubo conflicto.
+    `motivo`: explicacion corta y legible para Diego.
     """
-    if len({m.fichero for m in miembros}) >= 2:
-        return "alta"
 
-    testigo = representante.texto_ocr_crudo
-    if representante.texto and _es_testigo_valido(testigo):
-        if _similitud_normalizada(testigo, representante.texto) >= UMBRAL_SIMILITUD_CORROBORACION:  # type: ignore[arg-type]
-            return "alta"
-        return "contradicho"
-    return "media"
+    campo: Campo
+    representante: LecturaCrop | None
+    alternativas: tuple[LecturaCrop, ...] = ()
+    motivo: str = ""
 
 
-def _construir_campo_texto(
+def _agregar_campo_texto(
     lecturas: Sequence[LecturaCrop],
     contenido: ContenidoProbable,
     ubicaciones_validas: frozenset[str],
-) -> tuple[Campo, tuple[CandidatoConflicto, ...]]:
-    """El nucleo de las reglas duras #1 y #2, mas la ley de corroboracion
-    (INC-010). Ver docstring del modulo.
+) -> _GrupoCampo:
+    """El nucleo de las reglas duras #1 y #2, mas la ley nueva de confianza
+    (techo "media" -- nunca "alta" desde una lectura de modelo/OCR).
 
-    Paso 1 (C1): agrupa TODOS los candidatos legibles de `contenido`, SIN
+    Paso 1: agrupa TODOS los candidatos legibles de `contenido`, SIN
     filtrar por ubicacion -- un conflicto real (dos marcas legibles) tiene
     que verse aunque una de ellas venga de un estampado. Si hay >1 valor
-    normalizado distinto, es un conflicto: `None` + `baja` + AMBAS
-    candidatas expuestas, la ubicacion NO decide esto.
+    normalizado distinto, es un conflicto: `None` + `baja` + TODAS las
+    candidatas en `alternativas` (cada una se convierte en su propio
+    `Candidato` con recorte en `ExtractorEngine._propuesta_desde_grupo`).
 
     Paso 2: si sobrevive UN solo valor, la ubicacion decide si es
-    PUBLICABLE (regla dura #1) -- si ninguno de los miembros del grupo
-    tiene una `ubicacion` valida (p.ej. solo estampado, sin ninguna
-    etiqueta), no se publica: cae al mismo tratamiento que "sin
-    candidatos" de abajo.
+    PUBLICABLE (regla dura #1). Si NO lo es (solo estampado, sin ninguna
+    etiqueta), `campo.valor` queda `None` pero el recorte SI se ensena via
+    `representante` -- "el extractor no afirma, propone y ensena el pixel".
 
-    Paso 3: si es publicable, la confianza sale de `_confianza_corroborada`
-    -- nunca "alta" por defecto."""
+    Paso 3: si es publicable, `confianza="media"` SIEMPRE -- nunca "alta".
+    La similitud OCR<->VLM, si hay testigo y no cuadra, solo anade un aviso
+    informativo al `motivo` (nunca toca `confianza`)."""
     grupos: dict[str, list[LecturaCrop]] = {}
     for lectura in _candidatos_legibles(lecturas, contenido):
         clave = lectura.texto.strip().lower()  # type: ignore[union-attr]
         grupos.setdefault(clave, []).append(lectura)
 
     if len(grupos) > 1:
-        # Regla dura #2 (ampliada, C1): mas de un valor distinto, VENGA DE
-        # DONDE VENGA -> None + baja, y AMBAS candidatas expuestas. El
-        # pipeline NUNCA elige por Diego.
-        candidatas = tuple(
-            CandidatoConflicto(
-                valor=miembros[0].texto,  # type: ignore[arg-type]
-                evidencia=Evidencia(fichero=miembros[0].fichero, bbox=miembros[0].bbox),
-            )
-            for miembros in grupos.values()
+        representantes = tuple(miembros[0] for miembros in grupos.values())
+        motivo = (
+            f"conflicto: {len(grupos)} valores distintos legibles para "
+            f"'{contenido}' -- el pipeline NUNCA elige, cada uno con su "
+            "propio recorte para que Diego decida"
         )
         campo = Campo(valor=None, fuente="inferido", confianza="baja")
-        return campo, candidatas
+        return _GrupoCampo(campo=campo, representante=None, alternativas=representantes, motivo=motivo)
 
     if len(grupos) == 1:
         (miembros,) = grupos.values()
         candidatos_validos = [m for m in miembros if m.ubicacion in ubicaciones_validas]
         if candidatos_validos:
             representante = candidatos_validos[0]
-            estado = _confianza_corroborada(miembros, representante)
-            if estado == "contradicho":
-                # TESTIGO EN CONTRA (matiz post-validacion): el OCR crudo
-                # de esta MISMA region leyo algo sustancial que NO se
-                # parece a lo que el VLM afirma -- no es "sin evidencia",
-                # es evidencia ACTIVA de que el VLM inventa o lee otra
-                # cosa. Mismo tratamiento que dos marcas legibles: None +
-                # baja + AMBAS lecturas expuestas. El pipeline NO elige.
-                candidatas = (
-                    CandidatoConflicto(
-                        valor=representante.texto,  # type: ignore[arg-type]
-                        evidencia=Evidencia(fichero=representante.fichero, bbox=representante.bbox),
-                    ),
-                    CandidatoConflicto(
-                        valor=representante.texto_ocr_crudo,  # type: ignore[arg-type]
-                        evidencia=Evidencia(fichero=representante.fichero, bbox=representante.bbox),
-                    ),
+            motivo = f"unico valor legible en ubicacion publicable ({representante.ubicacion})"
+            if representante.origen == "vlm" and _es_testigo_valido(representante.texto_ocr_crudo):
+                similitud = _similitud_normalizada(
+                    representante.texto_ocr_crudo, representante.texto  # type: ignore[arg-type]
                 )
-                return Campo(valor=None, fuente="inferido", confianza="baja"), candidatas
+                if similitud < UMBRAL_SIMILITUD_DUDOSO:
+                    motivo += (
+                        f"; OJO -- dudoso: el OCR crudo de esta region leyo "
+                        f"{representante.texto_ocr_crudo!r}, que no se parece a la "
+                        f"lectura del VLM ({representante.texto!r}). Revisa el recorte "
+                        "con cuidado antes de confirmar (senal de orden, no de confianza)"
+                    )
             campo = Campo(
                 valor=representante.texto,
                 fuente="foto",
-                confianza=estado,
+                confianza="media",
                 evidencia=Evidencia(fichero=representante.fichero, bbox=representante.bbox),
             )
-            return campo, ()
+            return _GrupoCampo(campo=campo, representante=representante, alternativas=(), motivo=motivo)
+
         # Regla dura #1: el UNICO valor legible viene solo de una ubicacion
-        # no valida (p.ej. solo estampado, sin ninguna etiqueta_interior) --
-        # un estampado NUNCA publica marca/talla por si solo. Cae al mismo
-        # tratamiento que "sin candidatos" de abajo.
+        # NO valida (p.ej. solo estampado, sin ninguna etiqueta_interior) --
+        # no se publica, pero SI se ensena su recorte para que Diego juzgue.
+        no_publicable = miembros[0]
+        intentos = _intentos_de_campo(lecturas, contenido, ubicaciones_validas)
+        if intentos:
+            primero = intentos[0]
+            campo = Campo(
+                valor=None, fuente="foto", confianza="baja",
+                evidencia=Evidencia(fichero=primero.fichero, bbox=primero.bbox),
+            )
+        else:
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+        motivo = (
+            f"unico valor legible ({no_publicable.texto!r}) pero SOLO en ubicacion "
+            f"no publicable ({no_publicable.ubicacion}) -- un estampado/grafico nunca "
+            "publica esto por si solo (regla dura #1); se ensena igual para que Diego lo mire"
+        )
+        return _GrupoCampo(campo=campo, representante=no_publicable, alternativas=(), motivo=motivo)
 
     # Sin candidatos PUBLICABLES: distinguir PRESENTE_ILEGIBLE de NO_FOTOGRAFIADO.
     intentos = _intentos_de_campo(lecturas, contenido, ubicaciones_validas)
     if intentos:
         primero = intentos[0]
         campo = Campo(
-            valor=None,
-            fuente="foto",
-            confianza="baja",
+            valor=None, fuente="foto", confianza="baja",
             evidencia=Evidencia(fichero=primero.fichero, bbox=primero.bbox),
         )
-        return campo, ()
+        return _GrupoCampo(
+            campo=campo, representante=primero, alternativas=(),
+            motivo="presente en foto pero no se pudo leer con seguridad (PRESENTE_ILEGIBLE)",
+        )
 
-    return Campo(valor=None, fuente="inferido", confianza="baja"), ()
+    return _GrupoCampo(
+        campo=Campo(valor=None, fuente="inferido", confianza="baja"),
+        representante=None, alternativas=(),
+        motivo="ninguna foto de este grupo trae este dato (NO_FOTOGRAFIADO)",
+    )
 
 
-def _construir_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> Campo:
-    """Regla dura #6 (corregida, C7): un papel manuscrito en el grupo es
-    una NOTA que Diego puso junto al producto -- pero el texto SI esta en
-    el pixel (es una transcripcion, no algo que Diego tecleara en la app),
-    asi que `fuente="foto"` con su `evidencia`, NUNCA "diego" ("diego" es
-    la unica fuente que la UI no audita -- la nota debe mostrarse como
-    "nota tuya, confirmala", no colarse como un hecho ya verificado).
+def _filtrar_ean_checksum_valido(lecturas: Sequence[LecturaCrop]) -> list[LecturaCrop]:
+    """Deja pasar cualquier lectura que NO sea de `ean` tal cual; para las
+    que SI son de `ean`, exige que el checksum GS1 valide (extrayendo solo
+    los digitos) -- si no valida, la lectura se DESCARTA ENTERA: un EAN con
+    checksum invalido no es un EAN real (C5), no debe competir ni siquiera
+    como candidata de un conflicto. Es el filtro que unifica el atajo OCR y
+    las lecturas del VLM en el MISMO camino (ya no hay carretera paralela
+    que bypasee la deteccion de conflictos, ver docstring del modulo)."""
+    resultado: list[LecturaCrop] = []
+    for lectura in lecturas:
+        if lectura.contenido_probable != "ean" or not lectura.legible or not lectura.texto:
+            resultado.append(lectura)
+            continue
+        digitos = re.sub(r"\D", "", lectura.texto)
+        if digitos and _validar_checksum_ean(digitos):
+            resultado.append(replace(lectura, texto=digitos))
+        # si no valida, se descarta -- no es un EAN real, no compite.
+    return resultado
 
-    Ley de corroboracion: una sola foto de la nota -> techo "media"; si la
-    MISMA nota aparece en >=2 fotos distintas -> "alta"."""
+
+def _agregar_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> _GrupoCampo:
+    """Regla dura #6: un papel manuscrito en el grupo es una NOTA que Diego
+    puso junto al producto -- pero el texto SI esta en el pixel (es una
+    transcripcion, no algo que Diego tecleara en la app), asi que
+    `fuente="foto"` con su `evidencia`.
+
+    Confianza: SIEMPRE "media", incluso si la MISMA nota aparece en varias
+    fotos distintas -- la via "multi-foto -> alta" murio con el resto de
+    la maquinaria de corroboracion (ver docstring del modulo, ley 1: nada
+    que no sea EAN con checksum llega a "alta"). Varias notas DISTINTAS se
+    concatenan (defectos reales pueden coexistir), no compiten como
+    conflicto."""
     candidatas = [
         lectura
         for lectura in lecturas
@@ -1209,17 +1397,24 @@ def _construir_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> Campo:
         and lectura.texto
     ]
     if not candidatas:
-        return Campo(valor=None, fuente="inferido", confianza="baja")
+        return _GrupoCampo(
+            campo=Campo(valor=None, fuente="inferido", confianza="baja"),
+            representante=None, alternativas=(),
+            motivo="sin papel manuscrito en el grupo",
+        )
 
     notas_unicas = list(dict.fromkeys(lectura.texto for lectura in candidatas))  # dedup preservando orden
-    ficheros_distintos = {lectura.fichero for lectura in candidatas}
-    confianza: Literal["alta", "media"] = (
-        "alta" if len(notas_unicas) == 1 and len(ficheros_distintos) >= 2 else "media"
-    )
-
     valor = "; ".join(notas_unicas)
     primera = candidatas[0]
-    return Campo(valor=valor, fuente="foto", confianza=confianza, evidencia=Evidencia(fichero=primera.fichero, bbox=primera.bbox))
+    campo = Campo(
+        valor=valor, fuente="foto", confianza="media",
+        evidencia=Evidencia(fichero=primera.fichero, bbox=primera.bbox),
+    )
+    motivo = (
+        "nota manuscrita transcrita de una foto -- es la transcripcion de un "
+        "pixel real, no un dato tecleado; confirmala siempre"
+    )
+    return _GrupoCampo(campo=campo, representante=primera, alternativas=(), motivo=motivo)
 
 
 def _campo_composicion() -> Campo:
@@ -1232,44 +1427,75 @@ def _campo_composicion() -> Campo:
 
 
 # ============================================================================
-# C2 -- LA FICHA FRANKENSTEIN: coherencia entre campos de IDENTIDAD
+# COHERENCIA entre campos de IDENTIDAD -- "LA FICHA FRANKENSTEIN"
 # ============================================================================
-
-_CAMPOS_IDENTIDAD_PRODUCTO: tuple[str, ...] = ("marca", "talla", "modelo", "ean")
 
 
 def _detectar_fotos_disjuntas(campos: dict[str, Campo]) -> str | None:
-    """INC-011: si un grupo trae fotos de DOS productos (una fusion que
-    Diego no caza al curar), la marca puede salir de una prenda y la talla
-    de otra -- las dos con evidencia REAL y LEGIBLE, asi que las capas 1 y
-    2 del truth-loop (legibilidad + `listing-audit`) las dejan pasar
-    LIMPIAS: cada dato es cierto, solo que no son del mismo producto.
+    """Si un grupo trae fotos de DOS productos (una fusion que Diego no
+    caza al curar), la marca puede salir de una prenda y la talla de otra
+    -- las dos con evidencia REAL y LEGIBLE, asi que la capa de
+    legibilidad las deja pasar LIMPIAS: cada dato es cierto, solo que no
+    son del mismo producto.
 
-    Senal (barata, sin VLM): si NINGUNA foto aporta evidencia de >=2 de
-    los campos de identidad (marca/talla/modelo/ean) a la vez, es que esos
-    campos nunca se vieron JUNTOS en la misma foto -- la firma de una
-    fusion. Devuelve el aviso (con dientes: quien llama degrada la
-    confianza) o `None` si no hay senal de riesgo (0 o 1 campo con valor,
-    o al menos una foto liga 2+ campos)."""
+    Senal (barata, sin VLM): construye un grafo cuyos NODOS son los campos
+    de identidad (marca/talla/modelo/ean) que tienen valor, y cuyas ARISTAS
+    unen dos campos cuando ALGUNA foto aporta evidencia de ambos a la vez.
+    Si TODOS los campos con valor caen en la MISMA componente conexa, no
+    hay senal de riesgo. Si hay mas de una componente, es la firma de una
+    fusion.
+
+    Corregido (antes bastaba con `any(len(vistos) >= 2)`: que UNA foto
+    ligara dos campos apagaba la defensa ENTERA, dejando sin auditar un
+    tercer campo que viniera de una foto totalmente disjunta de las otras
+    dos -- p.ej. marca+talla en la foto A, modelo en la foto B sin ninguna
+    relacion con A, el chequeo viejo decia "coherente" con solo mirar A).
+    Con union-find, ese tercer campo queda en su propia componente y el
+    aviso SI se dispara.
+
+    Devuelve el aviso (con dientes: quien llama degrada la confianza) o
+    `None` si no hay senal de riesgo (0 o 1 campo con valor, o todos en la
+    misma componente)."""
     por_fichero: dict[str, set[str]] = {}
+    campos_con_valor: set[str] = set()
     for nombre in _CAMPOS_IDENTIDAD_PRODUCTO:
         campo = campos[nombre]
         if campo.valor is not None and campo.evidencia is not None:
+            campos_con_valor.add(nombre)
             por_fichero.setdefault(campo.evidencia.fichero, set()).add(nombre)
 
-    n_campos_con_valor = sum(len(vistos) for vistos in por_fichero.values())
-    if n_campos_con_valor < 2:
+    if len(campos_con_valor) < 2:
         return None  # no hay nada que pueda "no ligar" -- no aplica
 
-    if any(len(vistos) >= 2 for vistos in por_fichero.values()):
-        return None  # al menos una foto liga 2+ campos -- coherente
+    padre: dict[str, str] = {nombre: nombre for nombre in campos_con_valor}
+
+    def _raiz(x: str) -> str:
+        while padre[x] != x:
+            padre[x] = padre[padre[x]]
+            x = padre[x]
+        return x
+
+    def _unir(a: str, b: str) -> None:
+        ra, rb = _raiz(a), _raiz(b)
+        if ra != rb:
+            padre[ra] = rb
+
+    for vistos in por_fichero.values():
+        vistos_lista = sorted(vistos)
+        for otro in vistos_lista[1:]:
+            _unir(vistos_lista[0], otro)
+
+    raices = {_raiz(nombre) for nombre in campos_con_valor}
+    if len(raices) == 1:
+        return None  # todos los campos de identidad estan conectados
 
     fotos_implicadas = ", ".join(sorted(por_fichero))
     return (
         "COHERENCIA: los campos estructurados de este producto proceden de "
-        f"fotos DISJUNTAS ({fotos_implicadas}) -- ninguna foto liga dos campos "
-        "entre si. Puede ser una fusion de dos productos distintos en el "
-        "mismo grupo (revisa las fotos antes de publicar -- INC-011)."
+        f"fotos DISJUNTAS ({fotos_implicadas}) -- no todos los campos de "
+        "identidad estan ligados por una foto en comun. Puede ser una fusion "
+        "de dos productos distintos en el mismo grupo (revisa las fotos "
+        "antes de publicar -- INC-011)."
     )
 
 
@@ -1279,7 +1505,7 @@ def verificar_misma_prenda_vlm(
     imagen_b: Imagen,
     producto_id: str | None = None,
 ) -> bool:
-    """HOOK sin implementar (C2, deliberado -- no una feature a medias).
+    """HOOK sin implementar (deliberado -- no una feature a medias).
 
     Cuando `_detectar_fotos_disjuntas` marca un aviso, este es el UNICO
     punto del pipeline entero donde ~0.2 cts (Haiku 4.5) compran la venta
@@ -1292,12 +1518,12 @@ def verificar_misma_prenda_vlm(
     levantarlo (si confirma que SI lo son) -- nunca en silencio.
     """
     raise NotImplementedError(
-        "verificar_misma_prenda_vlm: hook de C2 pendiente de implementar, ver docstring"
+        "verificar_misma_prenda_vlm: hook pendiente de implementar, ver docstring"
     )
 
 
 # ============================================================================
-# C4 -- nombres de fichero duplicados fallan RUIDOSO, nunca aliasing en silencio
+# Nombres de fichero duplicados fallan RUIDOSO, nunca aliasing en silencio
 # ============================================================================
 
 
@@ -1306,10 +1532,9 @@ def _verificar_nombres_unicos(fotos: Sequence[Path]) -> None:
     (`RegionOCR.fichero`, `Evidencia.fichero`) -- si el grupo trae dos
     ficheros de RUTAS distintas con el MISMO nombre base (dos tarjetas SD,
     dos moviles), un `dict` clavado por nombre pierde uno EN SILENCIO y el
-    recorte resultante sale de la foto EQUIVOCADA (verificado: el crop
-    mostraba la percha, no la etiqueta) -- y ni siquiera es auditable a
-    posteriori, porque la `Evidencia` guarda un nombre que apunta a dos
-    ficheros. Falla RUIDOSO en vez de alias silencioso (C4)."""
+    recorte resultante sale de la foto EQUIVOCADA -- y ni siquiera es
+    auditable a posteriori, porque la `Evidencia` guarda un nombre que
+    apunta a dos ficheros. Falla RUIDOSO en vez de alias silencioso."""
     vistas: dict[str, Path] = {}
     duplicados: dict[str, list[Path]] = {}
     for foto in fotos:
@@ -1323,8 +1548,8 @@ def _verificar_nombres_unicos(fotos: Sequence[Path]) -> None:
         )
         raise ExtractorError(
             f"Nombres de fichero duplicados en el grupo (rutas distintas, mismo "
-            f"nombre base): {detalle}. Un recorte saldria de la foto EQUIVOCADA "
-            "(C4) -- renombra o deduplica las fotos antes de extraer."
+            f"nombre base): {detalle}. Un recorte saldria de la foto EQUIVOCADA -- "
+            "renombra o deduplica las fotos antes de extraer."
         )
 
 
@@ -1353,47 +1578,51 @@ class ExtractorEngine:
     """COSTURA 1 aplicada a atributos de producto: `extraer_producto` es el
     punto de entrada. Envuelve un `LLMEngine` inyectado -- este motor NUNCA
     llama a un proveedor por su cuenta.
+
+    `carpeta_crops` (constructor): donde se guardan los recortes por
+    defecto si `extraer_producto` no recibe una carpeta explicita. En uso
+    real sera `data/lotes/<lote_id>/crops/` (quien orquesta el lote la
+    pasa); si no se especifica ninguna, se usa `<carpeta de la primera
+    foto>/crops/` -- razonable para tests y para uso suelto, pero quien
+    integre esto con `core/store.py` debe pasar la carpeta del lote real.
     """
 
-    def __init__(self, motor_llm: LLMEngine) -> None:
+    def __init__(self, motor_llm: LLMEngine, carpeta_crops: Path | str | None = None) -> None:
         self.motor_llm = motor_llm
+        self._carpeta_crops_default = Path(carpeta_crops) if carpeta_crops is not None else None
+        self._bytes_recorte_por_clave: dict[tuple[str, tuple[int, int, int, int]], bytes] = {}
 
     # -- planificacion (compartida entre estimar coste y ejecutar) ----------
 
-    def _planificar(self, fotos: Sequence[Path]) -> tuple[list[RegionOCR], dict[str, Campo], list[str]]:
+    def _planificar(
+        self, fotos: Sequence[Path]
+    ) -> tuple[list[RegionOCR], list[LecturaCrop], list[str]]:
         """Corre OCR (gratis) sobre todas las fotos, descarta ristras de
         metro y resuelve el atajo de OCR limpio SOBRE LAS REGIONES CRUDAS
         (antes de fusionar) -- el metro y el atajo son propiedades de UNA
-        linea de texto individual tal y como el OCR la detecto (medido:
-        "Model:LLLT-200" y "EANCODE:*8445061029720*" son cada uno su
-        propia caja). Fusionar ANTES de decidir el atajo mezclaria esas
-        lineas limpias con el resto de la etiqueta (mucho mas larga y con
-        lineas de score mas bajo), arrastrando el score minimo del grupo
-        por debajo del umbral y perdiendo el atajo gratis sin ganar nada a
-        cambio -- medido sobre el producto 1 real del golden set. Solo lo
-        que SOBRA tras metro+atajo se fusiona antes de generar recortes
-        para el VLM (eso si necesita fusion: una marca partida en dos
-        lineas, "ORIGINAL" + "MARINES").
+        linea de texto individual tal y como el OCR la detecto. Fusionar
+        ANTES de decidir el atajo mezclaria esas lineas limpias con el
+        resto de la etiqueta (mucho mas larga y con lineas de score mas
+        bajo), arrastrando el score minimo del grupo por debajo del umbral
+        y perdiendo el atajo gratis sin ganar nada a cambio -- medido sobre
+        el producto 1 real del golden set. Solo lo que SOBRA tras
+        metro+atajo se fusiona antes de generar recortes para el VLM.
 
         Tras la fusion, se descartan dos clases de region que NUNCA
         aportan un campo de la ficha -- el presupuesto del VLM va donde el
-        OCR falla (la ropa), no donde sobra texto (las cajas):
-          - Bloques de texto largos (`_es_bloque_de_texto_largo`):
-            especificaciones tecnicas, instrucciones, descripciones
-            multilingues -- medido en el golden set, producto 1: 35 y 132
-            palabras. Un candidato real de marca/talla/modelo/ean/
-            desperfecto es SIEMPRE corto.
-          - Repeticiones de un campo YA resuelto por el atajo
-            (`_es_repeticion_de_un_campo_ya_resuelto`): el mismo EAN/modelo
-            impreso otra vez en la caja no aporta un dato nuevo.
-        Ninguno de los dos filtros toca las 10 reglas duras de agregacion
-        (siguen aplicando exactamente igual sobre lo que SI se manda al
-        VLM) -- solo deciden que NO hace falta preguntarle nada al modelo.
+        OCR falla (la ropa), no donde sobra texto (las cajas): bloques de
+        texto largos (`_es_bloque_de_texto_largo`) y repeticiones de un
+        campo YA resuelto por el atajo (`_es_repeticion_de_un_campo_ya_resuelto`).
+        Ninguno de los dos filtros toca las reglas duras de agregacion
+        (siguen aplicando igual sobre lo que SI se manda al VLM) -- solo
+        deciden que NO hace falta preguntarle nada al modelo.
 
-        Devuelve (regiones_para_vlm, campos_resueltos_por_atajo,
-        fallos_de_ocr)."""
+        Devuelve (regiones_para_vlm, candidatos_atajo, fallos_de_ocr).
+        `candidatos_atajo` son `LecturaCrop` (origen="atajo_ocr") que
+        entran al MISMO pool de candidatos que las lecturas del VLM -- ya
+        no hay carretera paralela (ver docstring del modulo)."""
         regiones_para_vlm: list[RegionOCR] = []
-        campos_atajo: dict[str, Campo] = {}
+        candidatos_atajo: list[LecturaCrop] = []
         fallos: list[str] = []
         self._fotos_con_metro: list[Path] = []  # usado luego por _evaluar_medidas
 
@@ -1413,20 +1642,19 @@ class ExtractorEngine:
 
                 atajo = _intentar_atajo_ocr(region)
                 if atajo is not None:
-                    nombre, campo = atajo
-                    campos_atajo.setdefault(nombre, campo)
+                    candidatos_atajo.append(atajo)
                     continue
 
                 restantes.append(region)
 
             for region in fusionar_regiones_cercanas(restantes):
-                if _es_repeticion_de_un_campo_ya_resuelto(region.texto_ocr, campos_atajo):
+                if _es_repeticion_de_un_campo_ya_resuelto(region.texto_ocr, candidatos_atajo):
                     continue
                 if _es_bloque_de_texto_largo(region.texto_ocr):
                     continue
                 regiones_para_vlm.append(region)
 
-        return regiones_para_vlm, campos_atajo, fallos
+        return regiones_para_vlm, candidatos_atajo, fallos
 
     def construir_solicitudes(self, fotos: Sequence[Path]) -> list[tuple[Sequence[Imagen], str, str]]:
         """Lo que `extraer_producto` MANDARIA al VLM para este producto, sin
@@ -1437,26 +1665,22 @@ class ExtractorEngine:
         coste estimado coincide con el coste real (misma fuente de
         verdad -- ver `_planificar`).
 
-        Cada solicitud es `(imagenes, prompt, version_prompt)` -- C6: el
-        texto del prompt viaja explicito porque `LLMEngine._clave_cache`
-        ahora lo incluye en el hash (antes solo hasheaba version_prompt, y
-        endurecer un prompt sin subir la version respondia con el prompt
-        VIEJO en silencio)."""
+        Cada solicitud es `(imagenes, prompt, version_prompt)` -- el texto
+        del prompt viaja explicito porque `LLMEngine._clave_cache` lo
+        incluye en el hash (endurecer un prompt sin subir version_prompt
+        respondia con el prompt VIEJO en silencio)."""
         fotos = list(fotos)
-        _verificar_nombres_unicos(fotos)  # C4: falla ruidoso antes de mapear por nombre
-        regiones_para_vlm, campos_atajo, _ = self._planificar(fotos)
+        _verificar_nombres_unicos(fotos)  # falla ruidoso antes de mapear por nombre
+        regiones_para_vlm, _candidatos_atajo, _ = self._planificar(fotos)
         fallos_descartados: list[str] = []  # una foto ilegible aqui solo reduce el estimado, no crashea
         rutas_por_nombre = {f.name: f for f in fotos}  # seguro tras _verificar_nombres_unicos
 
         solicitudes: list[tuple[Sequence[Imagen], str, str]] = []
 
-        # C9: mismo backstop que `extraer_producto` -- si no se replicara
-        # aqui, la estimacion de coste podria prometer MAS llamadas de las
-        # que el motor real llega a hacer, rompiendo la promesa de este
-        # docstring ("el coste estimado coincide con el coste real").
+        # Mismo backstop que `extraer_producto` -- si no se replicara aqui,
+        # la estimacion de coste podria prometer MAS llamadas de las que el
+        # motor real llega a hacer.
         for region in regiones_para_vlm[:MAX_LLAMADAS_VLM_POR_PRODUCTO]:
-            if region.fichero in campos_atajo:  # pragma: no cover -- defensivo, no aplica hoy
-                continue
             ruta = rutas_por_nombre[region.fichero]
             imagen_pil = _abrir_foto_o_none(ruta, fallos_descartados, "crop")
             if imagen_pil is None:
@@ -1488,6 +1712,84 @@ class ExtractorEngine:
 
         return solicitudes
 
+    # -- construccion de Propuesta (recorte a disco, lecturas, alternativas) --
+
+    def _recorte_y_lecturas(
+        self,
+        lectura: LecturaCrop | None,
+        rutas_por_nombre: dict[str, Path],
+        carpeta_crops: Path,
+        fallos: list[str],
+    ) -> tuple[Path | None, Evidencia | None, tuple[Lectura, ...]]:
+        """El PIXEL que se ensena es EXACTAMENTE el que se mando (o se
+        mandaria) al modelo -- reutiliza los bytes capturados en el momento
+        de construir el `Imagen` (`self._bytes_recorte_por_clave`) si esta
+        lectura vino de una llamada VLM real; si no (atajo OCR, o no se
+        llego a mandar por algun motivo), recorta la foto original de
+        nuevo con la MISMA funcion (`recortar_region`) -- determinista."""
+        if lectura is None:
+            return None, None, ()
+
+        if lectura.origen == "vlm":
+            lecturas = (Lectura(origen="vlm", texto=lectura.texto),)
+            if lectura.texto_ocr_crudo:
+                lecturas = lecturas + (Lectura(origen="ocr", texto=lectura.texto_ocr_crudo),)
+        else:  # "atajo_ocr" -- ningun VLM lo miro, la lectura es puramente OCR
+            lecturas = (Lectura(origen="ocr", texto=lectura.texto),)
+
+        evidencia = Evidencia(fichero=lectura.fichero, bbox=lectura.bbox)
+
+        clave = (lectura.fichero, lectura.bbox)
+        bytes_recorte = self._bytes_recorte_por_clave.get(clave)
+        if bytes_recorte is None:
+            ruta_foto = rutas_por_nombre.get(lectura.fichero)
+            if ruta_foto is None:
+                return None, evidencia, lecturas
+            imagen_pil = _abrir_foto_o_none(ruta_foto, fallos, "recorte")
+            if imagen_pil is None:
+                return None, evidencia, lecturas
+            bytes_recorte = recortar_region(imagen_pil, lectura.bbox)
+            self._bytes_recorte_por_clave[clave] = bytes_recorte
+
+        ruta_recorte = _guardar_recorte(bytes_recorte, carpeta_crops, lectura.fichero, lectura.bbox)
+        return ruta_recorte, evidencia, lecturas
+
+    def _candidato_desde_lectura(
+        self,
+        lectura: LecturaCrop,
+        rutas_por_nombre: dict[str, Path],
+        carpeta_crops: Path,
+        fallos: list[str],
+    ) -> Candidato:
+        recorte, evidencia, lecturas = self._recorte_y_lecturas(lectura, rutas_por_nombre, carpeta_crops, fallos)
+        assert evidencia is not None  # `lectura` no es None aqui
+        return Candidato(valor=lectura.texto, recorte=recorte, evidencia=evidencia, lecturas=lecturas)  # type: ignore[arg-type]
+
+    def _propuesta_desde_grupo(
+        self,
+        grupo: _GrupoCampo,
+        nombre_campo: str,
+        rutas_por_nombre: dict[str, Path],
+        carpeta_crops: Path,
+        fallos: list[str],
+    ) -> Propuesta:
+        recorte, evidencia, lecturas = self._recorte_y_lecturas(
+            grupo.representante, rutas_por_nombre, carpeta_crops, fallos
+        )
+        alternativas = tuple(
+            self._candidato_desde_lectura(alt, rutas_por_nombre, carpeta_crops, fallos)
+            for alt in grupo.alternativas
+        )
+        return Propuesta(
+            campo=nombre_campo,
+            valor=grupo.campo.valor,
+            recorte=recorte,
+            evidencia=evidencia,
+            lecturas=lecturas,
+            alternativas=alternativas,
+            motivo=grupo.motivo,
+        )
+
     # -- ejecucion real -------------------------------------------------------
 
     def extraer_producto(
@@ -1495,36 +1797,48 @@ class ExtractorEngine:
         fotos: Sequence[Path],
         categoria: CategoriaTipo = "moda",
         producto_id: str | None = None,
+        carpeta_crops: Path | str | None = None,
     ) -> ResultadoExtraccion:
         """Extrae los atributos de UN producto (fotos ya agrupadas y
         confirmadas por Diego en la Fase 1). `categoria` no cambia el
         comportamiento hoy (reservado para cuando existan reglas
         especificas por categoria); se recibe para que la firma sea
         estable cuando se necesite.
+
+        `carpeta_crops`: donde se guardan los recortes de este producto.
+        Si no se especifica, se usa la del constructor, y si tampoco esa
+        existe, `<carpeta de fotos[0]>/crops/`.
         """
         del categoria  # reservado; ver docstring
         fotos = list(fotos)
         if not fotos:
             raise ValueError("extraer_producto requiere al menos una foto")
-        _verificar_nombres_unicos(fotos)  # C4: falla ruidoso antes de mapear por nombre
+        _verificar_nombres_unicos(fotos)  # falla ruidoso antes de mapear por nombre
 
-        regiones_para_vlm, campos_atajo, fallos = self._planificar(fotos)
+        self._bytes_recorte_por_clave = {}  # limpio por llamada -- no se filtra entre productos
+        if carpeta_crops is not None:
+            carpeta_crops_efectiva = Path(carpeta_crops)
+        elif self._carpeta_crops_default is not None:
+            carpeta_crops_efectiva = self._carpeta_crops_default
+        else:
+            carpeta_crops_efectiva = fotos[0].parent / NOMBRE_CARPETA_CROPS
+
+        regiones_para_vlm, candidatos_atajo, fallos = self._planificar(fotos)
         rutas_por_nombre = {f.name: f for f in fotos}  # seguro tras _verificar_nombres_unicos
 
         lecturas: list[LecturaCrop] = []
         limite_vlm_avisado = False
         for indice, region in enumerate(regiones_para_vlm):
             if indice >= MAX_LLAMADAS_VLM_POR_PRODUCTO:
-                # C9: backstop de coste -- una escena con mucho fondo ajeno
+                # Backstop de coste -- una escena con mucho fondo ajeno
                 # (regiones que el VLM luego descartaria via
                 # pertenece_al_producto=False, pero eso solo se sabe DESPUES
-                # de llamar) no puede facturar sin techo. Ver docstring de
-                # `MAX_LLAMADAS_VLM_POR_PRODUCTO`.
+                # de llamar) no puede facturar sin techo.
                 if not limite_vlm_avisado:
                     limite_vlm_avisado = True
                     logger.warning(
                         "limite de %d llamadas VLM de recorte alcanzado (%d regiones detectadas) "
-                        "-- se descartan las restantes para este producto (C9)",
+                        "-- se descartan las restantes para este producto",
                         MAX_LLAMADAS_VLM_POR_PRODUCTO,
                         len(regiones_para_vlm),
                     )
@@ -1538,8 +1852,11 @@ class ExtractorEngine:
             if imagen_pil is None:
                 continue
             try:
-                recorte = recortar_region(imagen_pil, region.bbox)
-                imagen = Imagen(bytes_=recorte, fichero=region.fichero)
+                recorte_bytes = recortar_region(imagen_pil, region.bbox)
+                # Se capturan los bytes AQUI, antes de mandarlos -- son los
+                # mismos que luego se escriben a disco (docstring, punto 3).
+                self._bytes_recorte_por_clave[(region.fichero, region.bbox)] = recorte_bytes
+                imagen = Imagen(bytes_=recorte_bytes, fichero=region.fichero)
                 resultado = self.motor_llm.consultar(
                     [imagen],
                     PROMPT_LECTURA_CROP,
@@ -1547,69 +1864,89 @@ class ExtractorEngine:
                     version_prompt=VERSION_PROMPT_CROP,
                     producto_id=producto_id,
                 )
-                lectura = _parsear_lectura_crop(
+                nuevas_lecturas = _parsear_lectura_crop(
                     resultado.datos, region.fichero, region.bbox, texto_ocr_crudo=region.texto_ocr
                 )
             except (LLMLlamadaFallidaError, ApiKeyFaltanteError, RespuestaVLMInvalidaError) as exc:
                 logger.error("Fallo VLM en recorte %s %s: %s", region.fichero, region.bbox, exc)
                 fallos.append(f"vlm_crop:{region.fichero}:{region.bbox}: {exc}")
                 continue
-            lecturas.append(lectura)
+            lecturas.extend(nuevas_lecturas)
 
-        campo_marca, conflictos_marca = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
-        campo_talla, conflictos_talla = _construir_campo_texto(lecturas, "talla", _UBICACIONES_VALIDAS_TALLA)
-        campo_modelo, conflictos_modelo = _construir_campo_texto(lecturas, "modelo", _UBICACIONES_VALIDAS_MODELO)
-        campo_ean, conflictos_ean = _construir_campo_texto(lecturas, "ean", _UBICACIONES_VALIDAS_EAN)
-        campo_desperfectos = _construir_campo_desperfectos(lecturas)
+        lecturas_totales: list[LecturaCrop] = lecturas + candidatos_atajo
 
-        # Los atajos de OCR limpio (D2) tienen prioridad: son gratis y ya
-        # estan verificados por patron -- si tambien hubo un recorte VLM
-        # para el mismo campo (no deberia, pero por si acaso) el atajo manda.
-        if "ean" in campos_atajo:
-            campo_ean = campos_atajo["ean"]
-            conflictos_ean = ()
-        if "modelo" in campos_atajo:
-            campo_modelo = campos_atajo["modelo"]
-            conflictos_modelo = ()
+        grupo_marca = _agregar_campo_texto(lecturas_totales, "marca", _UBICACIONES_VALIDAS_MARCA)
+        grupo_talla = _agregar_campo_texto(lecturas_totales, "talla", _UBICACIONES_VALIDAS_TALLA)
+        grupo_modelo = _agregar_campo_texto(lecturas_totales, "modelo", _UBICACIONES_VALIDAS_MODELO)
 
-        # C5: el checksum GS1 es la ultima palabra sobre `ean`, venga de
-        # donde venga (atajo o VLM) -- un digito mal leido no es un EAN.
-        campo_ean = _validar_campo_ean(campo_ean)
+        # EAN: se pre-filtra por checksum ANTES de agregar (unifica atajo y
+        # VLM en el mismo camino -- dos EAN validos y distintos SI generan
+        # un conflicto real, nunca "el primero que se encontro" en silencio).
+        lecturas_ean_validas = _filtrar_ean_checksum_valido(lecturas_totales)
+        grupo_ean = _agregar_campo_texto(lecturas_ean_validas, "ean", _UBICACIONES_VALIDAS_EAN)
+        if grupo_ean.campo.valor is not None:
+            # UNICO camino de este modulo a confianza="alta": un EAN cuyo
+            # checksum GS1 valida (verificable por una regla matematica,
+            # no por un modelo).
+            grupo_ean = replace(grupo_ean, campo=replace(grupo_ean.campo, confianza="alta"))
+        # Defensa en profundidad (C5): re-valida el Campo final aunque ya
+        # se haya pre-filtrado.
+        grupo_ean = replace(grupo_ean, campo=_validar_campo_ean(grupo_ean.campo))
 
-        campo_medidas, fallos_medidas = self._evaluar_medidas(producto_id)
-        # C3d: el color excluye el bbox de un estampado ya localizado en la
-        # MISMA foto (si lo hay) -- pasa las lecturas VLM, no llama al VLM.
-        campo_color, fallos_color = self._extraer_color(fotos, lecturas)
-        campo_estado, fallos_estado = self._extraer_estado(fotos, producto_id)
+        grupo_desperfectos = _agregar_campo_desperfectos(lecturas_totales)
+        grupo_composicion = _GrupoCampo(
+            campo=_campo_composicion(),
+            representante=None,
+            alternativas=(),
+            motivo="ninguna foto del lote fotografia la etiqueta de composicion (decision de Diego, 2026-07-14)",
+        )
+
+        propuesta_marca = self._propuesta_desde_grupo(grupo_marca, "marca", rutas_por_nombre, carpeta_crops_efectiva, fallos)
+        propuesta_talla = self._propuesta_desde_grupo(grupo_talla, "talla", rutas_por_nombre, carpeta_crops_efectiva, fallos)
+        propuesta_modelo = self._propuesta_desde_grupo(grupo_modelo, "modelo", rutas_por_nombre, carpeta_crops_efectiva, fallos)
+        propuesta_ean = self._propuesta_desde_grupo(grupo_ean, "ean", rutas_por_nombre, carpeta_crops_efectiva, fallos)
+        propuesta_desperfectos = self._propuesta_desde_grupo(
+            grupo_desperfectos, "desperfectos", rutas_por_nombre, carpeta_crops_efectiva, fallos
+        )
+        propuesta_composicion = self._propuesta_desde_grupo(
+            grupo_composicion, "composicion", rutas_por_nombre, carpeta_crops_efectiva, fallos
+        )
+
+        campo_medidas, propuesta_medidas, fallos_medidas = self._evaluar_medidas(producto_id)
+        # El color excluye el bbox de un estampado ya localizado en la MISMA
+        # foto (si lo hay) -- pasa las lecturas VLM, no llama al VLM.
+        campo_color, propuesta_color, fallos_color = self._extraer_color(fotos, lecturas_totales)
+        campo_estado, propuesta_estado, fallos_estado = self._extraer_estado(fotos, producto_id)
         fallos.extend(fallos_medidas)
         fallos.extend(fallos_color)
         fallos.extend(fallos_estado)
 
         campos = {
-            "marca": campo_marca,
-            "talla": campo_talla,
-            "modelo": campo_modelo,
-            "ean": campo_ean,
-            "composicion": _campo_composicion(),
+            "marca": grupo_marca.campo,
+            "talla": grupo_talla.campo,
+            "modelo": grupo_modelo.campo,
+            "ean": grupo_ean.campo,
+            "composicion": grupo_composicion.campo,
             "medidas": campo_medidas,
             "color": campo_color,
             "estado": campo_estado,
-            "desperfectos": campo_desperfectos,
+            "desperfectos": grupo_desperfectos.campo,
         }
-        conflictos = {
-            nombre: candidatas
-            for nombre, candidatas in (
-                ("marca", conflictos_marca),
-                ("talla", conflictos_talla),
-                ("modelo", conflictos_modelo),
-                ("ean", conflictos_ean),
-            )
-            if candidatas
+        propuestas = {
+            "marca": propuesta_marca,
+            "talla": propuesta_talla,
+            "modelo": propuesta_modelo,
+            "ean": propuesta_ean,
+            "composicion": propuesta_composicion,
+            "medidas": propuesta_medidas,
+            "color": propuesta_color,
+            "estado": propuesta_estado,
+            "desperfectos": propuesta_desperfectos,
         }
 
-        # C2/INC-011: LA FICHA FRANKENSTEIN -- si los campos de identidad
-        # vienen de fotos disjuntas, degradar (techo "media") y avisar CON
-        # DIENTES (la UI esta obligada a mostrarlo, no es un pie de foto).
+        # "LA FICHA FRANKENSTEIN": si los campos de identidad no estan todos
+        # en la misma componente conexa, degradar (techo "media") y avisar
+        # CON DIENTES (la UI esta obligada a mostrarlo, no es un pie de foto).
         aviso_coherencia = _detectar_fotos_disjuntas(campos)
         if aviso_coherencia is not None:
             for nombre in _CAMPOS_IDENTIDAD_PRODUCTO:
@@ -1625,7 +1962,7 @@ class ExtractorEngine:
 
         return ResultadoExtraccion(
             campos=campos,
-            conflictos=conflictos,
+            propuestas=propuestas,
             fallos=tuple(fallos),
             coste_usd=coste,
             aviso_coherencia=aviso_coherencia,
@@ -1633,13 +1970,18 @@ class ExtractorEngine:
 
     # -- medidas (metro): regla dura #5 --------------------------------------
 
-    def _evaluar_medidas(self, producto_id: str | None) -> tuple[Campo, list[str]]:
+    def _evaluar_medidas(self, producto_id: str | None) -> tuple[Campo, Propuesta, list[str]]:
         fotos_metro = list(dict.fromkeys(getattr(self, "_fotos_con_metro", [])))
         fallos: list[str] = []
         if not fotos_metro:
             # NO_FOTOGRAFIADO: ninguna foto de este producto tenia ni
             # siquiera una ristra de metro -- no hay evidencia que citar.
-            return Campo(valor=None, fuente="inferido", confianza="baja"), fallos
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+            propuesta = Propuesta(
+                campo="medidas", valor=None, recorte=None, evidencia=None,
+                motivo="ninguna foto de este producto tenia ni siquiera una ristra de metro (NO_FOTOGRAFIADO)",
+            )
+            return campo, propuesta, fallos
 
         for foto in fotos_metro:
             imagen_pil = _abrir_foto_o_none(foto, fallos, "metro")
@@ -1671,52 +2013,52 @@ class ExtractorEngine:
                     confianza="media",
                     evidencia=Evidencia(fichero=foto.name),
                 )
-                return campo, fallos
+                propuesta = Propuesta(
+                    campo="medidas",
+                    valor=str(datos["medida_cm"]),
+                    recorte=None,
+                    evidencia=Evidencia(fichero=foto.name),
+                    lecturas=(Lectura(origen="vlm", texto=str(datos["medida_cm"])),),
+                    motivo="el 0 de la cinta Y el borde de la prenda son visibles en esta foto",
+                )
+                return campo, propuesta, fallos
 
         # Hubo foto(s) de metro pero ninguna con las dos condiciones -- es
         # PRESENTE_ILEGIBLE (hay evidencia, no es derivable), no NO_FOTOGRAFIADO.
-        return (
-            Campo(
-                valor=None,
-                fuente="foto",
-                confianza="baja",
-                evidencia=Evidencia(fichero=fotos_metro[0].name),
-            ),
-            fallos,
+        campo = Campo(
+            valor=None, fuente="foto", confianza="baja",
+            evidencia=Evidencia(fichero=fotos_metro[0].name),
         )
+        propuesta = Propuesta(
+            campo="medidas", valor=None, recorte=None,
+            evidencia=Evidencia(fichero=fotos_metro[0].name),
+            motivo="hubo foto(s) de metro pero ninguna con el 0 Y el borde de la prenda visibles a la vez",
+        )
+        return campo, propuesta, fallos
 
     # -- color: regla dura #9 -------------------------------------------------
 
     def _extraer_color(
         self, fotos: Sequence[Path], lecturas_vlm: Sequence[LecturaCrop] = ()
-    ) -> tuple[Campo, list[str]]:
+    ) -> tuple[Campo, Propuesta, list[str]]:
         """Color por PIXELES (`architecture.md` Costura 1: "color por
         pixeles"), NUNCA VLM -- gratis y estructuralmente incapaz de
         alucinar en el sentido de "opinar": pero un histograma SI puede
-        estar sesgado por el sensor, y C3 (INC-010) corrige tres cosas
-        sobre la version anterior:
+        estar sesgado por el sensor.
 
           (a) el color de un histograma NUNCA es `confianza="alta"` --
               NI SIQUIERA con varias fotos de acuerdo, porque el acuerdo
               puede ser el MISMO sesgo del sensor repetido (medido: una
               sudadera NEGRA sale RGB~(80,80,80) en las 3 fotos por la
-              autoexposicion del movil -- eso es el sesgo, no
-              corroboracion). Y `fuente="inferido"`, no "foto": una cuenta
-              de pixeles no es una lectura directa del color real, es una
-              inferencia sobre lo que el sensor capturo.
-          (b) `_nombre_color_mas_cercano` distingue en espacio Lab, no RGB
-              (ver esa funcion).
+              autoexposicion del movil). Y `fuente="inferido"`, no "foto":
+              una cuenta de pixeles no es una lectura directa del color
+              real, es una inferencia sobre lo que el sensor capturo.
+          (b) `_nombre_color_mas_cercano` distingue en espacio Lab, no RGB.
           (c) si las fotos muestreadas DIVERGEN en el nombre de color,
-              `valor=None` -- nunca "la primera lectura que salga primero"
-              (medido en el golden set, producto 6: rosa en una foto, rojo
-              vino en otra bajo luz distinta -- ninguna de las dos es mas
-              valida que la otra).
-          (d) `lecturas_vlm` (las lecturas YA clasificadas por el VLM para
-              este producto, si las hay) se usan para EXCLUIR del
-              histograma el bbox de cualquier `estampado_o_grafico`
-              localizado en la MISMA foto muestreada -- el recorte central
-              puede caer justo encima de un estampado (producto 4: un
-              leon gris) y contaminar el color real de la prenda.
+              `valor=None` -- nunca "la primera lectura que salga primero".
+          (d) `lecturas_vlm` se usa para EXCLUIR del histograma el bbox de
+              cualquier `estampado_o_grafico` localizado en la MISMA foto
+              muestreada.
         """
         fallos: list[str] = []
         lecturas_color: list[tuple[str, Path]] = []
@@ -1733,12 +2075,23 @@ class ExtractorEngine:
             lecturas_color.append((_nombre_color_mas_cercano(rgb), foto))
 
         if not lecturas_color:
-            return Campo(valor=None, fuente="inferido", confianza="baja"), fallos
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+            propuesta = Propuesta(
+                campo="color", valor=None, recorte=None, evidencia=None,
+                motivo="ninguna foto se pudo abrir para muestrear el color",
+            )
+            return campo, propuesta, fallos
 
         normalizados = {nombre for nombre, _ in lecturas_color}
         if len(normalizados) > 1:
             # (c) diverge -> None, nunca la primera lectura.
-            return Campo(valor=None, fuente="inferido", confianza="baja"), fallos
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+            detalle = ", ".join(f"{foto.name}={nombre}" for nombre, foto in lecturas_color)
+            propuesta = Propuesta(
+                campo="color", valor=None, recorte=None, evidencia=None,
+                motivo=f"las fotos muestreadas DIVERGEN en color ({detalle}) -- ninguna es mas valida que otra",
+            )
+            return campo, propuesta, fallos
 
         valor, foto = lecturas_color[0]
         # (a) techo "media", SIEMPRE -- ver docstring de este metodo.
@@ -1748,19 +2101,36 @@ class ExtractorEngine:
             confianza="media",
             evidencia=Evidencia(fichero=foto.name),
         )
-        return campo, fallos
+        propuesta = Propuesta(
+            campo="color", valor=valor, recorte=None, evidencia=Evidencia(fichero=foto.name),
+            motivo=(
+                "color dominante por histograma de pixeles (nunca VLM); techo "
+                "confianza=media SIEMPRE, incluso si todas las fotos coinciden "
+                "(puede ser el mismo sesgo del sensor repetido)"
+            ),
+        )
+        return campo, propuesta, fallos
 
     # -- estado: regla dura #8, SIEMPRE fuente=inferido ------------------------
 
-    def _extraer_estado(self, fotos: Sequence[Path], producto_id: str | None) -> tuple[Campo, list[str]]:
+    def _extraer_estado(
+        self, fotos: Sequence[Path], producto_id: str | None
+    ) -> tuple[Campo, Propuesta, list[str]]:
         fallos: list[str] = []
         if not fotos:
-            return Campo(valor=None, fuente="inferido", confianza="baja"), fallos
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+            propuesta = Propuesta(campo="estado", valor=None, recorte=None, evidencia=None, motivo="sin fotos")
+            return campo, propuesta, fallos
 
         foto = fotos[0]
         imagen_pil = _abrir_foto_o_none(foto, fallos, "estado")
         if imagen_pil is None:
-            return Campo(valor=None, fuente="inferido", confianza="baja"), fallos
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+            propuesta = Propuesta(
+                campo="estado", valor=None, recorte=None, evidencia=None,
+                motivo=f"no se pudo abrir {foto.name}",
+            )
+            return campo, propuesta, fallos
         try:
             foto_bytes = foto_completa_a_bytes(imagen_pil)
             imagen = Imagen(bytes_=foto_bytes, fichero=foto.name)
@@ -1777,18 +2147,25 @@ class ExtractorEngine:
         except (LLMLlamadaFallidaError, ApiKeyFaltanteError, RespuestaVLMInvalidaError) as exc:
             logger.error("Fallo VLM evaluando estado en %s: %s", foto.name, exc)
             fallos.append(f"vlm_estado:{foto.name}: {exc}")
-            return Campo(valor=None, fuente="inferido", confianza="baja"), fallos
+            campo = Campo(valor=None, fuente="inferido", confianza="baja")
+            propuesta = Propuesta(
+                campo="estado", valor=None, recorte=None, evidencia=Evidencia(fichero=foto.name),
+                motivo=f"fallo tecnico consultando el VLM: {exc}",
+            )
+            return campo, propuesta, fallos
 
         legible = bool(datos["estimacion_legible"])
         descripcion = datos["descripcion"] if legible else None
+        valor = str(descripcion).strip() if descripcion else None
         # Regla dura #8: SIEMPRE "inferido", nunca "foto" -- lo confirma
         # Diego siempre, pase lo que declare el VLM.
-        campo = Campo(
-            valor=str(descripcion).strip() if descripcion else None,
-            fuente="inferido",
-            confianza="media" if legible else "baja",
+        campo = Campo(valor=valor, fuente="inferido", confianza="media" if legible else "baja")
+        propuesta = Propuesta(
+            campo="estado", valor=valor, recorte=None, evidencia=Evidencia(fichero=foto.name),
+            lecturas=(Lectura(origen="vlm", texto=valor),) if valor else (),
+            motivo="estimacion visual del VLM -- SIEMPRE la confirma Diego, nunca se afirma sola (regla dura #8)",
         )
-        return campo, fallos
+        return campo, propuesta, fallos
 
 
 def _muestrear_fotos(fotos: Sequence[Path], k: int) -> list[Path]:
