@@ -34,3 +34,7 @@ data/exports/
 # SO
 Thumbs.db
 desktop.ini
+
+# Fotos de trabajo de Diego (no se versionan)
+fotos/
+scratch_*
