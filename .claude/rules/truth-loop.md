@@ -76,12 +76,40 @@ El precio **no es un atributo del producto**: es una observación del mercado. P
 
 > Precedente directo: en SEKURA un agente Opus **se inventó** un hecho legal ("el vigilante no tiene TIP", falso) y estuvo a punto de colarse en material de inversor `[INC-001]`. Un precio inventado es exactamente el mismo fallo con otra ropa: una **mentira plausible** que suena a dato.
 
-## §E — Agrupación: el humano cierra
+## §E — Agrupación: cortar de más, nunca de menos
 
+> **Diseño MEDIDO sobre las 33 fotos reales de Diego (`tests/golden/truth.json`, 2026-07-14). No es una hipótesis: son sus datos.** Ver `[INC-002]`, `[INC-003]`, `[INC-004]` para las tres versiones que fallaron por diseñar sin este dato.
+
+### La asimetría, que es la regla madre
+- **Partir un producto de más → Diego fusiona en ~5 segundos.** Barato.
+- **Fusionar dos productos → una foto de otra prenda en el anuncio.** Nadie lo caza. **Una venta perdida.**
+
+Por tanto la agrupación **no optimiza acierto: optimiza no-fusionar.** Sesgo siempre a cortar de más.
+
+### La señal primaria: hueco temporal, sesgado a sobre-cortar
+Medido sobre el golden set: **"hueco ≥ 20 s = producto nuevo"** encuentra **6/6 fronteras, CERO fusiones**, y se pasa de corte 5 veces. `≥ 25 s` ya fusiona dos productos → **el margen es estrecho: ante la duda, bajar el umbral, nunca subirlo.**
+
+**El jitter real de Diego es ±2.4 s y los huecos intra-producto (4-8 s) e inter-producto (14-36 s) SE SOLAPAN.** No existe separación bimodal limpia. Cualquier diseño que busque "la frontera correcta" en la distribución de huecos **está condenado** — ya falló dos veces. El tiempo no decide: **propone, sobre-cortando.**
+
+### La señal de reparación: TIPO de foto (aquí, y sólo aquí, se paga)
+Los cortes de más son **predecibles**: son la foto del **metro** (+94 s) y la del **papel con el desperfecto** (+71 s) — Diego se para a colocarlos — y fotos de detalle.
+
+> **Regla dura: una foto de METRO, ETIQUETA o PAPEL nunca puede EMPEZAR un producto. Sólo un plano general puede.**
+
+Clasificar el tipo de foto requiere un **modelo de visión de verdad**. Medido: **CLIP falla** — dice "prenda entera 100%" ante un primer plano de etiqueta, y su similitud entre fotos consecutivas está casi **invertida** (dos prendas distintas colgadas = 0.90; el plano y la etiqueta del MISMO producto = 0.61). Es el único punto del proyecto donde una API de pago está justificada, y se paga sólo por eso (y de paso lee marca/talla para la Fase 2).
+
+**Degradación honesta:** si el modelo no está o falla, la app **sigue funcionando** — sólo hay más cortes de más. **Nunca** produce una ficha contaminada. El suelo determinista no depende de nadie.
+
+### El humano cierra
 El clustering **propone**; Diego **confirma** (así lo pidió). Reglas:
-- La UI de confirmación debe hacer el error **visible**: fotos de un mismo grupo juntas y a tamaño suficiente para ver que una no pega.
-- Un producto con **una sola foto** o con fotos de **calidad/fondo muy dispar** → marcar como grupo dudoso, no colarlo en silencio.
-- **Nunca** re-agrupar automáticamente después de que Diego haya confirmado. Su confirmación es un hecho, no una sugerencia.
+- La UI debe hacer el error **visible**: fotos del mismo grupo juntas y a tamaño suficiente para ver que una no pega.
+- **Fusionar debe ser trivial** — es la operación que Diego hará más veces, por diseño.
+- Un grupo compuesto **sólo de primeros planos** (sin ningún plano general) es una **alarma**, no un producto.
+- Lo que el modelo no pueda casar va a un cajón de **INCIERTAS**, nunca al grupo que mejor cuadre.
+- **Nunca** re-agrupar después de que Diego confirme. Su confirmación es un hecho.
+
+### Sin EXIF no hay suelo
+Si las fotos llegan **sin fecha** (WhatsApp la borra: medido, 0/59), la señal primaria **no existe** y todo recae en la visión, que ya falla sola. La app **avisa en la ingesta** y le dice que las pase por cable. No bloquea, pero no le deja no enterarse.
 
 ## §F — Retro y meta-mejora (cómo este loop se mejora sin derivar)
 

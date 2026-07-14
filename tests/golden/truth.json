@@ -1,0 +1,41 @@
+{
+  "_nota": "GOLDEN SET. La verdad la fijó Diego (2026-07-14), no un modelo. NO se edita para que el pipeline apruebe (ver skills/eval/SKILL.md). Fotos en la carpeta `fotos/` del repo (gitignored: son suyas). 33 fotos, 7 productos, todas CON EXIF (pasadas por cable).",
+
+  "lote": "2026-07-14_cable",
+  "n_fotos": 33,
+  "n_productos": 7,
+  "todas_con_exif": true,
+
+  "productos": [
+    {"id": 1, "que_es": "Masajeador LH Láser Rodilla (lufthous, LLLT-200, EAN 8445061029720) — producto de caja",
+     "fotos": ["IMG_20260714_101637", "IMG_20260714_101643", "IMG_20260714_101649", "IMG_20260714_101653", "IMG_20260714_101657", "IMG_20260714_101709"]},
+    {"id": 2, "que_es": "Electroestimulador New Age Pocket Life (New Pocket Line) — producto de caja",
+     "fotos": ["IMG_20260714_101732", "IMG_20260714_101750", "IMG_20260714_101758", "IMG_20260714_101832", "IMG_20260714_101901", "IMG_20260714_101915"]},
+    {"id": 3, "que_es": "Sudadera Reebok gris",
+     "fotos": ["IMG_20260714_110449", "IMG_20260714_110454", "IMG_20260714_110458", "IMG_20260714_110511"]},
+    {"id": 4, "que_es": "Sudadera negra con estampado de león 'ORIGINALS'",
+     "fotos": ["IMG_20260714_110547", "IMG_20260714_110552", "IMG_20260714_110601", "IMG_20260714_110628"]},
+    {"id": 5, "que_es": "Sudadera bicolor gris/beige (etiqueta RAMI JALAB)",
+     "fotos": ["IMG_20260714_110701", "IMG_20260714_110705", "IMG_20260714_110714"]},
+    {"id": 6, "que_es": "Sudadera Reebok rosa/frambuesa",
+     "fotos": ["IMG_20260714_110746", "IMG_20260714_110747", "IMG_20260714_110750", "IMG_20260714_110805", "IMG_20260714_110813"],
+     "ojo": "110746 y 110747 son LA MISMA foto repetida — el dedup por sha256 debe cazarla."},
+    {"id": 7, "que_es": "Sudadera capucha Looney Tunes (ORIGINAL MARINES). Tiene la CREMALLERA ROTA — hay foto de un papel escrito diciéndolo.",
+     "fotos": ["IMG_20260714_110842", "IMG_20260714_110846", "IMG_20260714_110856", "IMG_20260714_111030", "IMG_20260714_111141"]}
+  ],
+
+  "hechos_medidos_sobre_este_lote": {
+    "fronteras_reales": [6, 12, 16, 20, 23, 28],
+    "regla_hueco_20s": {
+      "fronteras_encontradas": "6/6",
+      "fusiones_de_productos": 0,
+      "cortes_de_mas": [9, 10, 19, 31, 32],
+      "veredicto": "CERO fusiones (el error caro). 5 cortes de más (el error barato: Diego fusiona en ~5s c/u)."
+    },
+    "regla_hueco_25s": "FALLA: fusiona los productos 1 y 2. El umbral tiene poco margen — sesgar SIEMPRE a cortar de más.",
+    "jitter_real_de_diego": "+/- 2.4s. Los huecos intra-producto (4-8s) e inter-producto (14-36s) SE SOLAPAN: no hay separación bimodal limpia.",
+    "cortes_de_mas_son_predecibles": "Son la foto del METRO (+94s) y la del PAPEL (+71s) — Diego se para a colocarlos — y fotos de detalle. Un modelo de visión que clasifique el TIPO de foto los repara: una foto de metro/etiqueta/papel NUNCA puede empezar un producto."
+  },
+
+  "pendiente": "Falta la VERDAD DE ATRIBUTOS de cada producto (marca, talla, composición, color, estado, precio real de venta). Sin eso, /eval puede medir la AGRUPACIÓN pero todavía no la TASA DE ALUCINACIÓN de la extracción (Fase 2). Pedírsela a Diego cuando llegue la Fase 2."
+}
