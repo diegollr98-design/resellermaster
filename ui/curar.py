@@ -55,7 +55,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from core.grouping import UMBRAL_HUECO_SEGUNDOS, agrupar, costuras_abiertas_de, particion
+from core.grouping import agrupar, costuras_abiertas_de, particion
 from core.images import (
     TAMANO_MINIATURA_DEFECTO,
     nombre_miniatura,
@@ -264,19 +264,57 @@ def _accion_descartar(store: LoteStore, lote_id: str, foto_id: str) -> None:
         _registrar_error(f"No se pudo descartar la foto: {exc}")
 
 
-def _grupo_fue_fusionado(grupo: list[str], fotos_por_id: dict[str, dict]) -> bool:
+def _costuras_propuestas_inicialmente(
+    fotos_ordenadas: list[str], fotos_por_id: dict[str, dict]
+) -> set[tuple[str, str]]:
+    """Las costuras que `core.grouping.agrupar()` dejaría ABIERTAS si
+    propusiera la agrupación de este lote AHORA MISMO — recalculado sobre
+    el EXIF real de los ficheros, nunca leído de lo que Diego ya editó en
+    el store. `agrupar()` es una función PURA de la fecha EXIF de cada
+    fichero (`core/grouping.py`, docstring del módulo): llamarla de nuevo
+    sobre el mismo conjunto de fotos reproduce EXACTAMENTE la propuesta que
+    `_proponer_grupo_inicial` ya persistió — no hace falta guardar nada
+    aparte, y sobre todo: no hace falta *re-derivar* el umbral por otra
+    vía. Mismo patrón que usa el gate `tests/test_curar.py::
+    test_el_gate_...` para comparar la propuesta inicial contra la verdad.
+
+    ## `[listing-audit]` HALLAZGO 2 (2026-07-14) — el "tocado" NO puede
+    re-thresholdear el hueco por su cuenta. La versión vieja de
+    `_grupo_fue_fusionado` recalculaba `hueco >= UMBRAL_HUECO_SEGUNDOS`
+    de forma independiente; con EXIF DEGENERADO (timestamps idénticos:
+    ver `[INC-005]`, `core.grouping._agrupar_por_tiempo`) la propuesta
+    inicial corta TODO (cajón de INCIERTAS, cada foto sola) pero el hueco
+    real entre dos fotos que Diego fusionó a mano es 0s — `0 >= 15` es
+    `False`, así que la revisión final decía "no fusionaste nada" cuando
+    Diego había fusionado el lote entero. El predicado tiene que salir de
+    la MISMA fuente que generó la propuesta (`agrupar`/
+    `costuras_abiertas_de`), nunca de un umbral re-aplicado a mano."""
+    paths = [Path(fotos_por_id[fid]["ruta"]) for fid in fotos_ordenadas]
+    ruta_a_id = {str(p): fid for fid, p in zip(fotos_ordenadas, paths)}
+    propuestos = agrupar(paths)
+    grupo_de_foto: dict[str, int] = {}
+    for indice, grupo in enumerate(propuestos):
+        for p in grupo.fotos:
+            grupo_de_foto[ruta_a_id[str(p)]] = indice
+    return costuras_abiertas_de(fotos_ordenadas, grupo_de_foto)
+
+
+def _grupo_fue_fusionado(
+    grupo: list[str], costuras_propuestas_inicialmente: set[tuple[str, str]]
+) -> bool:
     """`True` si este grupo contiene, por dentro, una costura que la
-    propuesta automática habría dejado ABIERTA (hueco desconocido, o
-    `>= UMBRAL_HUECO_SEGUNDOS`) — es decir, Diego la cerró a mano. Es la
-    definición de "tocado" para el modal de revisión: REGLA 4 de la
-    tarea, "enseña sólo los productos que Diego fusionó"."""
+    propuesta automática (`_costuras_propuestas_inicialmente`, recalculada
+    sobre el EXIF real) habría dejado ABIERTA — es decir, Diego la cerró a
+    mano. Es la definición de "tocado" para el modal de revisión: REGLA 4
+    de la tarea, "enseña sólo los productos que Diego fusionó". Ver
+    HALLAZGO 2 en el docstring de `_costuras_propuestas_inicialmente`: a
+    propósito NO recalcula ningún umbral aquí — sólo compara contra la
+    fuente que produjo la propuesta."""
     if len(grupo) <= 1:
         return False
-    for izq, der in zip(grupo, grupo[1:]):
-        hueco = _hueco_segundos(fotos_por_id[izq], fotos_por_id[der])
-        if hueco is None or hueco >= UMBRAL_HUECO_SEGUNDOS:
-            return True
-    return False
+    return any(
+        (izq, der) in costuras_propuestas_inicialmente for izq, der in zip(grupo, grupo[1:])
+    )
 
 
 def _accion_confirmar_todo(store: LoteStore, lote_id: str) -> bool:
@@ -347,9 +385,15 @@ def _dialog_fusionar(
 
 @st.dialog("Revisión antes de confirmar", width="large")
 def _dialog_confirmar(
-    store: LoteStore, lote_id: str, grupos_actuales: list[list[str]], fotos_por_id: dict[str, dict]
+    store: LoteStore,
+    lote_id: str,
+    grupos_actuales: list[list[str]],
+    fotos_por_id: dict[str, dict],
+    costuras_propuestas_inicialmente: set[tuple[str, str]],
 ) -> None:
-    tocados = [g for g in grupos_actuales if _grupo_fue_fusionado(g, fotos_por_id)]
+    tocados = [
+        g for g in grupos_actuales if _grupo_fue_fusionado(g, costuras_propuestas_inicialmente)
+    ]
     if tocados:
         st.warning(
             f"Revisa estos {len(tocados)} grupo(s) que fusionaste antes de confirmar "
@@ -542,6 +586,10 @@ def render(store: LoteStore, lote_id: str) -> None:
     st.divider()
     if grupos_actuales:
         if st.button("✅ Confirmar agrupación", type="primary", use_container_width=True):
-            _dialog_confirmar(store, lote_id, grupos_actuales, fotos_por_id)
+            # Recalculada AQUÍ, al pulsar — no en cada rerun: es la propuesta
+            # que el algoritmo haría AHORA (`_costuras_propuestas_inicialmente`),
+            # independiente de los toggles de Diego. Ver HALLAZGO 2.
+            costuras_propuestas = _costuras_propuestas_inicialmente(fotos_ordenadas, fotos_por_id)
+            _dialog_confirmar(store, lote_id, grupos_actuales, fotos_por_id, costuras_propuestas)
     else:
         st.caption("No hay grupos pendientes de confirmar.")

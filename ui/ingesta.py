@@ -20,17 +20,30 @@ import streamlit as st
 
 from core.images import (
     EXTENSIONES_SOPORTADAS,
+    TAMANO_MINIATURA_DEFECTO,
     ResumenExif,
     es_soportada,
     leer_metadatos,
+    obtener_o_crear_miniatura,
     resumen_exif,
     sha256_de_fichero,
 )
-from core.store import Foto, FotoDuplicadaError, LoteStore
+from core.store import DEFAULT_DATA_DIR, Foto, FotoDuplicadaError, LoteStore
 
 logger = logging.getLogger(__name__)
 
 _TIPOS_UPLOADER = sorted(ext.lstrip(".") for ext in EXTENSIONES_SOPORTADAS)
+
+# Mismo directorio de caché que lee `ui/curar.py::_DIR_CACHE_MINIATURAS` —
+# indexado por sha256+tamaño, así que da igual qué módulo lo escriba
+# primero. HALLAZGO 3 (`listing-audit`, 2026-07-14): pre-generar aquí, en
+# la ingesta (que ya recorre cada fichero para EXIF/hash — es el momento
+# natural), mueve el coste de decodificar/redimensionar N fotos a donde
+# Diego YA está esperando con una barra de progreso visible, en vez de
+# pagarlo en silencio (`show_spinner=False`) al llegar a "Curar
+# agrupación" — medido: 8,4 s con 33 fotos, 17,9 s con 26, pantalla en
+# blanco. Con esto, el curado llega con la caché ya caliente.
+_DIR_CACHE_MINIATURAS = DEFAULT_DATA_DIR / "cache" / "miniaturas"
 
 # Umbral (proporción sin EXIF sobre el total del lote) a partir del cual el
 # aviso escala de `st.warning` a `st.error` — "la mayoría" pedido por Diego.
@@ -95,7 +108,17 @@ def _ingerir(
     store. Devuelve el `lote_id` creado. Un fichero individual ilegible o
     no copiable se registra con `logger.exception` y se salta — nunca
     aborta el lote entero por una foto rota (mismo criterio que
-    `core/images.py`)."""
+    `core/images.py`).
+
+    También PRE-GENERA la miniatura cacheada de cada foto legible
+    (HALLAZGO 3, `listing-audit`): así "Curar agrupación" llega con la
+    caché caliente en vez de decodificar N fotos de golpe en su primer
+    render (medido: 8-18 s de pantalla en blanco con `show_spinner=False`,
+    ver constante `_DIR_CACHE_MINIATURAS`). Un fallo generando UNA
+    miniatura no aborta la ingesta ni cuenta como error del lote: la foto
+    ya quedó registrada correctamente, y `ui/curar.py::_miniatura_de` la
+    regenera bajo demanda si hace falta — sólo se pierde el ahorro para
+    esa foto, nunca se pierde la foto ni se silencia el fallo."""
     lote_id = store.crear_lote(nombre_lote, carpeta_origen)
     carpeta_lote = store.lotes_dir / lote_id
 
@@ -125,6 +148,20 @@ def _ingerir(
             n_con_error += 1
             progreso.progress(i / total, text=f"Copiando {i}/{total} fotos…")
             continue
+
+        if meta.legible:
+            try:
+                obtener_o_crear_miniatura(destino, _DIR_CACHE_MINIATURAS, TAMANO_MINIATURA_DEFECTO)
+            except Exception:  # noqa: BLE001 — pre-calentado best-effort: NINGÚN fallo aquí puede abortar el lote (mismo criterio amplio que core/images.leer_metadatos).
+                # No aborta la ingesta ni marca la foto como error del lote:
+                # la foto ya está bien copiada y registrada; sólo se pierde
+                # el pre-calentado de ESTA miniatura (se genera bajo demanda
+                # en `ui/curar.py` cuando Diego llegue a curarla).
+                logger.exception(
+                    "No se pudo pre-generar la miniatura de %s en la ingesta; se "
+                    "generará bajo demanda al curar (más lento, pero no bloquea)",
+                    destino,
+                )
 
         timestamp_exif = (
             meta.fecha_captura_exif.isoformat() if meta.fecha_captura_exif else None

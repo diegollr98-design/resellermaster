@@ -403,10 +403,24 @@ def costuras_abiertas_de(
     las dos no le corresponde ningun producto en `grupo_de_foto` (una foto
     que todavia no se ha propuesto/guardado no puede estar "en el mismo
     grupo" que su vecina — degrada al lado seguro, sobre-cortar).
+
+    ## `[listing-audit]` HALLAZGO 1 (2026-07-14) — huerfanas FUSIONABAN
+    `grupo_de_foto.get(izq) != grupo_de_foto.get(der)` con AMBAS fotos
+    huerfanas es `None != None` -> `False` -> costura CERRADA -> FUSION.
+    Justo lo contrario de lo que promete este docstring. Reproducido:
+    `costuras_abiertas_de(['a','b','c','d','e'], {})` devolvia `set()` ->
+    `particion()` devolvia UN grupo con las 5 fotos. Pasaba en produccion
+    cuando la propuesta inicial fallaba al persistir (StoreError transitorio
+    en `_proponer_grupo_inicial`) o cuando `legible` quedaba envenenado por
+    un error de lectura: las fotos sin producto en el dict se leian como
+    "mismo grupo que su vecina huerfana" en vez de "sin senal, corta".
+    Ausencia en CUALQUIER lado -> costura SIEMPRE abierta, sin excepcion.
     """
     abiertas: set[tuple[str, str]] = set()
     for izquierda, derecha in zip(fotos_ordenadas, fotos_ordenadas[1:]):
-        if grupo_de_foto.get(izquierda) != grupo_de_foto.get(derecha):
+        grupo_izq = grupo_de_foto.get(izquierda)
+        grupo_der = grupo_de_foto.get(derecha)
+        if grupo_izq is None or grupo_der is None or grupo_izq != grupo_der:
             abiertas.add((izquierda, derecha))
     return abiertas
 

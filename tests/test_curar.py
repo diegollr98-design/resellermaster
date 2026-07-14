@@ -30,15 +30,17 @@ from __future__ import annotations
 
 import random
 from collections import defaultdict
+from datetime import datetime
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
-from PIL import Image
+from PIL import ExifTags, Image
 from streamlit.testing.v1 import AppTest
 
 from core.grouping import UMBRAL_HUECO_SEGUNDOS, agrupar, costuras_abiertas_de, particion
 from core.images import leer_metadatos
-from core.store import Foto, LoteStore
+from core.store import Foto, LoteStore, StoreError
 
 import ui.curar as curar
 
@@ -136,6 +138,56 @@ def test_costuras_abiertas_de_es_inversa_de_particion_property_based():
         assert particion(fotos, derivadas) == grupos
 
 
+# --------------------------------------------------------------------------
+# HALLAZGO 1 (`listing-audit`, 2026-07-14): fotos HUÉRFANAS (sin producto en
+# `grupo_de_foto`) tenían que dejar la costura ABIERTA (degradar al lado
+# seguro) y en vez de eso, con AMBAS huérfanas, `None != None` era `False`
+# y la costura quedaba CERRADA -> `particion()` fusionaba TODO en un grupo.
+# --------------------------------------------------------------------------
+def test_costuras_abiertas_de_con_grupo_de_foto_vacio_todas_las_costuras_abiertas():
+    """Reproduce EXACTAMENTE el caso del hallazgo:
+    `costuras_abiertas_de(['a','b','c','d','e'], {})` debía dar TODAS las
+    costuras abiertas (N-1 singletons), nunca `set()` (que fusiona las 5)."""
+    fotos, pares = _fotos_y_pares(5)
+
+    abiertas = costuras_abiertas_de(fotos, {})
+
+    assert abiertas == set(pares)
+    assert particion(fotos, abiertas) == [[f] for f in fotos]
+
+
+def test_costuras_abiertas_de_caso_mixto_huerfanas_y_asignadas():
+    """Unas fotos con producto asignado, otras huérfanas (todavía sin
+    `producto_id`, p. ej. porque la propuesta automática falló al
+    persistir). TODA costura que toque una huérfana debe quedar ABIERTA,
+    incluida huérfana-huérfana (que es justo el caso `None != None` que
+    fallaba)."""
+    fotos = ["a", "b", "c", "d", "e"]
+    # a y b ya están asignadas al MISMO producto -> costura a-b CERRADA.
+    # c, d, e son huérfanas (sin producto todavía, en ningún caso el mismo).
+    grupo_de_foto = {"a": "p1", "b": "p1"}
+
+    abiertas = costuras_abiertas_de(fotos, grupo_de_foto)
+
+    assert ("a", "b") not in abiertas
+    assert ("b", "c") in abiertas  # asignada -> huérfana
+    assert ("c", "d") in abiertas  # huérfana -> huérfana (el caso que fallaba)
+    assert ("d", "e") in abiertas  # huérfana -> huérfana
+    assert particion(fotos, abiertas) == [["a", "b"], ["c"], ["d"], ["e"]]
+
+
+def test_costuras_abiertas_de_una_sola_foto_asignada_y_el_resto_huerfanas():
+    """Caso límite: sólo la primera foto tiene producto; el resto son
+    huérfanas consecutivas. Ninguna se debe fusionar entre sí."""
+    fotos = ["x", "y", "z"]
+    grupo_de_foto = {"x": "p1"}
+
+    abiertas = costuras_abiertas_de(fotos, grupo_de_foto)
+
+    assert abiertas == {("x", "y"), ("y", "z")}
+    assert particion(fotos, abiertas) == [["x"], ["y"], ["z"]]
+
+
 # ============================================================================
 # 2. `AppTest` contra `ui.curar.render` real.
 # ============================================================================
@@ -143,6 +195,22 @@ def _crear_foto_real(ruta: Path, color: tuple[int, int, int]) -> None:
     img = Image.new("RGB", (64, 64), color)
     ruta.parent.mkdir(parents=True, exist_ok=True)
     img.save(ruta, format="JPEG")
+
+
+def _crear_foto_con_exif(ruta: Path, color: tuple[int, int, int], fecha: datetime) -> None:
+    """Igual que `_crear_foto_real`, pero con fecha `DateTimeOriginal`
+    EMBEBIDA de verdad en el fichero (mismo patrón que
+    `tests/test_grouping.py::_guardar_con_fecha`). Necesario para el caso
+    "EXIF degenerado" (HALLAZGO 2): `core.grouping.agrupar()` lee el EXIF
+    del FICHERO en disco, no el `timestamp_exif` guardado en el store —
+    una imagen sin bloque EXIF real cae en "sin fecha", no en "EXIF
+    idéntico"."""
+    exif = Image.Exif()
+    exif[274] = 1  # Orientation, IFD0 — sin esto Pillow no serializa el bloque.
+    exif.get_ifd(ExifTags.IFD.Exif)[36867] = fecha.strftime("%Y:%m:%d %H:%M:%S")
+    img = Image.new("RGB", (64, 64), color)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    img.save(ruta, format="JPEG", exif=exif)
 
 
 def _script(data_dir: str, lote_id: str) -> None:
@@ -156,10 +224,17 @@ def _script(data_dir: str, lote_id: str) -> None:
 
 
 def _preparar_lote_dos_grupos_y_suelta(tmp_path: Path) -> tuple[str, dict[str, str]]:
-    """3 grupos ya guardados a mano (agrupación determinista, sin depender
-    de `agrupar()`): G1=[A0,A1] (costura interna CERRADA), G2=[B0,B1]
-    (ídem), S0 sola. Entre G1 y G2, y entre G2 y S0, hay costuras ABIERTAS.
-    Devuelve `(lote_id, {nombre: foto_id})`."""
+    """3 grupos ya guardados a mano (la PARTICIÓN es determinista, no
+    depende de que `agrupar()` la reproduzca): G1=[A0,A1] (costura interna
+    CERRADA), G2=[B0,B1] (ídem), S0 sola. Entre G1 y G2, y entre G2 y S0,
+    hay costuras ABIERTAS. Devuelve `(lote_id, {nombre: foto_id})`.
+
+    Los ficheros llevan EXIF REAL embebido con estos mismos timestamps
+    (`_crear_foto_con_exif`, no `_crear_foto_real`): desde HALLAZGO 2,
+    `_costuras_propuestas_inicialmente` vuelve a llamar `agrupar()` sobre
+    el fichero en disco — si aquí sólo se fijara el `timestamp_exif` del
+    store sin EXIF real, `agrupar()` leería "sin fecha" para las 5 y la
+    propuesta recalculada no coincidiría con la partición ya guardada."""
     store = LoteStore(data_dir=tmp_path)
     lote_id = store.crear_lote("Lote cremallera", "C:/fotos/origen")
     carpeta = store.lotes_dir / lote_id
@@ -181,7 +256,7 @@ def _preparar_lote_dos_grupos_y_suelta(tmp_path: Path) -> tuple[str, dict[str, s
     fotos: list[Foto] = []
     for nombre, color in nombres_colores:
         ruta = carpeta / f"{nombre}.jpg"
-        _crear_foto_real(ruta, color)
+        _crear_foto_con_exif(ruta, color, datetime.fromisoformat(timestamps[nombre]))
         fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}", timestamp_exif=timestamps[nombre]))
     ids = store.añadir_fotos(lote_id, fotos)
     por_nombre = dict(zip([n for n, _ in nombres_colores], ids))
@@ -386,6 +461,118 @@ def test_lote_sin_exif_renderiza_y_es_curable(tmp_path):
 
     botones_costura[0].click().run()
     assert not at.exception, f"abrir el pestillo en un lote sin EXIF lanzó: {at.exception}"
+
+
+# --------------------------------------------------------------------------
+# HALLAZGO 1, end-to-end: si `_proponer_grupo_inicial` falla al persistir
+# (StoreError transitorio — antivirus bloqueando el fichero, disco lleno un
+# instante), la pantalla NUNCA debe presentar un MEGA-GRUPO con todas las
+# fotos como si fuera un único producto confirmable.
+# --------------------------------------------------------------------------
+def test_h1_fallo_de_store_en_propuesta_inicial_no_presenta_mega_grupo_confirmable(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote con fallo transitorio de store", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    nombres = ["A0", "A1", "B0", "B1", "S0"]
+    fotos: list[Foto] = []
+    for nombre in nombres:
+        ruta = carpeta / f"{nombre}.jpg"
+        _crear_foto_real(ruta, (10, 10, 10))
+        # sin EXIF: da igual la señal temporal, lo que importa es que
+        # NINGUNA quede con producto_id tras el fallo de persistencia.
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}"))
+    store.añadir_fotos(lote_id, fotos)
+
+    with patch.object(
+        LoteStore, "guardar_agrupacion", side_effect=StoreError("disco bloqueado (simulado)")
+    ):
+        at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+
+    assert not at.exception, f"el fallo de store no debe tumbar la pantalla: {at.exception}"
+
+    # Nada se persistió (guardar_agrupacion siempre falló): CERO productos.
+    estado_tras_fallo = store.cargar_lote(lote_id)
+    assert estado_tras_fallo["productos"] == []
+
+    # Lo que la pantalla HABRÍA renderizado (misma fuente que `render()`,
+    # `_estado_cremallera`, sobre el estado real tras el fallo) NO puede ser
+    # un único grupo con las 5 fotos — eso es la fusión total que el
+    # HALLAZGO 1 prohíbe. Debe degradar a 5 singletons (huérfanas -> costura
+    # SIEMPRE abierta).
+    _, _fotos_ordenadas, grupos, _costuras = curar._estado_cremallera(store, lote_id)
+    assert not any(len(g) == len(nombres) for g in grupos), (
+        f"HALLAZGO 1: la pantalla fusionó las {len(nombres)} fotos huérfanas en un "
+        f"mega-grupo: {grupos}"
+    )
+    assert grupos == [[fid] for fid in _fotos_ordenadas]
+
+    # Y en el render real no aparece ninguna TARJETA de grupo con "5
+    # foto(s)" (la cabecera del lote también dice "... — 5 foto(s)." — se
+    # compara el valor EXACTO de cada caption, no un substring, para no
+    # confundir la una con la otra).
+    assert not any(c.value.strip() == "5 foto(s)" for c in at.caption)
+
+
+# --------------------------------------------------------------------------
+# HALLAZGO 2, end-to-end: con EXIF degenerado (timestamps idénticos), la
+# propuesta inicial corta TODO. Diego fusiona a mano dos de esas fotos: el
+# modal de revisión final DEBE listar ese grupo como tocado — nunca decir
+# "No fusionaste ningún grupo" cuando sí fusionó.
+# --------------------------------------------------------------------------
+def test_h2_exif_degenerado_grupo_fusionado_a_mano_se_lista_en_revision(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote EXIF degenerado", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    fecha_idéntica = datetime(2026, 7, 14, 10, 0, 0)
+    mismo_timestamp = fecha_idéntica.isoformat()
+    nombres = ["D0", "D1", "D2"]
+    fotos: list[Foto] = []
+    for nombre in nombres:
+        ruta = carpeta / f"{nombre}.jpg"
+        _crear_foto_con_exif(ruta, (40, 60, 80), fecha_idéntica)
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}", timestamp_exif=mismo_timestamp))
+    ids = store.añadir_fotos(lote_id, fotos)
+    por_nombre = dict(zip(nombres, ids))
+
+    # Primer render: propone. EXIF degenerado -> cajón de INCIERTAS -> 3
+    # singletons (`core.grouping._agrupar_por_tiempo`).
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    assert len(no_confirmados) == 3, "EXIF degenerado debe cortar TODO en la propuesta inicial"
+
+    # Diego fusiona D0 y D1 a mano — la costura entre ellas SÍ estaba
+    # abierta en la propuesta inicial (EXIF degenerado corta todo), así que
+    # cerrarla es una fusión de verdad hecha por él.
+    d0, d1 = por_nombre["D0"], por_nombre["D1"]
+    assert curar._cerrar_costura(store, lote_id, d0, d1) is True
+
+    # Unitario: `_grupo_fue_fusionado` (vía `_costuras_propuestas_inicialmente`,
+    # que NO re-thresholdea nada) debe detectar el grupo fusionado.
+    _, fotos_ordenadas, grupos_actuales, _ = curar._estado_cremallera(store, lote_id)
+    fotos_por_id = {f["id"]: f for f in store.cargar_lote(lote_id)["fotos"]}
+    costuras_propuestas = curar._costuras_propuestas_inicialmente(fotos_ordenadas, fotos_por_id)
+
+    grupo_fusionado = next(g for g in grupos_actuales if set(g) == {d0, d1})
+    assert curar._grupo_fue_fusionado(grupo_fusionado, costuras_propuestas) is True
+
+    # End-to-end: el modal de revisión LISTA el grupo fusionado, no dice
+    # "No fusionaste ningún grupo".
+    at2 = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at2.exception
+    boton = next(b for b in at2.button if b.label and "Confirmar agrupación" in b.label)
+    boton.click().run()
+    assert not at2.exception, f"abrir el modal de revisión lanzó: {at2.exception}"
+
+    textos_info = " ".join(i.value for i in at2.info)
+    assert "No fusionaste ningún grupo" not in textos_info
+
+    textos_warning = " ".join(w.value for w in at2.warning)
+    assert "que fusionaste" in textos_warning
 
 
 # ============================================================================
