@@ -102,7 +102,37 @@ except ImportError:  # pragma: no cover — ver nota de módulo, arriba.
 
 _DIR_CACHE_MINIATURAS = DEFAULT_DATA_DIR / "cache" / "miniaturas"
 _ORDEN_CONFIANZA = {"baja": 0, "media": 1, "alta": 2}
-_MOTIVO_AJUSTE_MANUAL = "Grupo ajustado manualmente por Diego."
+
+# MENOR (media): antes esta cadena SUSTITUÍA sin más el motivo original del
+# algoritmo en cuanto Diego tocaba un grupo — y con él se perdía la única
+# advertencia real que traía ("si fotografiaste dos productos seguidos sin
+# pararte, el reloj no los distingue"). La composición ya cambió, así que el
+# motivo original (con sus números de duración/hueco) ya no describe lo que
+# hay aquí y no se puede "concatenar" tal cual sin mentir con datos viejos;
+# en su lugar, esa advertencia queda EMBEBIDA de forma permanente en este
+# texto, para que un grupo recién ajustado a mano — el más expuesto a un
+# error de Diego — nunca se quede sin ella.
+_MOTIVO_AJUSTE_MANUAL = (
+    "Grupo ajustado manualmente por Diego. Sigue aplicando la misma cautela que "
+    "un grupo automático: si fotografiaste dos productos seguidos sin pararte "
+    "entre ellos, ninguna señal automática los distingue — comprueba que todas "
+    "las fotos son del mismo producto antes de confirmar."
+)
+
+# Sentinel de la opción "crear un grupo nuevo" en la selectbox de destino de
+# "Mover seleccionadas a" (MENOR/baja: antes se resolvía por texto de label
+# vía `opciones.index(...)`, y dos grupos con el mismo prefijo de id (8
+# chars) podían colisionar y mandar la foto al grupo EQUIVOCADO). Ahora la
+# selectbox trabaja siempre con ids reales + `format_func`, nunca con texto.
+_SENTINEL_NUEVO_GRUPO = "__nuevo_grupo__"
+
+# Key de sesión (NO de widget) para el aviso "log + marca" de
+# `_mover_fotos` cuando `producto_destino_id` ya no existe (MENOR/baja): se
+# escribe desde el callback `on_click` y se lee/limpia al principio del
+# siguiente `render()` — escribir aquí desde un callback es legal (no es la
+# key de ningún widget), pero llamar a `st.warning` DENTRO del callback no
+# lo es (Streamlit descarta la salida de un callback).
+_KEY_AVISO_DESTINO_PERDIDO = "_confirmacion_aviso_destino_perdido"
 
 
 # --------------------------------------------------------------------------
@@ -120,6 +150,28 @@ def _miniatura_de(ruta: str, hash_conocido: str) -> str:
     if candidato.exists():
         return str(candidato)
     return str(obtener_o_crear_miniatura(Path(ruta), _DIR_CACHE_MINIATURAS, TAMANO_MINIATURA_DEFECTO))
+
+
+def _render_imagen_segura(foto: dict, **kwargs_st_image: object) -> None:
+    """`st.image(_miniatura_de(...))`, pero sin poder tumbar la pantalla.
+
+    CRÍTICO 4 (`listing-audit`): `obtener_o_crear_miniatura` hace
+    `raise OSError` (`core/images.py`) ante un fichero con la cabecera
+    intacta pero los píxeles truncados/corruptos — un caso DISTINTO de "sin
+    EXIF" o "ilegible en la ingesta" (`leer_metadatos` puede marcarlo
+    `legible=True` porque sólo lee la cabecera; decodificar los píxeles de
+    verdad, que es lo que hace falta para una miniatura, es lo que falla).
+    Antes, nadie capturaba esa excepción aquí y tiraba el render del lote
+    ENTERO — Diego no podía curar ni las fotos buenas. Ahora: se loguea
+    (ruidoso, nunca en silencio) y se pinta un error EN ESA TARJETA; el
+    resto de la pantalla sigue viva."""
+    try:
+        ruta_miniatura = _miniatura_de(foto["ruta"], foto["hash"])
+    except Exception as exc:  # noqa: BLE001 — frontera "una foto del lote", ver docstring.
+        logger.exception("No se pudo generar la miniatura de %s", foto["ruta"])
+        st.error(f"⚠️ No se pudo generar la miniatura de {Path(foto['ruta']).name}: {exc}")
+        return
+    st.image(ruta_miniatura, **kwargs_st_image)
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +233,15 @@ def _mover_fotos(
     """Mueve `foto_ids_a_mover` fuera de donde estén ahora. Si
     `producto_destino_id` es `None` (o ya no existe tras el movimiento),
     forma un grupo NUEVO con ellas — así es como se "parte" un grupo en
-    dos con el mismo mecanismo que mover fotos sueltas."""
+    dos, y también como CRÍTICO 1 crea un grupo desde fotos sueltas
+    marcadas, con el mismo mecanismo que mover fotos sueltas.
+
+    MENOR (baja): si Diego pidió un `producto_destino_id` CONCRETO (no
+    `None`) y ese grupo ya no existe en este momento (p. ej. porque las
+    fotos que quedaban en él son justo las que se están moviendo ahora), NO
+    se cae al fallback en silencio — se loguea y se deja un aviso en
+    `st.session_state` para que `render()` lo muestre en el próximo rerun
+    (`decision-making.md` §13: nunca un fallback mudo)."""
     a_mover = set(foto_ids_a_mover)
     grupos_por_producto = {
         p["id"]: [fid for fid in p["fotos"] if fid not in a_mover]
@@ -197,6 +257,18 @@ def _mover_fotos(
         )
         grupos_finales = list(grupos_por_producto.values())
     else:
+        if producto_destino_id:
+            logger.warning(
+                "producto_destino_id=%s ya no existe al mover %d foto(s); se forma un "
+                "grupo NUEVO en su lugar en vez de fallar en silencio.",
+                producto_destino_id,
+                len(foto_ids_a_mover),
+            )
+            st.session_state[_KEY_AVISO_DESTINO_PERDIDO] = (
+                f"El grupo destino que pediste ya no existía en ese momento: tus "
+                f"{len(foto_ids_a_mover)} foto(s) se movieron a un grupo NUEVO en su "
+                "lugar. Revísalo antes de confirmar."
+            )
         grupos_finales = list(grupos_por_producto.values()) + [foto_ids_a_mover]
 
     store.guardar_agrupacion(lote_id, grupos_finales)
@@ -272,6 +344,16 @@ def _accion_fusionar(
     _limpiar_seleccion(foto_ids_grupo)
 
 
+def _accion_descartar(store: LoteStore, lote_id: str, foto_id: str) -> None:
+    """Callback `on_click` de "🗑️ Descartar del lote" (CRÍTICO 3).
+
+    Sólo se ofrece en la UI para fotos `legible=0` (ver `_render_suelta`),
+    pero la guardia real — rechazar borrar una foto LEGIBLE — vive en
+    `core.store.LoteStore.descartar_foto`, el único camino de escritura: si
+    algún día la UI se equivoca de foto, el error salta ahí, no aquí."""
+    store.descartar_foto(lote_id, foto_id)
+
+
 def _etiqueta_grupo(producto: dict) -> str:
     return f"Grupo {producto['id'][:8]} ({len(producto['fotos'])} fotos)"
 
@@ -283,14 +365,32 @@ def _etiqueta_grupo(producto: dict) -> str:
 # más) — pero se itera `producto["fotos"]` en vez de asumir longitud 1,
 # por si el módulo real algún día cambia esa forma.
 # --------------------------------------------------------------------------
-def _render_suelta(producto: dict, motivo: str, fotos_por_id: dict[str, dict]) -> None:
+def _render_suelta(
+    store: LoteStore, lote_id: str, producto: dict, motivo: str, fotos_por_id: dict[str, dict]
+) -> None:
     for foto in _fotos_en_orden([fotos_por_id[fid] for fid in producto["fotos"]]):
         with st.container(border=True):
-            st.image(_miniatura_de(foto["ruta"], foto["hash"]), width=220)
-            # El label del checkbox ES el nombre del fichero: Diego necesita
-            # verlo para reconocer "esto es el metro de tal prenda" sin una
-            # línea de caption aparte.
-            st.checkbox(Path(foto["ruta"]).name, key=f"sel_{foto['id']}")
+            _render_imagen_segura(foto, width=220)
+            if not foto["legible"]:
+                # CRÍTICO 3: SIN checkbox — un fichero ilegible no puede
+                # entrar en el flujo de "marcar y añadir a un grupo" (la
+                # guardia dura vive en `store.guardar_agrupacion`, pero
+                # aquí ni se le ofrece el camino). Sólo puede descartarse.
+                st.error(
+                    f"⚠️ Fichero no legible: {foto['error_lectura'] or 'motivo no registrado'}"
+                )
+                st.caption(Path(foto["ruta"]).name)
+                st.button(
+                    "🗑️ Descartar del lote",
+                    key=f"descartar_{foto['id']}",
+                    on_click=_accion_descartar,
+                    args=(store, lote_id, foto["id"]),
+                )
+            else:
+                # El label del checkbox ES el nombre del fichero: Diego
+                # necesita verlo para reconocer "esto es el metro de tal
+                # prenda" sin una línea de caption aparte.
+                st.checkbox(Path(foto["ruta"]).name, key=f"sel_{foto['id']}")
             st.caption(motivo)
 
 
@@ -335,10 +435,7 @@ def _render_grupo(
         seleccionadas: list[str] = []
         for i, foto in enumerate(fotos_grupo):
             with columnas[i % 5]:
-                st.image(
-                    _miniatura_de(foto["ruta"], foto["hash"]),
-                    use_container_width=True,
-                )
+                _render_imagen_segura(foto, use_container_width=True)
                 marcada = st.checkbox(
                     "Seleccionar", key=f"sel_{foto['id']}", label_visibility="collapsed"
                 )
@@ -359,6 +456,11 @@ def _render_grupo(
         # de candidatas (`ids_sueltas`), y ES ELLA la que relee en el
         # callback qué sigue marcado en ese momento — el mismo patrón que
         # ya usa "Mover N foto(s)" más abajo con `fotos_grupo` completo.
+        #
+        # CRÍTICO 2 (`listing-audit`): el botón antes NO nombraba lo que iba
+        # a mover — un gatillo ciego con la columna izquierda scrolleada
+        # fuera de vista es el fallo más caro del proyecto (§E). Ahora lleva
+        # los nombres de fichero justo debajo, siempre visibles.
         # --------------------------------------------------------------
         sueltas_marcadas = [
             fid for fid in ids_sueltas if st.session_state.get(f"sel_{fid}", False)
@@ -371,6 +473,10 @@ def _render_grupo(
                 on_click=_accion_mover,
                 args=(store, lote_id, ids_sueltas, producto["id"]),
             )
+            nombres_marcadas = ", ".join(
+                Path(fotos_por_id[fid]["ruta"]).name for fid in sueltas_marcadas
+            )
+            st.caption(f"Moverá: {nombres_marcadas}")
 
         col_confirmar, col_mover, col_fusionar = st.columns(3)
 
@@ -386,16 +492,23 @@ def _render_grupo(
 
         with col_mover:
             if seleccionadas:
-                opciones = ["➕ Nuevo grupo (partir)"] + [
-                    _etiqueta_grupo(p) for p in otros_no_confirmados
-                ]
-                destino_label = st.selectbox(
-                    "Mover seleccionadas a", opciones, key=f"destino_{producto['id']}"
+                # MENOR (baja): antes se resolvía el destino por TEXTO de
+                # label vía `opciones.index(...)` — dos grupos con el mismo
+                # prefijo de id (`_etiqueta_grupo` usa `id[:8]`) podían
+                # colisionar y mandar la foto al grupo EQUIVOCADO. Ahora la
+                # selectbox trabaja con los ids reales (`format_func` sólo
+                # decide qué se PINTA), así que el destino se resuelve por
+                # id, nunca por índice de una lista de textos.
+                ids_destino = [_SENTINEL_NUEVO_GRUPO] + [p["id"] for p in otros_no_confirmados]
+                etiquetas_destino = {p["id"]: _etiqueta_grupo(p) for p in otros_no_confirmados}
+                etiquetas_destino[_SENTINEL_NUEVO_GRUPO] = "➕ Nuevo grupo (partir)"
+                destino_sel = st.selectbox(
+                    "Mover seleccionadas a",
+                    ids_destino,
+                    format_func=lambda pid: etiquetas_destino[pid],
+                    key=f"destino_{producto['id']}",
                 )
-                destino_id = None
-                if destino_label != opciones[0]:
-                    idx = opciones.index(destino_label) - 1
-                    destino_id = otros_no_confirmados[idx]["id"]
+                destino_id = None if destino_sel == _SENTINEL_NUEVO_GRUPO else destino_sel
                 st.button(
                     f"Mover {len(seleccionadas)} foto(s)",
                     key=f"mover_{producto['id']}",
@@ -407,12 +520,16 @@ def _render_grupo(
 
         with col_fusionar:
             if otros_no_confirmados:
-                opciones_fusion = [_etiqueta_grupo(p) for p in otros_no_confirmados]
-                fusion_label = st.selectbox(
-                    "Fusionar este grupo con", opciones_fusion, key=f"fusion_{producto['id']}"
+                # Mismo fix que "Mover seleccionadas a": resolver por id,
+                # nunca por índice de un label de texto.
+                ids_fusion = [p["id"] for p in otros_no_confirmados]
+                etiquetas_fusion = {p["id"]: _etiqueta_grupo(p) for p in otros_no_confirmados}
+                destino_id = st.selectbox(
+                    "Fusionar este grupo con",
+                    ids_fusion,
+                    format_func=lambda pid: etiquetas_fusion[pid],
+                    key=f"fusion_{producto['id']}",
                 )
-                idx = opciones_fusion.index(fusion_label)
-                destino_id = otros_no_confirmados[idx]["id"]
                 st.button(
                     "🔗 Fusionar",
                     key=f"btn_fusion_{producto['id']}",
@@ -430,7 +547,7 @@ def _render_grupo_confirmado(producto: dict, fotos_por_id: dict[str, dict]) -> N
         columnas = st.columns(6)
         for i, foto in enumerate(fotos_grupo):
             with columnas[i % 6]:
-                st.image(_miniatura_de(foto["ruta"], foto["hash"]), use_container_width=True)
+                _render_imagen_segura(foto, use_container_width=True)
 
 
 def _avisar_exif_del_lote(resumen: dict[str, int]) -> None:
@@ -473,6 +590,14 @@ def render(store: LoteStore, lote_id: str) -> None:
         st.info("Este lote todavía no tiene fotos. Ve a «Ingesta» para añadirlas.")
         return
 
+    # MENOR (baja): aviso "log + marca" de `_mover_fotos` cuando un destino
+    # pedido ya no existía — escrito desde el callback en la key de
+    # sesión `_KEY_AVISO_DESTINO_PERDIDO` (nunca un fallback mudo). Se
+    # muestra una vez y se limpia, no se acumula rerun tras rerun.
+    aviso_destino_perdido = st.session_state.pop(_KEY_AVISO_DESTINO_PERDIDO, None)
+    if aviso_destino_perdido:
+        st.warning(aviso_destino_perdido)
+
     _avisar_exif_del_lote(store.resumen_exif_lote(lote_id))
 
     # Propuesta automática para fotos recién llegadas sin grupo todavía.
@@ -512,13 +637,21 @@ def render(store: LoteStore, lote_id: str) -> None:
     grupos_derecha = [g for g in grupos_anotados if g[1] in ("media", "alta")]
     grupos_alta = [g for g in grupos_derecha if g[1] == "alta"]
 
-    # Candidatas a "⬅️ Añadir aquí": TODAS las fotos que hoy están en un
-    # grupo `baja`, sea cual sea ese grupo. `_render_grupo` filtra por lo
-    # que esté marcado de verdad en el momento del click.
-    ids_sueltas = [fid for producto, _, _ in grupos_sueltas for fid in producto["fotos"]]
+    # Candidatas a "⬅️ Añadir aquí" / "➕ Crear grupo": TODAS las fotos que
+    # hoy están en un grupo `baja`, sea cual sea ese grupo. `_render_grupo`
+    # y `_accion_mover` filtran por lo que esté marcado de verdad en el
+    # momento del click. CRÍTICO 3: se separan las ILEGIBLES — nunca pueden
+    # ser candidatas a entrar en un grupo (no tienen checkbox, ver
+    # `_render_suelta`); mezclarlas aquí sería ofrecer un camino que
+    # `store.guardar_agrupacion` va a rechazar de todos modos, pero con un
+    # error confuso en vez de simplemente no ofrecerlo.
+    ids_sueltas_todas = [fid for producto, _, _ in grupos_sueltas for fid in producto["fotos"]]
+    ids_sueltas = [fid for fid in ids_sueltas_todas if fotos_por_id[fid]["legible"]]
+    ids_sueltas_ilegibles = [fid for fid in ids_sueltas_todas if not fotos_por_id[fid]["legible"]]
 
     st.caption(
         f"{len(ids_sueltas)} foto(s) suelta(s) · "
+        f"{len(ids_sueltas_ilegibles)} ilegible(s) · "
         f"{len(grupos_derecha)} grupo(s) pendiente(s) de confirmar · "
         f"{len(confirmados)} confirmado(s)."
     )
@@ -526,20 +659,61 @@ def render(store: LoteStore, lote_id: str) -> None:
     col_izq, col_der = st.columns(2)
 
     with col_izq:
-        st.subheader(f"📌 Fotos sueltas ({len(ids_sueltas)})")
+        st.subheader(f"📌 Fotos sueltas ({len(ids_sueltas_todas)})")
+
+        # CRÍTICO 1 (`listing-audit`): en un lote SIN EXIF (el caso más
+        # frecuente de Diego — WhatsApp lo borra, medido 0/59), `agrupar()`
+        # manda TODO al cajón de INCIERTAS: todos los grupos son "baja",
+        # `grupos_derecha` queda VACÍA y `_render_grupo` — el único sitio
+        # que antes pintaba botones — nunca se llama. Diego marcaba
+        # checkboxes y no tenía dónde pulsar. Este botón vive en la
+        # CABECERA, fuera del `st.container(height=..., border=True)` con
+        # scroll de más abajo, así que está SIEMPRE visible sin hacer
+        # scroll, y resuelve también el caso legítimo de un producto de
+        # una sola foto. Reutiliza `_accion_mover` con destino `None`
+        # (mismo mecanismo que "partir" un grupo): el callback relee qué
+        # sigue marcado de verdad en `ids_sueltas` en el momento del click.
+        marcadas_para_grupo_nuevo = [
+            fid for fid in ids_sueltas if st.session_state.get(f"sel_{fid}", False)
+        ]
+        st.button(
+            f"➕ Crear grupo con las {len(marcadas_para_grupo_nuevo)} marcada(s)",
+            key="crear_grupo_sueltas",
+            type="primary",
+            disabled=not marcadas_para_grupo_nuevo,
+            on_click=_accion_mover,
+            args=(store, lote_id, ids_sueltas, None),
+        )
         st.caption(
             "Casi siempre pertenecen a un grupo de la derecha: márcalas y pulsa "
-            "«⬅️ Añadir aquí» en ese grupo."
+            "«⬅️ Añadir aquí» en ese grupo. Si ninguno encaja (o es un producto de "
+            "una sola foto), marca y pulsa «➕ Crear grupo» arriba."
         )
         if grupos_sueltas:
             with st.container(height=650, border=True):
                 for producto, _, motivo in grupos_sueltas:
-                    _render_suelta(producto, motivo, fotos_por_id)
+                    _render_suelta(store, lote_id, producto, motivo, fotos_por_id)
         else:
             st.caption("No hay fotos sueltas pendientes.")
 
     with col_der:
         st.subheader(f"🗂️ Grupos ({len(grupos_derecha)})")
+
+        # CRÍTICO 2 (`listing-audit`): barra FIJA, fuera del contenedor con
+        # scroll de abajo, con los nombres de fichero de lo que esté
+        # marcado AHORA MISMO a la izquierda. Antes, con la columna
+        # izquierda scrolleada fuera de vista, "⬅️ Añadir aquí" era un
+        # gatillo ciego — Diego podía mover fotos de dos productos
+        # distintos en un único click sin ver qué estaba moviendo.
+        marcadas_ahora = [
+            fid for fid in ids_sueltas if st.session_state.get(f"sel_{fid}", False)
+        ]
+        if marcadas_ahora:
+            nombres_marcadas = ", ".join(
+                Path(fotos_por_id[fid]["ruta"]).name for fid in marcadas_ahora
+            )
+            st.info(f"📌 Marcadas para mover ahora mismo: {nombres_marcadas}")
+
         if grupos_derecha:
             with st.container(height=650, border=True):
                 if grupos_alta:

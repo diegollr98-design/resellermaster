@@ -73,7 +73,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = _REPO_ROOT / "data"
 DB_FILENAME = "resellermaster.db"
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 # Cada entrada es la lista de sentencias DDL que llevan la base de datos de
 # la versión (N-1) a la versión N. NUNCA se reescribe una migración ya
@@ -129,6 +129,18 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "CREATE INDEX idx_productos_lote ON productos(lote_id)",
         "CREATE INDEX idx_confirmaciones_producto ON confirmaciones(producto_id)",
     ),
+    # v2 — CRÍTICO 3 (`ui/confirmacion.py`, listing-audit): una foto ILEGIBLE
+    # (fichero corrupto, formato no soportado) se registraba en `fotos` sin
+    # ninguna marca, así que nada impedía que acabara agrupada DENTRO de un
+    # producto junto a fotos legítimas. `legible`/`error_lectura` persisten
+    # lo que `core.images.leer_metadatos` ya calcula en la ingesta
+    # (`ui/ingesta.py`), para que `guardar_agrupacion` (única vía de
+    # escritura) pueda RECHAZAR con dientes un grupo que mezcle una foto
+    # ilegible con otras — ver `FotoIlegibleError`, más abajo.
+    2: (
+        "ALTER TABLE fotos ADD COLUMN legible INTEGER NOT NULL DEFAULT 1",
+        "ALTER TABLE fotos ADD COLUMN error_lectura TEXT",
+    ),
 }
 
 
@@ -163,6 +175,18 @@ class FotoDuplicadaError(StoreError):
     """Ya existe una foto con esa ruta en el lote (mismo fichero, dos veces)."""
 
 
+class FotoIlegibleError(StoreError):
+    """Un grupo intenta mezclar una foto ILEGIBLE (`legible=0`) con otras.
+
+    Con dientes (`decision-making.md` §12): `guardar_agrupacion` la lanza y
+    NO aplica ningún cambio, en vez de sólo avisar. Un fichero que no se
+    puede abrir no puede acabar dentro de un producto junto a fotos
+    legítimas — es el CRÍTICO 3 de `listing-audit` sobre
+    `ui/confirmacion.py`. Un grupo de UNA sola foto ilegible sí es legal
+    (así es como `core.grouping._grupos_ilegibles` la propone: sola, para
+    que Diego la revise o la descarte con `descartar_foto`)."""
+
+
 def _ahora() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -176,6 +200,12 @@ class Foto:
     ruta: str
     hash: str
     timestamp_exif: str | None = None
+    # Persistido desde `core.images.leer_metadatos(...).legible/.error` en
+    # la ingesta (`ui/ingesta.py`). Default `True`/`None` sólo para no
+    # romper los llamadores/tests existentes que ya asumían fotos legibles
+    # — nunca se debe fijar `True` a mano para una foto que no se leyó.
+    legible: bool = True
+    error_lectura: str | None = None
 
 
 class LoteStore:
@@ -334,9 +364,18 @@ class LoteStore:
                     conn.execute(
                         """INSERT INTO fotos
                            (id, lote_id, ruta, hash, timestamp_exif, producto_id,
-                            confirmada, creada_en)
-                           VALUES (?, ?, ?, ?, ?, NULL, 0, ?)""",
-                        (foto_id, lote_id, str(foto.ruta), foto.hash, foto.timestamp_exif, _ahora()),
+                            confirmada, legible, error_lectura, creada_en)
+                           VALUES (?, ?, ?, ?, ?, NULL, 0, ?, ?, ?)""",
+                        (
+                            foto_id,
+                            lote_id,
+                            str(foto.ruta),
+                            foto.hash,
+                            foto.timestamp_exif,
+                            int(foto.legible),
+                            foto.error_lectura,
+                            _ahora(),
+                        ),
                     )
                 except sqlite3.IntegrityError as exc:
                     # UNIQUE(lote_id, ruta): la misma copia de trabajo ya
@@ -402,7 +441,7 @@ class LoteStore:
             fotos_por_id = {
                 fila["id"]: fila
                 for fila in conn.execute(
-                    "SELECT id, producto_id FROM fotos WHERE lote_id = ?", (lote_id,)
+                    "SELECT id, producto_id, legible FROM fotos WHERE lote_id = ?", (lote_id,)
                 ).fetchall()
             }
             confirmados = {
@@ -417,6 +456,7 @@ class LoteStore:
             for grupo in grupos:
                 if not grupo:
                     raise ValueError("grupo vacío: un producto necesita al menos una foto")
+                filas_grupo = []
                 for foto_id in grupo:
                     if foto_id in vistas:
                         raise ValueError(f"foto {foto_id} aparece en más de un grupo")
@@ -428,6 +468,23 @@ class LoteStore:
                         raise AgrupacionBloqueadaError(
                             f"foto {foto_id} pertenece a un producto ya confirmado "
                             f"({fila['producto_id']}); Diego ya cerró ese grupo, no se re-agrupa"
+                        )
+                    filas_grupo.append(fila)
+
+                # CRÍTICO 3 (`ui/confirmacion.py`, listing-audit): un fichero
+                # ilegible no se puede agrupar CON OTRAS fotos — sólo puede
+                # quedarse solo (grupo de 1), que es como lo propone
+                # `core.grouping._grupos_ilegibles`. Falla ENTERO (nada se
+                # aplica), no a medias: es la misma disciplina que
+                # `AgrupacionBloqueadaError`, más arriba.
+                if len(grupo) > 1:
+                    ilegibles = [fila["id"] for fila in filas_grupo if not fila["legible"]]
+                    if ilegibles:
+                        raise FotoIlegibleError(
+                            f"grupo con {len(grupo)} foto(s) incluye {len(ilegibles)} "
+                            f"ilegible(s) ({ilegibles}): un fichero que no se puede abrir "
+                            "no puede mezclarse con otras fotos ni acabar dentro de un "
+                            "producto — sácalo del grupo o descártalo con descartar_foto()."
                         )
 
             # Sólo se reemplazan los productos NO confirmados de este lote:
@@ -466,6 +523,49 @@ class LoteStore:
                     )
                 nuevos_ids.append(producto_id)
             return nuevos_ids
+
+    def descartar_foto(self, lote_id: str, foto_id: str) -> None:
+        """Elimina definitivamente una foto ILEGIBLE del lote.
+
+        Único camino de escritura para esto (CRÍTICO 3, `ui/confirmacion.py`
+        vía `listing-audit`): la UI ya no ofrece "añadir a un grupo" para una
+        foto `legible=0`, sólo este botón de descarte — pero la guardia real
+        vive aquí, no confía en que la UI no se equivoque. Rechaza con
+        dientes descartar una foto LEGIBLE: eso perdería trabajo de curado
+        de Diego en silencio, que es justo lo que este módulo existe para
+        no hacer nunca.
+
+        Si la foto era la única de su producto (el caso normal: un
+        ilegible siempre llega como grupo de 1, ver
+        `core.grouping._grupos_ilegibles`) y ese producto no está
+        confirmado, el producto huérfano también se limpia — nunca se deja
+        un `productos` con cero fotos colgando.
+        """
+        with self._transaccion() as conn:
+            fila = conn.execute(
+                "SELECT id, producto_id, legible FROM fotos WHERE id = ? AND lote_id = ?",
+                (foto_id, lote_id),
+            ).fetchone()
+            if fila is None:
+                raise FotoNoEncontradaError(f"foto no encontrada en el lote {lote_id}: {foto_id}")
+            if fila["legible"]:
+                raise ValueError(
+                    f"descartar_foto sólo es válido para fotos ILEGIBLES; {foto_id} es "
+                    "legible — descartarla perdería trabajo de curado sin avisar. Usa "
+                    "guardar_agrupacion/confirmar_producto para una foto legible."
+                )
+            producto_id = fila["producto_id"]
+            conn.execute("DELETE FROM fotos WHERE id = ?", (foto_id,))
+            if producto_id is not None:
+                restante = conn.execute(
+                    "SELECT COUNT(*) AS n FROM fotos WHERE producto_id = ?", (producto_id,)
+                ).fetchone()["n"]
+                if restante == 0:
+                    producto_fila = conn.execute(
+                        "SELECT confirmado FROM productos WHERE id = ?", (producto_id,)
+                    ).fetchone()
+                    if producto_fila is not None and not producto_fila["confirmado"]:
+                        conn.execute("DELETE FROM productos WHERE id = ?", (producto_id,))
 
     def confirmar_producto(self, producto_id: str, detalle: dict[str, Any] | None = None) -> None:
         """Registra que Diego confirmó la agrupación de un producto.

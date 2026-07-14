@@ -306,12 +306,14 @@ def test_tabla_de_version_de_esquema_existe_y_es_correcta(tmp_path):
     finally:
         conn.close()
 
-    # Reabrir sobre una base ya migrada no falla y no repite la migración.
+    # Reabrir sobre una base ya migrada no falla y no repite ninguna
+    # migración (una fila por versión aplicada, 1..SCHEMA_VERSION, nunca
+    # duplicada).
     store2 = LoteStore(data_dir=tmp_path)
     conn = sqlite3.connect(store2.db_path)
     try:
         filas = conn.execute("SELECT version FROM schema_version").fetchall()
-        assert [f[0] for f in filas] == [1]
+        assert [f[0] for f in filas] == list(range(1, SCHEMA_VERSION + 1))
     finally:
         conn.close()
 

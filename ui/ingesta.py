@@ -129,8 +129,19 @@ def _ingerir(
         timestamp_exif = (
             meta.fecha_captura_exif.isoformat() if meta.fecha_captura_exif else None
         )
+        # `legible`/`error_lectura` se persisten tal cual los mide
+        # `core.images.leer_metadatos` — es lo que le permite a
+        # `core.store.guardar_agrupacion` rechazar con dientes que un
+        # fichero ilegible acabe mezclado dentro de un producto
+        # (`[listing-audit] CRÍTICO 3`, `ui/confirmacion.py`).
         fotos_registro.append(
-            Foto(ruta=str(destino), hash=hash_sha256, timestamp_exif=timestamp_exif)
+            Foto(
+                ruta=str(destino),
+                hash=hash_sha256,
+                timestamp_exif=timestamp_exif,
+                legible=meta.legible,
+                error_lectura=meta.error,
+            )
         )
         progreso.progress(i / total, text=f"Copiando {i}/{total} fotos…")
 

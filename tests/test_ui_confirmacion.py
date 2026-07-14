@@ -24,12 +24,14 @@ from __future__ import annotations
 from datetime import datetime, timedelta
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
 from core import grouping
 from core.images import MetadatosImagen
-from core.store import Foto, LoteStore
+from core.store import Foto, FotoIlegibleError, LoteStore
+from ui.confirmacion import _SENTINEL_NUEVO_GRUPO
 
 
 def _crear_foto_real(ruta: Path, color: tuple[int, int, int]) -> None:
@@ -201,9 +203,11 @@ def test_mover_foto_marcada_no_lanza_excepcion_y_el_store_refleja_el_movimiento(
     at.checkbox(key=f"sel_{foto_a1}").check().run()
     assert not at.exception
 
-    # Único otro grupo sin confirmar: índice 1 de la selectbox de destino
-    # (índice 0 es "Nuevo grupo (partir)").
-    at.selectbox(key=f"destino_{producto_a}").select_index(1).run()
+    # Único otro grupo sin confirmar: se selecciona por su ID real (la
+    # selectbox resuelve por id + `format_func`, no por índice de un label
+    # de texto — MENOR/baja del fix; `AppTest.select_index()` no es
+    # compatible con `format_func`, hay que seleccionar por valor).
+    at.selectbox(key=f"destino_{producto_a}").select(producto_b).run()
     assert not at.exception
 
     at.button(key=f"mover_{producto_a}").click().run()
@@ -233,7 +237,7 @@ def test_mover_desmarca_el_checkbox_de_la_foto_movida(tmp_path):
 
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     at.checkbox(key=f"sel_{foto_a1}").check().run()
-    at.selectbox(key=f"destino_{producto_a}").select_index(1).run()
+    at.selectbox(key=f"destino_{producto_a}").select(producto_b).run()
     at.button(key=f"mover_{producto_a}").click().run()
 
     assert not at.exception
@@ -286,10 +290,12 @@ def test_partir_grupo_no_lanza_excepcion_y_crea_un_grupo_mas(tmp_path):
     at.checkbox(key=f"sel_{foto_a1}").check().run()
     assert not at.exception
 
-    # Índice 0 de la selectbox de destino = "➕ Nuevo grupo (partir)" (es
-    # el valor por defecto; se selecciona explícitamente para no depender
-    # de qué trae por defecto el widget).
-    at.selectbox(key=f"destino_{producto_a}").select_index(0).run()
+    # Sentinel `_SENTINEL_NUEVO_GRUPO` = "➕ Nuevo grupo (partir)" (es el
+    # valor por defecto; se selecciona explícitamente para no depender de
+    # qué trae por defecto el widget). Se selecciona por VALOR, no por
+    # índice: la selectbox resuelve por id + `format_func` (fix BAJA), y
+    # `AppTest.select_index()` no es compatible con `format_func`.
+    at.selectbox(key=f"destino_{producto_a}").select(_SENTINEL_NUEVO_GRUPO).run()
     at.button(key=f"mover_{producto_a}").click().run()
 
     assert not at.exception, f"'Partir' (Mover a Nuevo grupo) lanzó: {at.exception}"
@@ -429,7 +435,8 @@ def test_barrido_de_acciones_no_lanza_streamlit_api_exception(tmp_path, monkeypa
     #     grupo nuevo. ---
     at.checkbox(key=f"sel_{foto_b1}").check().run()
     assert not at.exception
-    at.selectbox(key=f"destino_{grupo_abs['id']}").select_index(0).run()
+    # Selección por VALOR (sentinel), no por índice: ver nota en el test 4.
+    at.selectbox(key=f"destino_{grupo_abs['id']}").select(_SENTINEL_NUEVO_GRUPO).run()
     assert not at.exception
     at.button(key=f"mover_{grupo_abs['id']}").click().run()
     assert not at.exception, f"'Partir' lanzó: {at.exception}"
@@ -447,3 +454,230 @@ def test_barrido_de_acciones_no_lanza_streamlit_api_exception(tmp_path, monkeypa
     estado = store.cargar_lote(lote_id)
     confirmados = [p for p in estado["productos"] if p["confirmado"]]
     assert any(p["id"] == grupo_nuevo["id"] for p in confirmados)
+
+
+# --------------------------------------------------------------------------
+# Regresión de los 4 hallazgos CRÍTICOS de `listing-audit` sobre este mismo
+# módulo (`.claude/incident-ledger.md` [INC-006] es el bug hermano de más
+# arriba; estos son cuatro incidentes NUEVOS, superficie `agrupacion`).
+# --------------------------------------------------------------------------
+def _metadatos_sin_exif(rutas: list[Path]):
+    """Todas las fotos LEGIBLES pero SIN fecha EXIF — el caso más frecuente
+    de Diego (WhatsApp la borra, medido 0/59). `core.grouping.agrupar` manda
+    todo al cajón de INCIERTAS: todos los grupos "baja", ninguno "media"."""
+
+    def _leer(ruta: Path) -> MetadatosImagen:
+        return MetadatosImagen(
+            ruta=ruta,
+            legible=True,
+            formato="JPEG",
+            ancho=64,
+            alto=64,
+            orientacion_exif=1,
+            fecha_captura_exif=None,
+            mtime_fichero=None,
+            error=None,
+        )
+
+    return _leer
+
+
+def _preparar_lote_sin_exif_en_absoluto(tmp_path: Path, monkeypatch) -> tuple[str, list[str]]:
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote sin EXIF", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    nombres_colores = [("F0", (200, 0, 0)), ("F1", (0, 150, 0)), ("F2", (0, 0, 200))]
+    fotos: list[Foto] = []
+    rutas: list[Path] = []
+    for nombre, color in nombres_colores:
+        ruta = carpeta / f"{nombre}.jpg"
+        _crear_foto_real(ruta, color)
+        rutas.append(ruta)
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}"))
+    foto_ids = store.añadir_fotos(lote_id, fotos)
+
+    monkeypatch.setattr(grouping, "leer_metadatos", _metadatos_sin_exif(rutas))
+    return lote_id, foto_ids
+
+
+# --------------------------------------------------------------------------
+# CRÍTICO 1: un lote 100% sin EXIF deja `grupos_derecha` vacía -> antes,
+# NINGÚN botón se pintaba en toda la pantalla (todos los botones viven en
+# `_render_grupo`, que sólo se llama para `grupos_derecha`). El botón "➕
+# Crear grupo con las N marcadas" vive en la cabecera de la columna
+# izquierda, siempre visible, y resuelve el callejón sin salida.
+# --------------------------------------------------------------------------
+def test_lote_sin_exif_tiene_boton_para_crear_grupo_con_marcadas(tmp_path, monkeypatch):
+    lote_id, foto_ids = _preparar_lote_sin_exif_en_absoluto(tmp_path, monkeypatch)
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    boton_crear = next((b for b in at.button if b.key == "crear_grupo_sueltas"), None)
+    assert boton_crear is not None, (
+        "falta el botón «➕ Crear grupo con las marcadas»: en un lote sin EXIF, "
+        "ANTES no había NINGÚN botón en toda la pantalla (callejón sin salida)."
+    )
+    # Sin nada marcado todavía, está deshabilitado — no un gatillo listo.
+    assert boton_crear.disabled is True
+
+    at.checkbox(key=f"sel_{foto_ids[0]}").check().run()
+    at.checkbox(key=f"sel_{foto_ids[1]}").check().run()
+    assert not at.exception
+
+    at.button(key="crear_grupo_sueltas").click().run()
+    assert not at.exception, f"'Crear grupo' lanzó: {at.exception}"
+
+    store = LoteStore(data_dir=tmp_path)
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    nuevo = next(
+        (p for p in no_confirmados if set(p["fotos"]) == {foto_ids[0], foto_ids[1]}), None
+    )
+    assert nuevo is not None, "las 2 fotos marcadas no formaron un grupo nuevo"
+    # La tercera foto (no marcada) sigue suelta, intacta.
+    assert any(p["fotos"] == [foto_ids[2]] for p in no_confirmados)
+
+
+# --------------------------------------------------------------------------
+# CRÍTICO 2: marcar sueltas de DOS productos reales distintos debe mostrar
+# sus NOMBRES antes de mover — nunca un gatillo ciego. Se comprueba en la
+# barra fija de la columna derecha (fuera del scroll) Y en el caption del
+# botón "⬅️ Añadir aquí" dentro de un grupo.
+# --------------------------------------------------------------------------
+def test_nombres_de_sueltas_marcadas_se_muestran_antes_de_mover(tmp_path, monkeypatch):
+    lote_id, foto_ids = _preparar_lote_con_sueltas(tmp_path, monkeypatch)
+    _foto_a0, _foto_a1, foto_s0, foto_s1 = foto_ids
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    # Nada marcado todavía: ninguna barra de nombres debe aparecer.
+    textos_antes = " ".join(i.value for i in at.info)
+    assert "S0.jpg" not in textos_antes and "S1.jpg" not in textos_antes
+
+    at.checkbox(key=f"sel_{foto_s0}").check().run()
+    at.checkbox(key=f"sel_{foto_s1}").check().run()
+    assert not at.exception
+
+    texto_render = " ".join(
+        [i.value for i in at.info] + [c.value for c in at.caption] + [w.value for w in at.warning]
+    )
+    assert "S0.jpg" in texto_render, "el nombre de la foto suelta marcada no se muestra en ningún sitio"
+    assert "S1.jpg" in texto_render, "el nombre de la segunda foto suelta marcada no se muestra"
+
+
+# --------------------------------------------------------------------------
+# CRÍTICO 3: un fichero ILEGIBLE (persistido con `legible=False` desde la
+# ingesta) NO puede añadirse a un grupo desde la UI (sin checkbox) y
+# `store.guardar_agrupacion` lo RECHAZA con dientes si algo intenta
+# mezclarlo con otras fotos por debajo.
+# --------------------------------------------------------------------------
+def _preparar_lote_con_ilegible(tmp_path: Path) -> tuple[str, list[str]]:
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote con ilegible", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+    carpeta.mkdir(parents=True, exist_ok=True)
+
+    ruta_a0 = carpeta / "A0.jpg"
+    ruta_a1 = carpeta / "A1.jpg"
+    _crear_foto_real(ruta_a0, (200, 0, 0))
+    _crear_foto_real(ruta_a1, (200, 50, 50))
+    ruta_bad = carpeta / "BAD.jpg"
+    ruta_bad.write_bytes(b"no soy una imagen de verdad")
+
+    fotos = [
+        Foto(ruta=str(ruta_a0), hash="hash_a0"),
+        Foto(ruta=str(ruta_a1), hash="hash_a1"),
+        Foto(
+            ruta=str(ruta_bad),
+            hash="hash_bad",
+            legible=False,
+            error_lectura="cannot identify image file",
+        ),
+    ]
+    foto_ids = store.añadir_fotos(lote_id, fotos)
+    # Igual que lo propondría `core.grouping._grupos_ilegibles`: la
+    # ilegible queda SOLA, en su propio grupo de 1.
+    store.guardar_agrupacion(lote_id, [foto_ids[:2], [foto_ids[2]]])
+    return lote_id, foto_ids
+
+
+def test_foto_ilegible_no_tiene_checkbox_y_store_rechaza_mezclarla(tmp_path):
+    lote_id, foto_ids = _preparar_lote_con_ilegible(tmp_path)
+    foto_a0, foto_a1, foto_bad = foto_ids
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    assert not any(cb.key == f"sel_{foto_bad}" for cb in at.checkbox), (
+        "la foto ILEGIBLE tiene checkbox: se podría marcar y meter en un grupo"
+    )
+    boton_descartar = next((b for b in at.button if b.key == f"descartar_{foto_bad}"), None)
+    assert boton_descartar is not None, "falta el botón «🗑️ Descartar del lote» para la ilegible"
+
+    # La guardia real: `guardar_agrupacion` rechaza CON EXCEPCIÓN un grupo
+    # que mezcle la ilegible con fotos legibles — no la traga en silencio.
+    store = LoteStore(data_dir=tmp_path)
+    with pytest.raises(FotoIlegibleError):
+        store.guardar_agrupacion(lote_id, [[foto_a0, foto_a1, foto_bad]])
+
+    # El botón de descarte SÍ funciona y la quita del lote definitivamente.
+    at.button(key=f"descartar_{foto_bad}").click().run()
+    assert not at.exception, f"'Descartar del lote' lanzó: {at.exception}"
+    estado = store.cargar_lote(lote_id)
+    assert all(f["id"] != foto_bad for f in estado["fotos"])
+
+
+# --------------------------------------------------------------------------
+# CRÍTICO 4: un fichero corrupto (cabecera intacta, píxeles truncados —
+# `leer_metadatos` lo marca `legible=True` porque sólo lee la cabecera) NO
+# debe tumbar el render del lote entero. Las fotos buenas siguen curables.
+# --------------------------------------------------------------------------
+def _crear_foto_truncada(ruta: Path, color: tuple[int, int, int]) -> None:
+    """JPEG con cabecera válida (`Image.open` la abre, `leer_metadatos` la
+    marca legible) pero datos de píxel truncados: decodificarla de verdad
+    (`img.load()`, lo que hace `core.images.abrir_derecha` para la
+    miniatura) revienta con `OSError` — reproduce el bug real de
+    `core/images.py::obtener_o_crear_miniatura`, independiente de
+    `legible` (medido: al 70% de los bytes de un JPEG 300x300, `Image.open`
+    sigue abriendo pero `.load()` falla)."""
+    img = Image.new("RGB", (300, 300), color)
+    ruta.parent.mkdir(parents=True, exist_ok=True)
+    img.save(ruta, format="JPEG")
+    datos = ruta.read_bytes()
+    ruta.write_bytes(datos[: int(len(datos) * 0.7)])
+
+
+def test_foto_corrupta_no_tumba_la_pantalla_y_las_buenas_siguen_curables(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote con corrupta", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    ruta_buena = carpeta / "BUENA.jpg"
+    _crear_foto_real(ruta_buena, (200, 0, 0))
+    ruta_buena2 = carpeta / "BUENA2.jpg"
+    _crear_foto_real(ruta_buena2, (0, 200, 0))
+    ruta_corrupta = carpeta / "CORRUPTA.jpg"
+    _crear_foto_truncada(ruta_corrupta, (0, 0, 200))
+
+    fotos = [
+        Foto(ruta=str(ruta_buena), hash="hash_buena"),
+        Foto(ruta=str(ruta_buena2), hash="hash_buena2"),
+        # `leer_metadatos` marca esta ilegible=False (cabecera intacta) —
+        # este test NO depende de la guardia del CRÍTICO 3, es el bug
+        # DISTINTO de la miniatura reventando en el render.
+        Foto(ruta=str(ruta_corrupta), hash="hash_corrupta"),
+    ]
+    foto_ids = store.añadir_fotos(lote_id, fotos)
+    store.guardar_agrupacion(lote_id, [foto_ids])  # un solo grupo con las 3
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception, f"una foto corrupta tumbó la pantalla entera: {at.exception}"
+
+    # Las fotos buenas se pueden seguir marcando con normalidad: el fallo
+    # de una miniatura no dejó el resto de la tarjeta/checkboxes muertos.
+    at.checkbox(key=f"sel_{foto_ids[0]}").check().run()
+    assert not at.exception
+    assert at.checkbox(key=f"sel_{foto_ids[0]}").value is True
