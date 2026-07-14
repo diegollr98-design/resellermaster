@@ -218,6 +218,25 @@ UMBRAL_SCORE_OCR_LIMPIO = 0.85
 # debajo del primero, 0.133 por encima del segundo).
 UMBRAL_SIMILITUD_CORROBORACION = 0.4
 
+# NO es lo mismo "sin testigo" (el OCR no leyo nada en esa region -- no hay
+# contradiccion, solo falta corroboracion) que "testigo QUE CONTRADICE" (el
+# OCR leyo algo SUSTANCIAL que no se parece a lo que el VLM afirma -- eso es
+# evidencia ACTIVA de que el modelo esta inventando o leyendo otra cosa).
+# `UMBRAL_MIN_CHARS_TESTIGO_OCR` es el minimo de caracteres alfanumericos en
+# `texto_ocr_crudo` para que cuente como "testigo" en vez de ruido -- por
+# debajo, se trata como "sin testigo" (media, nunca contradiccion).
+# Calibrado sobre los pares REALES, no a ojo:
+#   Reebok/Raabdk (6 alnum), Reebok/Reabak (6), RAMI JALAB/RAMI SALAB
+#   (9 alnum) y ORIGINAL MARINES/ORIGINAL MARINES (15 alnum) DEBEN poder
+#   corroborar -- sus testigos tienen 6-15 caracteres.
+#   Nike/Raabdk (6 alnum, similitud 0.200) y Adidas/XXL (3 alnum, similitud
+#   0.000) DEBEN poder contradecir -- 'XXL' (el testigo mas corto de los
+#   casos reales que SI debe contar) tiene exactamente 3 caracteres, asi
+#   que 3 es el maximo umbral que no lo excluye. Por debajo de 3 (1-2
+#   caracteres) es indistinguible de ruido de OCR (un trazo suelto, un
+#   caracter mal segmentado) y se trata como "sin testigo".
+UMBRAL_MIN_CHARS_TESTIGO_OCR = 3
+
 # EAN/UPC: longitudes con checksum GS1 valido (C5). El algoritmo (modulo 10,
 # pesos 3/1 alternando desde la DERECHA) es el mismo para las cuatro.
 _LONGITUDES_EAN_VALIDAS: frozenset[int] = frozenset({8, 12, 13, 14})
@@ -1031,25 +1050,51 @@ def _similitud_normalizada(a: str, b: str) -> float:
     return difflib.SequenceMatcher(None, a.strip().lower(), b.strip().lower()).ratio()
 
 
-def _confianza_corroborada(miembros: Sequence[LecturaCrop], representante: LecturaCrop) -> Literal["alta", "media"]:
-    """LA LEY DE CORROBORACION (INC-010): el VLM puede PROPONER, pero no
-    puede CONFIRMAR el solo. `alta` SOLO si hay corroboracion
-    INDEPENDIENTE:
-      1. Multi-foto: el mismo valor (ya normalizado -- `miembros` es
-         precisamente el grupo que comparte la clave normalizada) aparece
-         en >=2 fotos DISTINTAS del producto.
-      2. OCR<->VLM: el OCR crudo de la MISMA region (`texto_ocr_crudo`) se
-         parece a lo que el VLM afirmo leer (>= `UMBRAL_SIMILITUD_CORROBORACION`).
-    Sin ninguna de las dos, techo `"media"` -- una sola senal, por nitida
-    que parezca, no basta."""
+def _es_testigo_valido(texto_ocr_crudo: str | None) -> bool:
+    """Hay "testigo" si el OCR leyo algo con SENAL suficiente (>=
+    `UMBRAL_MIN_CHARS_TESTIGO_OCR` caracteres alfanumericos) en esa region
+    -- por debajo de eso, un caracter suelto o un trazo mal segmentado es
+    ruido, no una lectura. Ver la calibracion junto a la constante."""
+    if not texto_ocr_crudo:
+        return False
+    alfanumericos = sum(1 for c in texto_ocr_crudo if c.isalnum())
+    return alfanumericos >= UMBRAL_MIN_CHARS_TESTIGO_OCR
+
+
+def _confianza_corroborada(
+    miembros: Sequence[LecturaCrop], representante: LecturaCrop
+) -> Literal["alta", "media", "contradicho"]:
+    """LA LEY DE CORROBORACION (INC-010, matiz anadido tras validar el
+    rediseno): el VLM puede PROPONER, pero no puede CONFIRMAR el solo.
+    TRES estados, no dos -- "sin testigo" y "testigo que CONTRADICE" NO son
+    lo mismo:
+
+      - "alta": corroboracion INDEPENDIENTE real. O bien (1) multi-foto --
+        el mismo valor (ya normalizado -- `miembros` es precisamente el
+        grupo que comparte la clave normalizada) aparece en >=2 fotos
+        DISTINTAS; o bien (2) OCR<->VLM -- el OCR crudo de la MISMA region
+        tiene senal suficiente (`_es_testigo_valido`) Y se parece a lo que
+        el VLM afirmo leer (>= `UMBRAL_SIMILITUD_CORROBORACION`).
+      - "media": SIN TESTIGO -- el OCR no leyo nada sustancial en esa
+        region (vacio, o por debajo del umbral de senal). No hay
+        contradiccion: solo falta corroboracion. Es el caso legitimo de
+        una etiqueta de bajo contraste que el OCR simplemente no lee.
+      - "contradicho": TESTIGO EN CONTRA -- el OCR leyo algo SUSTANCIAL en
+        esa MISMA region y NO se parece a lo que el VLM afirma. Eso no es
+        ausencia de evidencia: es evidencia ACTIVA de que el VLM esta
+        inventando (o leyendo una region distinta). Tratar esto igual que
+        "sin testigo" vaciaria la ley de corroboracion de contenido --
+        quien llama (`_construir_campo_texto`) debe exponer AMBAS lecturas
+        como conflicto, nunca publicar ninguna con `confianza` intermedia.
+    """
     if len({m.fichero for m in miembros}) >= 2:
         return "alta"
-    if (
-        representante.texto_ocr_crudo
-        and representante.texto
-        and _similitud_normalizada(representante.texto_ocr_crudo, representante.texto) >= UMBRAL_SIMILITUD_CORROBORACION
-    ):
-        return "alta"
+
+    testigo = representante.texto_ocr_crudo
+    if representante.texto and _es_testigo_valido(testigo):
+        if _similitud_normalizada(testigo, representante.texto) >= UMBRAL_SIMILITUD_CORROBORACION:  # type: ignore[arg-type]
+            return "alta"
+        return "contradicho"
     return "media"
 
 
@@ -1099,10 +1144,29 @@ def _construir_campo_texto(
         candidatos_validos = [m for m in miembros if m.ubicacion in ubicaciones_validas]
         if candidatos_validos:
             representante = candidatos_validos[0]
+            estado = _confianza_corroborada(miembros, representante)
+            if estado == "contradicho":
+                # TESTIGO EN CONTRA (matiz post-validacion): el OCR crudo
+                # de esta MISMA region leyo algo sustancial que NO se
+                # parece a lo que el VLM afirma -- no es "sin evidencia",
+                # es evidencia ACTIVA de que el VLM inventa o lee otra
+                # cosa. Mismo tratamiento que dos marcas legibles: None +
+                # baja + AMBAS lecturas expuestas. El pipeline NO elige.
+                candidatas = (
+                    CandidatoConflicto(
+                        valor=representante.texto,  # type: ignore[arg-type]
+                        evidencia=Evidencia(fichero=representante.fichero, bbox=representante.bbox),
+                    ),
+                    CandidatoConflicto(
+                        valor=representante.texto_ocr_crudo,  # type: ignore[arg-type]
+                        evidencia=Evidencia(fichero=representante.fichero, bbox=representante.bbox),
+                    ),
+                )
+                return Campo(valor=None, fuente="inferido", confianza="baja"), candidatas
             campo = Campo(
                 valor=representante.texto,
                 fuente="foto",
-                confianza=_confianza_corroborada(miembros, representante),
+                confianza=estado,
                 evidencia=Evidencia(fichero=representante.fichero, bbox=representante.bbox),
             )
             return campo, ()

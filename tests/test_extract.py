@@ -47,6 +47,7 @@ from core.extract import (
     _es_bloque_de_texto_largo,
     _es_repeticion_de_un_campo_ya_resuelto,
     _es_ristra_metro,
+    _es_testigo_valido,
     _intentar_atajo_ocr,
     _nombre_color_mas_cercano,
     _parsear_lectura_crop,
@@ -652,36 +653,77 @@ class TestParseoDefensivoDeLaRespuestaDelVLM:
 
 
 class TestLeyDeCorroboracion:
+    """Tres estados, no dos (matiz anadido tras validar el rediseno por
+    ejecucion): NO es lo mismo "sin testigo" (el OCR no leyo nada en esa
+    region -- no hay contradiccion, solo falta corroboracion) que "testigo
+    QUE CONTRADICE" (el OCR leyo algo SUSTANCIAL que no se parece a lo que
+    el VLM afirma -- evidencia ACTIVA de que el modelo inventa). Tratarlos
+    igual (los dos "media") vacia la ley de corroboracion de contenido."""
+
     def test_similitud_calibrada_con_los_pares_reales_del_golden_set(self):
         # Pares que DEBEN corroborar (garbled real del OCR vs lectura VLM correcta).
         assert _similitud_normalizada("Reebok", "Raabdk") >= UMBRAL_SIMILITUD_CORROBORACION
         assert _similitud_normalizada("Reebok", "Reabak") >= UMBRAL_SIMILITUD_CORROBORACION
         assert _similitud_normalizada("RAMI JALAB", "RAMI SALAB") >= UMBRAL_SIMILITUD_CORROBORACION
         assert _similitud_normalizada("ORIGINAL MARINES", "ORIGINAL MARINES") >= UMBRAL_SIMILITUD_CORROBORACION
-        # Pares que NO deben corroborar (marcas realmente distintas, o
-        # el VLM afirmando algo que el OCR ni sugiere).
+        # Pares que DEBEN contradecir (marcas realmente distintas, o el VLM
+        # afirmando algo que el OCR ni sugiere).
         assert _similitud_normalizada("JACK & JONES", "ESTI550") < UMBRAL_SIMILITUD_CORROBORACION
         assert _similitud_normalizada("JACK & JONES", "Orioinae") < UMBRAL_SIMILITUD_CORROBORACION
         assert _similitud_normalizada("UMBRO", "RAMI JALAB") < UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("Nike", "Raabdk") < UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("Adidas", "XXL") < UMBRAL_SIMILITUD_CORROBORACION
 
-    def test_una_sola_lectura_sin_corroboracion_tiene_techo_media(self):
+    def test_umbral_de_testigo_calibrado_con_los_pares_reales(self):
+        # Los testigos que DEBEN contar (3-15 caracteres alfanumericos, los
+        # casos reales de corroboracion Y de contradiccion).
+        assert _es_testigo_valido("Raabdk") is True  # 6 alnum -- Reebok/Nike
+        assert _es_testigo_valido("Reabak") is True  # 6 alnum
+        assert _es_testigo_valido("RAMI SALAB") is True  # 9 alnum
+        assert _es_testigo_valido("ORIGINAL MARINES") is True  # 15 alnum
+        assert _es_testigo_valido("XXL") is True  # 3 alnum -- el mas corto que SI debe contar (Adidas/XXL)
+        # Por debajo del umbral: ruido, no testigo.
+        assert _es_testigo_valido("") is False
+        assert _es_testigo_valido(None) is False
+        assert _es_testigo_valido("X") is False
+        assert _es_testigo_valido("::") is False  # sin alfanumericos
+
+    # -- ESTADO 1: SIN TESTIGO -> "media" (caso legitimo, Jack & Jones real) --
+
+    def test_sin_testigo_ocr_vacio_tiene_techo_media(self):
+        """El caso REAL y legitimo: la etiqueta es de bajo contraste y el
+        OCR simplemente no lee nada -- no hay contradiccion, solo falta
+        corroboracion."""
+        lecturas = [_lectura(texto="JACK & JONES", texto_ocr_crudo="")]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.valor == "JACK & JONES"
+        assert campo.confianza == "media"
+        assert conflictos == ()
+
+    def test_sin_testigo_ocr_none_tiene_techo_media(self):
         lecturas = [_lectura(texto="Reebok", texto_ocr_crudo=None)]
         campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
         assert campo.valor == "Reebok"
         assert campo.confianza == "media"
         assert conflictos == ()
 
-    def test_corroborado_por_ocr_crudo_de_la_misma_region_sube_a_alta(self):
-        lecturas = [_lectura(texto="Reebok", texto_ocr_crudo="Raabdk")]
-        campo, _ = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
-        assert campo.confianza == "alta"
-
-    def test_ocr_crudo_que_no_se_parece_no_corrobora(self):
-        # El VLM afirma "Nike" pero el OCR de esa misma region no sugeria
-        # nada parecido -- el modelo esta inventando, no confirmando.
-        lecturas = [_lectura(texto="Nike", texto_ocr_crudo="Raabdk")]
-        campo, _ = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+    def test_testigo_por_debajo_del_umbral_de_senal_cuenta_como_sin_testigo(self):
+        # 1 caracter alfanumerico -- ruido, no un testigo real, aunque no
+        # se parezca a lo que dice el VLM.
+        lecturas = [_lectura(texto="Nike", texto_ocr_crudo="X")]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.valor == "Nike"
         assert campo.confianza == "media"
+        assert conflictos == ()
+
+    # -- ESTADO 2: TESTIGO A FAVOR -> "alta" --
+
+    def test_testigo_a_favor_sube_a_alta(self):
+        lecturas = [_lectura(texto="Reebok", texto_ocr_crudo="Raabdk")]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.valor == "Reebok"
+        assert campo.confianza == "alta"
+        assert conflictos == ()
 
     def test_corroborado_por_dos_fotos_distintas_sube_a_alta(self):
         lecturas = [
@@ -691,11 +733,41 @@ class TestLeyDeCorroboracion:
         campo, _ = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
         assert campo.confianza == "alta"
 
-    def test_confianza_corroborada_directa(self):
-        rep = _lectura(texto="Reebok", texto_ocr_crudo="Raabdk")
-        assert _confianza_corroborada([rep], rep) == "alta"
-        rep_sola = _lectura(texto="Reebok", texto_ocr_crudo=None)
-        assert _confianza_corroborada([rep_sola], rep_sola) == "media"
+    # -- ESTADO 3: TESTIGO EN CONTRA -> "baja" + AMBAS lecturas expuestas --
+
+    def test_testigo_en_contra_es_baja_y_expone_ambas_lecturas(self):
+        """La salida que disparo el matiz: el VLM dice 'Nike' pero el OCR
+        de esa MISMA region leyo 'Raabdk' (garbled de Reebok, no de Nike).
+        Eso no es "sin evidencia": es evidencia de que el VLM esta
+        inventando (o mirando otra region). Mismo tratamiento que dos
+        marcas legibles -- None + baja + ambas lecturas para Diego."""
+        lecturas = [_lectura(texto="Nike", texto_ocr_crudo="Raabdk")]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+
+        assert campo.valor is None
+        assert campo.confianza == "baja"
+        assert len(conflictos) == 2
+        valores = {c.valor for c in conflictos}
+        assert valores == {"Nike", "Raabdk"}
+
+    def test_testigo_en_contra_con_talla_tambien_contradice(self):
+        # Adidas/XXL: el testigo mas corto de los casos reales (3 alnum,
+        # justo el umbral) tambien debe disparar la contradiccion.
+        lecturas = [_lectura(texto="Adidas", texto_ocr_crudo="XXL")]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.valor is None
+        assert campo.confianza == "baja"
+        assert {c.valor for c in conflictos} == {"Adidas", "XXL"}
+
+    def test_confianza_corroborada_directa_tres_estados(self):
+        rep_favor = _lectura(texto="Reebok", texto_ocr_crudo="Raabdk")
+        assert _confianza_corroborada([rep_favor], rep_favor) == "alta"
+
+        rep_sin_testigo = _lectura(texto="Reebok", texto_ocr_crudo=None)
+        assert _confianza_corroborada([rep_sin_testigo], rep_sin_testigo) == "media"
+
+        rep_contra = _lectura(texto="Nike", texto_ocr_crudo="Raabdk")
+        assert _confianza_corroborada([rep_contra], rep_contra) == "contradicho"
 
 
 # ============================================================================
