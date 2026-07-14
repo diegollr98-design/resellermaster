@@ -106,7 +106,13 @@ def test_hit_de_cache_no_llama_a_la_api_y_coste_cero(tmp_path, monkeypatch):
     assert motor_sin_key.coste_lote.llamadas == 0
 
 
-def test_cache_es_sensible_a_la_imagen_al_modelo_y_a_la_version_de_prompt(tmp_path, monkeypatch):
+def test_cache_es_sensible_a_la_imagen_al_modelo_a_la_version_y_al_TEXTO_del_prompt(tmp_path, monkeypatch):
+    """C6: antes la clave de cache solo hasheaba `version_prompt`, no el
+    texto del prompt -- esto REPRODUCE ese bug (misma imagen, mismo
+    version_prompt, texto DISTINTO -> antes era HIT) y demuestra que ahora
+    es MISS: los prompts son donde vive media defensa anti-alucinacion, y
+    endurecer uno sin subir `VERSION_PROMPT_*` no puede responder con el
+    prompt VIEJO en silencio."""
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     cache_dir = tmp_path / "cache"
     cliente_fake = _ClienteFake(respuesta=_mensaje_fake({"marca": "Nike"}))
@@ -117,17 +123,21 @@ def test_cache_es_sensible_a_la_imagen_al_modelo_y_a_la_version_de_prompt(tmp_pa
     motor.consultar([_imagen()], "prompt", schema, version_prompt="v1")
     assert len(cliente_fake.llamadas) == 1
 
-    # Misma imagen, misma version de prompt -> HIT, no llama de nuevo.
-    motor.consultar([_imagen()], "prompt distinto en texto", schema, version_prompt="v1")
+    # Misma imagen, MISMO texto de prompt, misma version -> HIT, no llama de nuevo.
+    motor.consultar([_imagen()], "prompt", schema, version_prompt="v1")
     assert len(cliente_fake.llamadas) == 1
+
+    # C6: mismo version_prompt, pero el TEXTO del prompt es distinto -> MISS.
+    motor.consultar([_imagen()], "prompt distinto en texto", schema, version_prompt="v1")
+    assert len(cliente_fake.llamadas) == 2
 
     # Version de prompt distinta -> MISS, sí llama.
     motor.consultar([_imagen()], "prompt", schema, version_prompt="v2")
-    assert len(cliente_fake.llamadas) == 2
+    assert len(cliente_fake.llamadas) == 3
 
     # Imagen distinta -> MISS, sí llama.
     motor.consultar([_imagen(contenido=b"otros-bytes")], "prompt", schema, version_prompt="v1")
-    assert len(cliente_fake.llamadas) == 3
+    assert len(cliente_fake.llamadas) == 4
 
 
 # ---------------------------------------------------------------------------
@@ -148,9 +158,9 @@ def test_estimacion_de_coste_cuenta_cache_como_cero_y_calcula_bien_el_resto(tmp_
     # La estimación NO necesita clave: solo mira el disco de cache.
     motor = LLMEngine(cache_dir=cache_dir)
     solicitudes = [
-        ([imagen_cacheada], "v1"),  # ya en cache -> coste 0
-        ([_imagen("IMG_nueva_1.jpg")], "v1"),  # a pagar
-        ([_imagen("IMG_nueva_2a.jpg"), _imagen("IMG_nueva_2b.jpg")], "v1"),  # 2 imágenes a pagar
+        ([imagen_cacheada], "prompt", "v1"),  # ya en cache -> coste 0
+        ([_imagen("IMG_nueva_1.jpg")], "prompt", "v1"),  # a pagar
+        ([_imagen("IMG_nueva_2a.jpg"), _imagen("IMG_nueva_2b.jpg")], "prompt", "v1"),  # 2 imágenes a pagar
     ]
     estimacion = motor.estimar_coste_lote(solicitudes)
 
@@ -180,7 +190,7 @@ def test_estimacion_de_coste_cuenta_cache_como_cero_y_calcula_bien_el_resto(tmp_
 def test_estimacion_rechaza_solicitud_sin_imagenes(tmp_path):
     motor = LLMEngine(cache_dir=tmp_path / "cache")
     with pytest.raises(ValueError):
-        motor.estimar_coste_lote([([], "v1")])
+        motor.estimar_coste_lote([([], "prompt", "v1")])
 
 
 # ---------------------------------------------------------------------------
@@ -297,7 +307,7 @@ def test_cache_corrupta_se_trata_como_miss_y_no_se_borra(tmp_path, monkeypatch, 
     imagen = _imagen()
 
     motor_para_clave = LLMEngine(cache_dir=cache_dir)
-    clave = motor_para_clave._clave_cache([imagen], "v1")
+    clave = motor_para_clave._clave_cache([imagen], "prompt", "v1")
     ruta_corrupta = cache_dir / f"{clave}.json"
     ruta_corrupta.write_text("{ esto no es json valido", encoding="utf-8")
 

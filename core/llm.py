@@ -44,7 +44,13 @@ el tipo de cambio del dia en la capa de facturacion real, no aqui.
 
 CACHE POR HASH — obligatoria, y NUNCA se borra sin permiso
 -------------------------------------------------------------
-Clave = sha256(bytes de cada imagen, en orden, + modelo + version_prompt).
+Clave = sha256(bytes de cada imagen, en orden, + modelo + version_prompt +
+EL TEXTO DEL PROMPT). El texto del prompt entra en el hash (no solo su
+`version_prompt`) porque los prompts son donde vive media defensa
+anti-alucinacion: endurecer un prompt y olvidarse de subir
+`VERSION_PROMPT_*` no puede responder con el prompt VIEJO en silencio — la
+clave se deriva de la entrada real, no de que alguien se acuerde de subir
+un numero.
 Se guarda en `cache_dir` (por defecto `data/cache/`) como un JSON por
 llamada. Un hit de cache NO llama a la API y cuesta 0. Cada entrada de esta
 cache es dinero YA GASTADO (`decision-making.md` SS 15): **nunca** se borra
@@ -309,12 +315,22 @@ class LLMEngine:
 
     # -- cache por hash -------------------------------------------------------
 
-    def _clave_cache(self, imagenes: Sequence[Imagen], version_prompt: str) -> str:
+    def _clave_cache(self, imagenes: Sequence[Imagen], prompt: str, version_prompt: str) -> str:
+        """C6: la clave deriva de la ENTRADA REAL -- bytes de cada imagen +
+        modelo + version_prompt + EL TEXTO DEL PROMPT. Antes NO incluia el
+        texto: dos llamadas con bytes+version_prompt identicos pero prompt
+        DISTINTO colisionaban en la misma clave, asi que endurecer un
+        prompt (donde vive media defensa anti-alucinacion) y olvidarse de
+        subir `VERSION_PROMPT_*` respondia con el prompt VIEJO en silencio
+        -- y encima parecia que el nuevo prompt ya estaba validado. La
+        clave no puede depender de que alguien se acuerde de subir un
+        numero."""
         hasher = hashlib.sha256()
         for imagen in imagenes:
             hasher.update(imagen.bytes_)
         hasher.update(self.modelo.encode("utf-8"))
         hasher.update(version_prompt.encode("utf-8"))
+        hasher.update(prompt.encode("utf-8"))
         return hasher.hexdigest()
 
     def _ruta_cache(self, clave: str) -> Path:
@@ -344,6 +360,7 @@ class LLMEngine:
         tokens_entrada: int,
         tokens_salida: int,
         imagenes: Sequence[Imagen],
+        prompt: str,
         version_prompt: str,
     ) -> None:
         ruta = self._ruta_cache(clave)
@@ -351,6 +368,11 @@ class LLMEngine:
             "datos": datos,
             "modelo": self.modelo,
             "version_prompt": version_prompt,
+            # C6: hash del texto del prompt (no el texto completo, para no
+            # inflar el fichero de cache) -- trazabilidad: si Diego ve un
+            # gasto que no esperaba, puede confirmar CON QUE prompt exacto
+            # se pago esta entrada.
+            "prompt_hash": hashlib.sha256(prompt.encode("utf-8")).hexdigest()[:16],
             "tokens_entrada": tokens_entrada,
             "tokens_salida": tokens_salida,
             "ficheros": [imagen.fichero for imagen in imagenes],
@@ -382,22 +404,23 @@ class LLMEngine:
 
     def estimar_coste_lote(
         self,
-        solicitudes: Sequence[tuple[Sequence[Imagen], str]],
+        solicitudes: Sequence[tuple[Sequence[Imagen], str, str]],
         tokens_salida_estimados: int = TOKENS_SALIDA_ESTIMADOS_DEFECTO,
     ) -> EstimacionLote:
         """Estima el coste de un lote de llamadas ANTES de lanzar ninguna.
 
-        `solicitudes` es una lista de `(imagenes, version_prompt)`, una
-        entrada por cada llamada que se planea hacer con `consultar`. Las
-        que ya estan en cache (mismo hash de imagenes+modelo+version)
+        `solicitudes` es una lista de `(imagenes, prompt, version_prompt)`,
+        una entrada por cada llamada que se planea hacer con `consultar`
+        (mismo orden que sus argumentos posicionales). Las que ya estan en
+        cache (mismo hash de imagenes+modelo+version_prompt+prompt, C6)
         cuentan coste 0 — son dinero ya gastado. No llama a la API ni
         necesita `ANTHROPIC_API_KEY`: solo mira el disco de cache.
         """
         llamadas: list[EstimacionLlamada] = []
-        for imagenes, version_prompt in solicitudes:
+        for imagenes, prompt, version_prompt in solicitudes:
             if not imagenes:
                 raise ValueError("una solicitud de estimacion no puede tener cero imagenes")
-            clave = self._clave_cache(imagenes, version_prompt)
+            clave = self._clave_cache(imagenes, prompt, version_prompt)
             en_cache = self._ruta_cache(clave).exists()
             tokens_entrada_est = (
                 0 if en_cache else len(imagenes) * TOKENS_ENTRADA_ESTIMADOS_POR_IMAGEN
@@ -462,7 +485,7 @@ class LLMEngine:
                     LADO_LARGO_RESCALADO_PX,
                 )
 
-        clave = self._clave_cache(imagenes, version_prompt)
+        clave = self._clave_cache(imagenes, prompt, version_prompt)
         cacheado = self._leer_cache(clave)
         if cacheado is not None:
             logger.info(
@@ -530,7 +553,7 @@ class LLMEngine:
         tokens_cache_leidos = respuesta.usage.cache_read_input_tokens or 0
         coste = self._calcular_coste(tokens_entrada, tokens_salida)
 
-        self._guardar_cache(clave, datos, tokens_entrada, tokens_salida, imagenes, version_prompt)
+        self._guardar_cache(clave, datos, tokens_entrada, tokens_salida, imagenes, prompt, version_prompt)
 
         self.coste_lote.registrar(tokens_entrada, tokens_salida, tokens_cache_leidos, coste)
         if producto_id is not None:

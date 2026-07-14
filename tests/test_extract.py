@@ -31,13 +31,17 @@ from PIL import Image
 from core.extract import (
     CandidatoConflicto,
     ExtractorEngine,
+    ExtractorError,
     LecturaCrop,
+    MAX_LLAMADAS_VLM_POR_PRODUCTO,
     RespuestaVLMInvalidaError,
+    UMBRAL_SIMILITUD_CORROBORACION,
     VERSION_PROMPT_CROP,
     VERSION_PROMPT_ESTADO,
     VERSION_PROMPT_METRO,
     _campo_composicion,
     _color_dominante_rgb,
+    _confianza_corroborada,
     _construir_campo_desperfectos,
     _construir_campo_texto,
     _es_bloque_de_texto_largo,
@@ -46,6 +50,9 @@ from core.extract import (
     _intentar_atajo_ocr,
     _nombre_color_mas_cercano,
     _parsear_lectura_crop,
+    _similitud_normalizada,
+    _validar_campo_ean,
+    _validar_checksum_ean,
     _UBICACIONES_VALIDAS_MARCA,
     _UBICACIONES_VALIDAS_MODELO,
     fusionar_regiones_cercanas,
@@ -89,6 +96,7 @@ def _lectura(
     ubicacion: str = "etiqueta_interior",
     contenido_probable: str = "marca",
     texto: str | None = "Reebok",
+    texto_ocr_crudo: str | None = None,
 ) -> LecturaCrop:
     return LecturaCrop(
         fichero=fichero,
@@ -98,6 +106,7 @@ def _lectura(
         ubicacion=ubicacion,  # type: ignore[arg-type]
         contenido_probable=contenido_probable,  # type: ignore[arg-type]
         texto=texto,
+        texto_ocr_crudo=texto_ocr_crudo,
     )
 
 
@@ -152,8 +161,21 @@ def _extractor_ingenuo_primero_legible(lecturas: list[LecturaCrop], contenido: s
 class TestTrampaEstampadoNoEsMarca:
     """legibilidad.json producto 4: el estampado gigante dice 'ORIGINALS'
     (estampado_o_grafico); la marca real es 'JACK & JONES', en la etiqueta
-    de cuello (etiqueta_interior). Un extractor que coja "el texto mas
-    grande/mas largo" publica marca='ORIGINALS', que es FALSO."""
+    de cuello (etiqueta_interior).
+
+    C1/INC-010 corrigio la regla original ("el estampado SIEMPRE se ignora
+    si hay una etiqueta que diga otra cosa"): eso era exactamente el bug --
+    `_candidatos_de_campo` filtraba por ubicacion ANTES de comprobar si
+    habia conflicto, asi que un estampado que CONTRADICE la etiqueta se
+    borraba en silencio y el pipeline "elegia" la etiqueta con
+    `confianza='alta'` sin saber que habia una version distinta. El
+    pipeline no puede saber a priori si 'ORIGINALS' es un print decorativo
+    o si es la etiqueta de cuello la que miente (ver
+    TestTrampaDosMarcasConflicto, la misma ambiguedad con una marca real
+    de por medio) -- asi que ahora es un CONFLICTO real, no una eleccion
+    silenciosa. Lo que SI se mantiene (invariante A de la regla dura #1):
+    un estampado SOLO, sin ninguna etiqueta que lo contradiga, JAMAS
+    publica marca por si mismo."""
 
     def _lecturas(self) -> list[LecturaCrop]:
         return [
@@ -171,13 +193,31 @@ class TestTrampaEstampadoNoEsMarca:
             ),
         ]
 
-    def test_el_extractor_real_ignora_el_estampado(self):
+    def test_estampado_que_discrepa_de_la_etiqueta_es_conflicto(self):
         lecturas = self._lecturas()
         campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
 
-        assert campo.valor == "JACK & JONES"
-        assert campo.fuente == "foto"
-        assert campo.confianza == "alta"
+        assert campo.valor is None
+        assert campo.confianza == "baja"
+        assert len(conflictos) == 2
+        valores = {c.valor for c in conflictos}
+        assert valores == {"ORIGINALS", "JACK & JONES"}
+
+    def test_estampado_solo_sin_etiqueta_nunca_publica_marca(self):
+        """Invariante A de la regla dura #1, SIN cambios: un estampado sin
+        ninguna etiqueta_interior competidora NUNCA se convierte en el
+        valor publicado de marca."""
+        lecturas = [
+            _lectura(
+                fichero="IMG_estampado.jpg",
+                ubicacion="estampado_o_grafico",
+                contenido_probable="marca",
+                texto="ORIGINALS",
+            )
+        ]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+
+        assert campo.valor is None
         assert conflictos == ()
 
     def test_ROJO_contra_el_extractor_ingenuo(self):
@@ -193,17 +233,28 @@ class TestTrampaEstampadoNoEsMarca:
 
 
 class TestTrampaDosMarcasConflicto:
-    """legibilidad.json producto 5: 'UMBRO' bordado (nitido) Y 'RAMI JALAB'
-    en la etiqueta de cuello (tambien nitido) -- prenda reetiquetada.
-    Cualquier regla de precedencia acierta en una y miente en la otra:
-    la unica salida correcta es null + ambas candidatas para Diego."""
+    """legibilidad.json producto 5: 'UMBRO' bordado (nitido, en el pecho --
+    ubicacion='estampado_o_grafico') Y 'RAMI JALAB' en la etiqueta de
+    cuello (tambien nitido, ubicacion='etiqueta_interior') -- prenda
+    reetiquetada. Cualquier regla de precedencia acierta en una y miente
+    en la otra: la unica salida correcta es null + ambas candidatas para
+    Diego.
+
+    C1/INC-010: la version anterior de este test etiquetaba AMBAS lecturas
+    como 'etiqueta_interior' (un input imposible: el bordado del pecho NO
+    es una etiqueta de cuello) -- con eso, el bug de `_candidatos_de_campo`
+    (filtrar por ubicacion ANTES de contar conflictos) nunca se ejercitaba:
+    las dos lecturas ya pasaban el filtro y el conflicto se detectaba "por
+    accidente". Con la ubicacion REAL del golden set, el bug SI se
+    manifestaba: el UMBRO del estampado se borraba antes del conteo y
+    'RAMI JALAB' salia solo, con confianza='alta'."""
 
     def _lecturas(self) -> list[LecturaCrop]:
         return [
             _lectura(
                 fichero="IMG_pecho.jpg",
                 bbox=(10, 10, 50, 20),
-                ubicacion="etiqueta_interior",
+                ubicacion="estampado_o_grafico",
                 contenido_probable="marca",
                 texto="UMBRO",
             ),
@@ -339,13 +390,20 @@ class TestFondoAjenoNuncaEsAtributo:
 
 class TestPapelManuscritoEsNotaDeDiego:
     """legibilidad.json producto 7: un PAPEL MANUSCRITO ('CREMALLERA
-    ROTA') es una nota de Diego, no una etiqueta del producto ->
-    fuente='diego', nunca 'foto'."""
+    ROTA') junto al producto.
 
-    def test_va_a_desperfectos_con_fuente_diego(self):
+    C7 corrigio `fuente`: el texto SI esta en el pixel (es una
+    transcripcion, no algo que Diego tecleara en la app) -- `fuente="foto"`
+    con su `evidencia`, NUNCA "diego" (esa es la unica fuente que la UI no
+    audita; la nota debe mostrarse como "nota tuya, confirmala", no colarse
+    como un hecho ya verificado). Ley de corroboracion: una sola foto de
+    la nota -> techo "media"."""
+
+    def test_va_a_desperfectos_con_fuente_foto_y_confianza_media(self):
         lecturas = [
             _lectura(
                 fichero="IMG_papel.jpg",
+                bbox=(3, 3, 30, 12),
                 ubicacion="papel_manuscrito",
                 contenido_probable="desperfecto",
                 texto="CREMALLERA ROTA",
@@ -354,7 +412,28 @@ class TestPapelManuscritoEsNotaDeDiego:
         campo = _construir_campo_desperfectos(lecturas)
 
         assert campo.valor == "CREMALLERA ROTA"
-        assert campo.fuente == "diego"
+        assert campo.fuente == "foto"  # C7: es una transcripcion, no un dato tecleado
+        assert campo.confianza == "media"  # una sola foto de la nota
+        assert campo.evidencia is not None
+        assert campo.evidencia.fichero == "IMG_papel.jpg"
+
+    def test_la_misma_nota_en_dos_fotos_distintas_sube_a_alta(self):
+        lecturas = [
+            _lectura(
+                fichero="IMG_papel_a.jpg",
+                ubicacion="papel_manuscrito",
+                contenido_probable="desperfecto",
+                texto="CREMALLERA ROTA",
+            ),
+            _lectura(
+                fichero="IMG_papel_b.jpg",
+                ubicacion="papel_manuscrito",
+                contenido_probable="desperfecto",
+                texto="CREMALLERA ROTA",
+            ),
+        ]
+        campo = _construir_campo_desperfectos(lecturas)
+        assert campo.confianza == "alta"
 
     def test_sin_papel_el_campo_es_null(self):
         campo = _construir_campo_desperfectos([_lectura(ubicacion="etiqueta_interior")])
@@ -551,6 +630,126 @@ class TestParseoDefensivoDeLaRespuestaDelVLM:
         lectura = _parsear_lectura_crop(datos, "IMG_1.jpg", (0, 0, 1, 1))
         assert lectura.texto is None
 
+    def test_texto_ocr_crudo_se_traslada_al_lectura_crop(self):
+        """El OCR crudo de la region viaja al `LecturaCrop` -- es la mitad
+        gratis de la ley de corroboracion (INC-010)."""
+        datos = {
+            "legible": True,
+            "pertenece_al_producto": True,
+            "ubicacion": "etiqueta_interior",
+            "contenido_probable": "marca",
+            "texto": "Reebok",
+        }
+        lectura = _parsear_lectura_crop(datos, "IMG_1.jpg", (0, 0, 1, 1), texto_ocr_crudo="Raabdk")
+        assert lectura.texto_ocr_crudo == "Raabdk"
+
+
+# ============================================================================
+# LA LEY DE CORROBORACION (INC-010): ninguna afirmacion de texto sale con
+# confianza="alta" sin corroboracion INDEPENDIENTE. Una sola senal, por
+# nitida que parezca, tiene techo "media".
+# ============================================================================
+
+
+class TestLeyDeCorroboracion:
+    def test_similitud_calibrada_con_los_pares_reales_del_golden_set(self):
+        # Pares que DEBEN corroborar (garbled real del OCR vs lectura VLM correcta).
+        assert _similitud_normalizada("Reebok", "Raabdk") >= UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("Reebok", "Reabak") >= UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("RAMI JALAB", "RAMI SALAB") >= UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("ORIGINAL MARINES", "ORIGINAL MARINES") >= UMBRAL_SIMILITUD_CORROBORACION
+        # Pares que NO deben corroborar (marcas realmente distintas, o
+        # el VLM afirmando algo que el OCR ni sugiere).
+        assert _similitud_normalizada("JACK & JONES", "ESTI550") < UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("JACK & JONES", "Orioinae") < UMBRAL_SIMILITUD_CORROBORACION
+        assert _similitud_normalizada("UMBRO", "RAMI JALAB") < UMBRAL_SIMILITUD_CORROBORACION
+
+    def test_una_sola_lectura_sin_corroboracion_tiene_techo_media(self):
+        lecturas = [_lectura(texto="Reebok", texto_ocr_crudo=None)]
+        campo, conflictos = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.valor == "Reebok"
+        assert campo.confianza == "media"
+        assert conflictos == ()
+
+    def test_corroborado_por_ocr_crudo_de_la_misma_region_sube_a_alta(self):
+        lecturas = [_lectura(texto="Reebok", texto_ocr_crudo="Raabdk")]
+        campo, _ = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.confianza == "alta"
+
+    def test_ocr_crudo_que_no_se_parece_no_corrobora(self):
+        # El VLM afirma "Nike" pero el OCR de esa misma region no sugeria
+        # nada parecido -- el modelo esta inventando, no confirmando.
+        lecturas = [_lectura(texto="Nike", texto_ocr_crudo="Raabdk")]
+        campo, _ = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.confianza == "media"
+
+    def test_corroborado_por_dos_fotos_distintas_sube_a_alta(self):
+        lecturas = [
+            _lectura(fichero="IMG_a.jpg", texto="Reebok"),
+            _lectura(fichero="IMG_b.jpg", texto="Reebok"),
+        ]
+        campo, _ = _construir_campo_texto(lecturas, "marca", _UBICACIONES_VALIDAS_MARCA)
+        assert campo.confianza == "alta"
+
+    def test_confianza_corroborada_directa(self):
+        rep = _lectura(texto="Reebok", texto_ocr_crudo="Raabdk")
+        assert _confianza_corroborada([rep], rep) == "alta"
+        rep_sola = _lectura(texto="Reebok", texto_ocr_crudo=None)
+        assert _confianza_corroborada([rep_sola], rep_sola) == "media"
+
+
+# ============================================================================
+# C5 -- EAN sin checksum GS1 valido no es un EAN
+# ============================================================================
+
+
+class TestChecksumEan:
+    def test_ean_con_checksum_valido_pasa(self):
+        assert _validar_checksum_ean("8445061029720") is True
+
+    def test_ean_con_un_digito_mal_leido_no_valida(self):
+        assert _validar_checksum_ean("8445061029721") is False
+
+    def test_longitud_invalida_no_valida(self):
+        assert _validar_checksum_ean("12345") is False
+
+    def test_no_digitos_no_valida(self):
+        assert _validar_checksum_ean("844506102972X") is False
+
+    def test_atajo_no_acepta_ean_con_checksum_invalido(self):
+        region = RegionOCR(
+            fichero="IMG_ean.jpg", bbox=(0, 0, 10, 10), texto_ocr="EANCODE:*8445061029721", score=0.91
+        )
+        assert _intentar_atajo_ocr(region) is None
+
+    def test_atajo_si_acepta_ean_con_checksum_valido(self):
+        region = RegionOCR(
+            fichero="IMG_ean.jpg", bbox=(0, 0, 10, 10), texto_ocr="EANCODE:*8445061029720", score=0.91
+        )
+        nombre, campo = _intentar_atajo_ocr(region)
+        assert nombre == "ean"
+        assert campo.valor == "8445061029720"
+        assert campo.confianza == "alta"
+
+    def test_campo_ean_con_checksum_invalido_se_anula(self):
+        campo = Campo(
+            valor="8445061029721", fuente="foto", confianza="alta", evidencia=Evidencia(fichero="f.jpg")
+        )
+        anulado = _validar_campo_ean(campo)
+        assert anulado.valor is None
+        assert anulado.confianza == "baja"
+        assert anulado.evidencia is not None  # se preserva el rastro de que hubo un intento
+
+    def test_campo_ean_sin_valor_no_se_toca(self):
+        campo = Campo(valor=None, fuente="inferido", confianza="baja")
+        assert _validar_campo_ean(campo) == campo
+
+    def test_campo_ean_con_checksum_valido_se_preserva(self):
+        campo = Campo(
+            valor="8445061029720", fuente="foto", confianza="alta", evidencia=Evidencia(fichero="f.jpg")
+        )
+        assert _validar_campo_ean(campo) == campo
+
 
 # ============================================================================
 # 4. INTEGRACION -- ExtractorEngine.extraer_producto, LOS 5 CASOS DE FALLO
@@ -697,7 +896,9 @@ class TestExtraerProductoFelizYAtajos:
 
         assert motor.llamadas == []  # nada se llamo de verdad
         assert len(solicitudes) >= 1
-        version_prompts = {vp for _, vp in solicitudes}
+        # (imagenes, prompt, version_prompt) -- C6: el texto del prompt
+        # viaja explicito porque el hash de cache ahora lo incluye.
+        version_prompts = {vp for _, _, vp in solicitudes}
         assert VERSION_PROMPT_CROP in version_prompts
         assert VERSION_PROMPT_ESTADO in version_prompts
         # El color NUNCA genera una solicitud VLM (sale de pixeles).
@@ -750,10 +951,11 @@ class TestExtraerProductoFelizYAtajos:
         assert resultado.campos["medidas"].valor == 62.0
         assert resultado.campos["medidas"].fuente == "foto"
 
-    def test_color_divergente_baja_confianza(self, tmp_path, monkeypatch):
-        """El color sale de PIXELES (no del VLM): 3 fotos, 2 tonos
+    def test_color_divergente_es_none_nunca_la_primera_lectura(self, tmp_path, monkeypatch):
+        """C3(c): el color sale de PIXELES (no del VLM): 3 fotos, 2 tonos
         distintos (rosa vs rojo vino, el caso real del producto 6) ->
-        `confianza='baja'`, sin gastar ni una llamada al proveedor."""
+        `valor=None` -- ninguna de las dos lecturas es mas valida que la
+        otra, asi que ya NO se publica "la primera que salga primero"."""
         rosa = (232, 160, 180)
         rojo_vino = (110, 20, 40)
         fotos = [
@@ -767,14 +969,20 @@ class TestExtraerProductoFelizYAtajos:
         extractor = ExtractorEngine(motor)
         resultado = extractor.extraer_producto(fotos)
 
+        assert resultado.campos["color"].valor is None
         assert resultado.campos["color"].confianza == "baja"
-        assert resultado.campos["color"].fuente == "foto"
-        assert resultado.campos["color"].valor is not None
+        assert resultado.campos["color"].fuente == "inferido"
         # el color nunca gasta una llamada VLM -- lo unico que puede haber
         # llamado al motor es la evaluacion de estado (VERSION_PROMPT_ESTADO).
         assert all(vp == VERSION_PROMPT_ESTADO for _, vp in motor.llamadas)
 
-    def test_color_convergente_alta_confianza(self, tmp_path, monkeypatch):
+    def test_color_convergente_sigue_con_techo_media_nunca_alta(self, tmp_path, monkeypatch):
+        """C3(a): ni siquiera con las 3 fotos de acuerdo el color puede
+        salir 'alta' -- el acuerdo puede ser el MISMO sesgo del sensor
+        repetido (el caso real que motivo esta regla: una sudadera negra
+        sale gris oscuro en las 3 fotos por la autoexposicion). Y
+        `fuente='inferido'`: una cuenta de pixeles no es una lectura
+        directa, es una inferencia sobre lo que el sensor capturo."""
         gris = (130, 130, 130)
         fotos = [
             _foto_de_color(tmp_path / "IMG_g1.jpg", gris),
@@ -788,7 +996,34 @@ class TestExtraerProductoFelizYAtajos:
         resultado = extractor.extraer_producto(fotos)
 
         assert resultado.campos["color"].valor == "gris"
-        assert resultado.campos["color"].confianza == "alta"
+        assert resultado.campos["color"].confianza == "media"
+        assert resultado.campos["color"].fuente == "inferido"
+
+    def test_estampado_se_excluye_del_muestreo_de_color(self, tmp_path):
+        """C3(d): si el VLM ya localizo un `estampado_o_grafico` en la
+        MISMA foto que se muestrea para color, ese bbox se excluye del
+        histograma -- el recorte central puede caer justo encima de un
+        estampado grande (producto 4 real: un leon gris) y contaminar el
+        color de la prenda."""
+        ancho, alto = 400, 400
+        imagen = Image.new("RGB", (ancho, alto), (130, 130, 130))  # borde gris
+        centro = Image.new("RGB", (200, 200), (60, 140, 60))  # el "estampado", verde, domina el centro
+        imagen.paste(centro, (100, 100))
+        rosa = Image.new("RGB", (200, 40), (232, 160, 180))  # una franja rosa de la prenda real
+        imagen.paste(rosa, (100, 100))
+        ruta = tmp_path / "IMG_estampado_color.jpg"
+        imagen.save(ruta, format="JPEG", quality=95)
+
+        from core.images import abrir_derecha
+
+        imagen_pil = abrir_derecha(ruta)
+        bbox_estampado = (100, 140, 200, 160)  # coords ORIGINALES del bloque verde
+
+        rgb_sin_excluir = _color_dominante_rgb(imagen_pil)
+        assert _nombre_color_mas_cercano(rgb_sin_excluir) == "verde"
+
+        rgb_excluido = _color_dominante_rgb(imagen_pil, bboxes_excluir=[bbox_estampado])
+        assert _nombre_color_mas_cercano(rgb_excluido) == "rosa"
 
     def test_estado_siempre_fuente_inferido(self, tmp_path, monkeypatch):
         foto = _foto_sintetica(tmp_path / "IMG_estado.jpg")
@@ -810,3 +1045,213 @@ class TestExtraerProductoFelizYAtajos:
         extractor = ExtractorEngine(_MotorFake())
         with pytest.raises(ValueError):
             extractor.extraer_producto([])
+
+
+# ============================================================================
+# C4 -- nombres de fichero duplicados fallan RUIDOSO, nunca aliasing silencioso
+# ============================================================================
+
+
+class TestNombresDuplicadosFallaRuidoso:
+    """Dos fotos de RUTAS distintas (dos tarjetas SD, dos moviles) con el
+    MISMO nombre base -- un `dict` clavado por nombre perderia una en
+    silencio y el recorte saldria de la foto EQUIVOCADA (C4)."""
+
+    def _dos_fotos_mismo_nombre(self, tmp_path) -> list[Path]:
+        carpeta_a = tmp_path / "sd1"
+        carpeta_b = tmp_path / "sd2"
+        carpeta_a.mkdir()
+        carpeta_b.mkdir()
+        foto_a = _foto_sintetica(carpeta_a / "IMG_0001.jpg")
+        foto_b = _foto_sintetica(carpeta_b / "IMG_0001.jpg")
+        return [foto_a, foto_b]
+
+    def test_extraer_producto_falla_si_hay_nombres_base_duplicados(self, tmp_path):
+        fotos = self._dos_fotos_mismo_nombre(tmp_path)
+        extractor = ExtractorEngine(_MotorFake())
+        with pytest.raises(ExtractorError):
+            extractor.extraer_producto(fotos)
+
+    def test_construir_solicitudes_tambien_falla(self, tmp_path):
+        fotos = self._dos_fotos_mismo_nombre(tmp_path)
+        extractor = ExtractorEngine(_MotorFake())
+        with pytest.raises(ExtractorError):
+            extractor.construir_solicitudes(fotos)
+
+    def test_nombres_unicos_no_falla(self, tmp_path):
+        foto_a = _foto_sintetica(tmp_path / "IMG_0001.jpg")
+        foto_b = _foto_sintetica(tmp_path / "IMG_0002.jpg")
+        extractor = ExtractorEngine(_MotorFake())
+        # No debe lanzar -- solo se comprueba que no reviente por esto.
+        extractor.extraer_producto([foto_a, foto_b])
+
+
+# ============================================================================
+# C9 -- backstop de coste: MAX_LLAMADAS_VLM_POR_PRODUCTO
+# ============================================================================
+
+
+class TestLimiteLlamadasVlm:
+    def test_se_corta_al_llegar_al_limite_y_se_anota_en_fallos(self, tmp_path, monkeypatch):
+        n_fotos = MAX_LLAMADAS_VLM_POR_PRODUCTO + 5
+        fotos = [_foto_sintetica(tmp_path / f"IMG_{i}.jpg") for i in range(n_fotos)]
+        regiones = {
+            fotos[i].name: [
+                RegionOCR(fichero=fotos[i].name, bbox=(5, 5, 20, 10), texto_ocr=f"txt{i}xyz", score=0.5)
+            ]
+            for i in range(n_fotos)
+        }
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: regiones[ruta.name])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = {
+            "legible": False,
+            "pertenece_al_producto": True,
+            "ubicacion": "otro",
+            "contenido_probable": "otro",
+            "texto": None,
+        }
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto(fotos)
+
+        llamadas_crop = [vp for _, vp in motor.llamadas if vp == VERSION_PROMPT_CROP]
+        assert len(llamadas_crop) == MAX_LLAMADAS_VLM_POR_PRODUCTO
+        assert any("limite_llamadas_vlm_alcanzado" in f for f in resultado.fallos)
+
+
+# ============================================================================
+# C2 -- LA FICHA FRANKENSTEIN: aviso de coherencia con dientes
+# ============================================================================
+
+
+class TestAvisoDeCoherencia:
+    """INC-011: si los campos de identidad (marca/talla/modelo/ean)
+    proceden de fotos DISJUNTAS -- ninguna foto liga dos campos entre si
+    -- es la firma de una fusion de dos productos que Diego no caza al
+    curar. El aviso tiene DIENTES: degrada la confianza, no es un pie de
+    foto."""
+
+    def test_marca_y_talla_de_fotos_disjuntas_dispara_el_aviso_y_degrada(self, tmp_path, monkeypatch):
+        foto_marca = _foto_sintetica(tmp_path / "IMG_marca.jpg")
+        foto_talla = _foto_sintetica(tmp_path / "IMG_talla.jpg")
+        region_marca = RegionOCR(fichero=foto_marca.name, bbox=(1, 1, 5, 5), texto_ocr="Raabdk", score=0.7)
+        region_talla = RegionOCR(fichero=foto_talla.name, bbox=(1, 1, 5, 5), texto_ocr="XXL", score=0.7)
+        regiones = {foto_marca.name: [region_marca], foto_talla.name: [region_talla]}
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: regiones[ruta.name])
+
+        motor = _MotorFake()
+
+        def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
+            fichero = imagenes[0].fichero
+            motor.llamadas.append((fichero, version_prompt))
+            if version_prompt == VERSION_PROMPT_ESTADO:
+                return ResultadoLLM(
+                    datos={"estimacion_legible": False, "descripcion": None},
+                    fuente="api",
+                    coste_usd=0.0,
+                    tokens_entrada=10,
+                    tokens_salida=5,
+                )
+            if fichero == foto_marca.name:
+                datos = {
+                    "legible": True,
+                    "pertenece_al_producto": True,
+                    "ubicacion": "etiqueta_interior",
+                    "contenido_probable": "marca",
+                    "texto": "Reebok",
+                }
+            else:
+                datos = {
+                    "legible": True,
+                    "pertenece_al_producto": True,
+                    "ubicacion": "etiqueta_interior",
+                    "contenido_probable": "talla",
+                    "texto": "XXL",
+                }
+            return ResultadoLLM(datos=datos, fuente="api", coste_usd=0.001, tokens_entrada=100, tokens_salida=10)
+
+        motor.consultar = _consultar
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto_marca, foto_talla])
+
+        assert resultado.campos["marca"].valor == "Reebok"
+        assert resultado.campos["talla"].valor == "XXL"
+        assert resultado.aviso_coherencia is not None
+        assert "DISJUNTAS" in resultado.aviso_coherencia
+        # Ambos vendrian corroborados por OCR<->VLM ("Raabdk"~"Reebok" no,
+        # pero "XXL" es identico a si mismo si hubiera repeticion) -- el
+        # punto es que si CUALQUIERA hubiera salido "alta", el aviso lo baja
+        # a "media": ningun campo de identidad puede quedar en "alta" aqui.
+        assert resultado.campos["marca"].confianza != "alta"
+        assert resultado.campos["talla"].confianza != "alta"
+
+    def test_marca_y_talla_de_la_misma_foto_no_dispara_el_aviso(self, tmp_path, monkeypatch):
+        foto = _foto_sintetica(tmp_path / "IMG_ambas.jpg", tamano=(600, 1000))
+        region_marca = RegionOCR(fichero=foto.name, bbox=(1, 1, 5, 5), texto_ocr="Raabdk", score=0.7)
+        # Lejos verticalmente (>150px) para que NO se fusione con region_marca
+        # (fusionar_regiones_cercanas uniria las dos en un solo recorte).
+        region_talla = RegionOCR(fichero=foto.name, bbox=(1, 500, 5, 5), texto_ocr="XXL", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region_marca, region_talla])
+
+        motor = _MotorFake()
+
+        def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
+            fichero = imagenes[0].fichero
+            motor.llamadas.append((fichero, version_prompt))
+            if version_prompt == VERSION_PROMPT_ESTADO:
+                return ResultadoLLM(
+                    datos={"estimacion_legible": False, "descripcion": None},
+                    fuente="api",
+                    coste_usd=0.0,
+                    tokens_entrada=10,
+                    tokens_salida=5,
+                )
+            # Ambas lecturas de crop en esta foto (misma imagen, distinto bbox);
+            # devolvemos segun el contenido esperado alternando por orden de llamada.
+            indice_crop = sum(1 for f, vp in motor.llamadas if vp == VERSION_PROMPT_CROP)
+            if indice_crop <= 1:
+                datos = {
+                    "legible": True,
+                    "pertenece_al_producto": True,
+                    "ubicacion": "etiqueta_interior",
+                    "contenido_probable": "marca",
+                    "texto": "Reebok",
+                }
+            else:
+                datos = {
+                    "legible": True,
+                    "pertenece_al_producto": True,
+                    "ubicacion": "etiqueta_interior",
+                    "contenido_probable": "talla",
+                    "texto": "XXL",
+                }
+            return ResultadoLLM(datos=datos, fuente="api", coste_usd=0.001, tokens_entrada=100, tokens_salida=10)
+
+        motor.consultar = _consultar
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["marca"].valor == "Reebok"
+        assert resultado.campos["talla"].valor == "XXL"
+        assert resultado.aviso_coherencia is None
+
+    def test_un_solo_campo_con_valor_no_dispara_el_aviso(self, tmp_path, monkeypatch):
+        """0 o 1 campo de identidad con valor -- no hay nada que pueda "no
+        ligar", el aviso no aplica."""
+        foto = _foto_sintetica(tmp_path / "IMG_solo_marca.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(1, 1, 5, 5), texto_ocr="Raabdk", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = {
+            "legible": True,
+            "pertenece_al_producto": True,
+            "ubicacion": "etiqueta_interior",
+            "contenido_probable": "marca",
+            "texto": "Reebok",
+        }
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["marca"].valor == "Reebok"
+        assert resultado.aviso_coherencia is None
