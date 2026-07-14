@@ -297,6 +297,31 @@ def _render_grupo_confirmado(producto: dict, fotos_por_id: dict[str, dict]) -> N
                 st.image(_miniatura_de(foto["ruta"], foto["hash"]), use_container_width=True)
 
 
+def _avisar_exif_del_lote(resumen: dict[str, int]) -> None:
+    """Recordatorio de una línea: si este lote se agrupó sin (o con poca)
+    señal temporal, el `motivo` de cada grupo no puede fingir una certeza
+    que no tiene — `core/grouping.py` ya lo respeta (techo de confianza,
+    nunca "alta" sin base), esta línea es sólo para que Diego lo tenga
+    presente antes de revisar. El conteo viene ya calculado de
+    `core.store.LoteStore.resumen_exif_lote` — esto sólo lo pinta."""
+    total = resumen["total"]
+    sin_exif = resumen["sin_exif"]
+    if sin_exif == 0 or total == 0:
+        return
+    if resumen["con_exif"] == 0:
+        st.warning(
+            "Ninguna foto de este lote trae fecha de captura (EXIF): los grupos de abajo se "
+            "propusieron sin señal temporal, sólo por parecido visual — revísalos con más "
+            "cuidado de lo habitual."
+        )
+    else:
+        st.warning(
+            f"{sin_exif} de {total} foto(s) de este lote no traen fecha de captura (EXIF): "
+            "los grupos que las incluyen se propusieron con la señal temporal incompleta — "
+            "revísalos con más cuidado."
+        )
+
+
 # --------------------------------------------------------------------------
 # Entrada de la pantalla
 # --------------------------------------------------------------------------
@@ -311,6 +336,8 @@ def render(store: LoteStore, lote_id: str) -> None:
     if not estado["fotos"]:
         st.info("Este lote todavía no tiene fotos. Ve a «Ingesta» para añadirlas.")
         return
+
+    _avisar_exif_del_lote(store.resumen_exif_lote(lote_id))
 
     # Propuesta automática para fotos recién llegadas sin grupo todavía.
     # Nunca re-agrupa fotos que ya están en un producto (confirmado o no):

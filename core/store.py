@@ -348,6 +348,40 @@ class LoteStore:
                 ids.append(foto_id)
         return ids
 
+    def resumen_exif_lote(self, lote_id: str) -> dict[str, int]:
+        """Cuántas fotos del lote traen fecha de captura EXIF y cuántas no.
+
+        Se calcula sobre `fotos.timestamp_exif`, columna que YA persiste
+        `core.images.leer_metadatos(...).fecha_captura_exif` desde la
+        ingesta (`ui/ingesta.py`) — nunca el `mtime` del fichero. **No** se
+        guarda como columna aparte en `lotes`: sería una segunda fuente de
+        verdad derivada de `fotos` que se podría desincronizar (mismo
+        criterio documentado arriba para `grupo_fotos`), y aquí no hace
+        falta — se recalcula con una `COUNT` barata cada vez.
+
+        Sirve para dos cosas (pedidas explícitamente por Diego): que la
+        pantalla de confirmación explique por qué los grupos de este lote
+        se degradan sin señal temporal, y para poder medir después cuántos
+        lotes llegan sin EXIF (p. ej. por venir de WhatsApp).
+        """
+        conn = self._conectar()
+        try:
+            self._lote_existe(conn, lote_id)
+            fila = conn.execute(
+                """
+                SELECT COUNT(*) AS total,
+                       SUM(CASE WHEN timestamp_exif IS NOT NULL THEN 1 ELSE 0 END) AS con_exif
+                FROM fotos
+                WHERE lote_id = ?
+                """,
+                (lote_id,),
+            ).fetchone()
+            total = fila["total"] or 0
+            con_exif = fila["con_exif"] or 0
+            return {"total": total, "con_exif": con_exif, "sin_exif": total - con_exif}
+        finally:
+            conn.close()
+
     # -- agrupación (superficie sensible) -----------------------------------
 
     def guardar_agrupacion(self, lote_id: str, grupos: list[list[str]]) -> list[str]:

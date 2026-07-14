@@ -28,6 +28,7 @@ from core.images import (
     normalizar_orientacion,
     obtener_o_crear_miniatura,
     puntuacion_nitidez,
+    resumen_exif,
     sha256_de_fichero,
     sugerir_orden,
 )
@@ -218,6 +219,72 @@ def test_leer_metadatos_heic(tmp_path):
     assert meta.fecha_captura_exif is not None
     assert meta.fecha_captura_exif.isoformat() == "2023-01-02T08:09:10"
     assert meta.ancho == 64 and meta.alto == 64
+
+
+def test_resumen_exif_lote_todo_con_exif(tmp_path):
+    rutas = []
+    for i in range(3):
+        ruta = tmp_path / f"con_exif_{i}.png"
+        _guardar_png_con_marca(ruta, fecha_original=f"2024:05:0{i + 1} 10:00:00")
+        rutas.append(ruta)
+
+    resumen = resumen_exif(rutas)
+
+    assert resumen.total == 3
+    assert resumen.con_fecha_exif == 3
+    assert resumen.sin_fecha_exif == 0
+    assert resumen.porcentaje_sin_exif == 0.0
+
+
+def test_resumen_exif_lote_todo_sin_exif_caso_whatsapp(tmp_path):
+    # El caso real, medido con las fotos de Diego: 13/13 llegadas por
+    # WhatsApp, cero fecha EXIF.
+    rutas = []
+    for i in range(13):
+        ruta = tmp_path / f"whatsapp_{i}.png"
+        _guardar_png_con_marca(ruta)  # sin exif, como las de WhatsApp
+        rutas.append(ruta)
+
+    resumen = resumen_exif(rutas)
+
+    assert resumen.total == 13
+    assert resumen.con_fecha_exif == 0
+    assert resumen.sin_fecha_exif == 13
+    assert resumen.porcentaje_sin_exif == 100.0
+
+
+def test_resumen_exif_lote_mixto(tmp_path):
+    con_exif = tmp_path / "con.png"
+    sin_exif_a = tmp_path / "sin_a.png"
+    sin_exif_b = tmp_path / "sin_b.png"
+    _guardar_png_con_marca(con_exif, fecha_original="2024:05:01 10:00:00")
+    _guardar_png_con_marca(sin_exif_a)
+    _guardar_png_con_marca(sin_exif_b)
+
+    resumen = resumen_exif([con_exif, sin_exif_a, sin_exif_b])
+
+    assert resumen.total == 3
+    assert resumen.con_fecha_exif == 1
+    assert resumen.sin_fecha_exif == 2
+    assert resumen.porcentaje_sin_exif == pytest.approx(66.666, rel=1e-3)
+
+
+def test_resumen_exif_fichero_ilegible_cuenta_como_sin_fecha_no_lanza(tmp_path):
+    corrupta = tmp_path / "rota.jpg"
+    _escribir_corrupto(corrupta)
+
+    resumen = resumen_exif([corrupta])
+
+    assert resumen.total == 1
+    assert resumen.sin_fecha_exif == 1
+    assert resumen.con_fecha_exif == 0
+
+
+def test_resumen_exif_lote_vacio():
+    resumen = resumen_exif([])
+    assert resumen.total == 0
+    assert resumen.sin_fecha_exif == 0
+    assert resumen.porcentaje_sin_exif == 0.0
 
 
 # --------------------------------------------------------------------------

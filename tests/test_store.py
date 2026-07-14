@@ -37,6 +37,23 @@ def _crear_lote_con_fotos(store: LoteStore, n: int = 4) -> tuple[str, list[str]]
     return lote_id, foto_ids
 
 
+def _crear_lote_con_fotos_exif_mixto(
+    store: LoteStore, timestamps: list[str | None]
+) -> tuple[str, list[str]]:
+    """Como `_crear_lote_con_fotos`, pero con control explícito de qué foto
+    trae `timestamp_exif` y cuál llega `None` (el caso real: fotos pasadas
+    por WhatsApp, EXIF borrado)."""
+    lote_id = store.crear_lote("Lote de prueba", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+    fotos = []
+    for i, ts in enumerate(timestamps):
+        ruta = carpeta / f"IMG_{i:04d}.jpg"
+        ruta.write_bytes(b"contenido-falso-de-foto")
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash{i}", timestamp_exif=ts))
+    foto_ids = store.añadir_fotos(lote_id, fotos)
+    return lote_id, foto_ids
+
+
 # --------------------------------------------------------------------------
 # Ciclo completo
 # --------------------------------------------------------------------------
@@ -208,6 +225,71 @@ def test_crear_lote_deja_la_carpeta_lista_antes_de_anadir_fotos(tmp_path):
     # La carpeta de trabajo existe inmediatamente después de crear_lote,
     # sin depender de ningún paso intermedio.
     assert (store.lotes_dir / lote_id).is_dir()
+
+
+# --------------------------------------------------------------------------
+# Aviso de EXIF ausente (`resumen_exif_lote`)
+# --------------------------------------------------------------------------
+
+
+def test_resumen_exif_lote_todo_con_exif(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, _ = _crear_lote_con_fotos_exif_mixto(
+        store, ["2026-07-13T10:00:00", "2026-07-13T10:01:00", "2026-07-13T10:02:00"]
+    )
+
+    resumen = store.resumen_exif_lote(lote_id)
+
+    assert resumen == {"total": 3, "con_exif": 3, "sin_exif": 0}
+
+
+def test_resumen_exif_lote_todo_sin_exif_caso_whatsapp(tmp_path):
+    # El caso real que pidió Diego: 13/13 fotos por WhatsApp, cero EXIF.
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, _ = _crear_lote_con_fotos_exif_mixto(store, [None] * 13)
+
+    resumen = store.resumen_exif_lote(lote_id)
+
+    assert resumen == {"total": 13, "con_exif": 0, "sin_exif": 13}
+
+
+def test_resumen_exif_lote_mixto(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, _ = _crear_lote_con_fotos_exif_mixto(
+        store, ["2026-07-13T10:00:00", None, None, "2026-07-13T10:03:00"]
+    )
+
+    resumen = store.resumen_exif_lote(lote_id)
+
+    assert resumen == {"total": 4, "con_exif": 2, "sin_exif": 2}
+
+
+def test_resumen_exif_lote_sobrevive_a_cierre_y_reapertura(tmp_path):
+    # Es un cálculo sobre lo persistido en `fotos`, no un caché en memoria:
+    # tiene que seguir siendo correcto tras "cerrar la app" y reabrirla.
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, _ = _crear_lote_con_fotos_exif_mixto(store, [None, None, "2026-07-13T10:00:00"])
+    del store
+
+    store2 = LoteStore(data_dir=tmp_path)
+    resumen = store2.resumen_exif_lote(lote_id)
+
+    assert resumen == {"total": 3, "con_exif": 1, "sin_exif": 2}
+
+
+def test_resumen_exif_lote_sin_fotos(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote vacío", "C:/fotos/origen")
+
+    resumen = store.resumen_exif_lote(lote_id)
+
+    assert resumen == {"total": 0, "con_exif": 0, "sin_exif": 0}
+
+
+def test_resumen_exif_lote_inexistente_falla(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    with pytest.raises(LoteNoEncontradoError):
+        store.resumen_exif_lote("lote-fantasma")
 
 
 # --------------------------------------------------------------------------

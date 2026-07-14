@@ -167,6 +167,43 @@ def _parsear_fecha_exif(crudo: object, ruta: Path) -> datetime | None:
         return None
 
 
+@dataclass(frozen=True)
+class ResumenExif:
+    """Cuántas fotos de un lote traen fecha de captura EXIF y cuántas no.
+
+    Pura aritmética sobre `MetadatosImagen.fecha_captura_exif` — una foto
+    ilegible cuenta como "sin fecha" igual que una legible sin el tag; en
+    ningún caso se sustituye por `mtime_fichero` (sería mentir sobre cuándo
+    se disparó la foto, ver docstring del módulo)."""
+
+    total: int
+    con_fecha_exif: int
+    sin_fecha_exif: int
+
+    @property
+    def porcentaje_sin_exif(self) -> float:
+        return (self.sin_fecha_exif / self.total * 100.0) if self.total else 0.0
+
+
+def resumen_exif(rutas: Sequence[Path]) -> ResumenExif:
+    """Lee los metadatos de cada foto de `rutas` (vía `leer_metadatos`) y
+    cuenta cuántas traen fecha de captura EXIF (`DateTimeOriginal`).
+
+    Por qué importa: `core/grouping.py` usa el timestamp EXIF como señal
+    primaria para separar productos. Sin EXIF esa señal no existe y la
+    agrupación se degrada a solo similitud visual. WhatsApp y otras
+    aplicaciones de mensajería (y algunas herramientas de descarga) borran
+    el EXIF al recomprimir/reenviar una foto — medido con fotos reales de
+    Diego: 13/13 llegadas por WhatsApp, cero fecha. Este cálculo es lo que
+    permite avisarle ANTES de que curre el lote entero a mano.
+
+    Sólo lee (nunca escribe), y es barato: `leer_metadatos` no decodifica
+    los píxeles, sólo la cabecera del fichero."""
+    total = len(rutas)
+    sin_fecha = sum(1 for ruta in rutas if leer_metadatos(ruta).fecha_captura_exif is None)
+    return ResumenExif(total=total, con_fecha_exif=total - sin_fecha, sin_fecha_exif=sin_fecha)
+
+
 def _mtime_fichero(ruta: Path) -> datetime | None:
     try:
         return datetime.fromtimestamp(ruta.stat().st_mtime)

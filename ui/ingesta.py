@@ -20,8 +20,10 @@ import streamlit as st
 
 from core.images import (
     EXTENSIONES_SOPORTADAS,
+    ResumenExif,
     es_soportada,
     leer_metadatos,
+    resumen_exif,
     sha256_de_fichero,
 )
 from core.store import Foto, FotoDuplicadaError, LoteStore
@@ -29,6 +31,11 @@ from core.store import Foto, FotoDuplicadaError, LoteStore
 logger = logging.getLogger(__name__)
 
 _TIPOS_UPLOADER = sorted(ext.lstrip(".") for ext in EXTENSIONES_SOPORTADAS)
+
+# Umbral (proporción sin EXIF sobre el total del lote) a partir del cual el
+# aviso escala de `st.warning` a `st.error` — "la mayoría" pedido por Diego.
+# No bloquea nada, sólo cambia cuánto grita.
+_UMBRAL_MAYORIA_SIN_EXIF = 0.5
 
 
 def _listar_fotos_en_carpeta(carpeta: Path) -> list[Path]:
@@ -51,6 +58,31 @@ def _copia_destino_libre(carpeta_lote: Path, nombre_original: str) -> Path:
         destino = carpeta_lote / f"{origen.stem}_{contador}{origen.suffix}"
         contador += 1
     return destino
+
+
+def _avisar_exif_ausente(resumen: ResumenExif) -> None:
+    """Aviso imposible de ignorar, pero NUNCA bloqueante: Diego puede seguir
+    igual. El cálculo (cuántas fotos, qué proporción) vive en
+    `core.images.resumen_exif` — esta función sólo decide CÓMO pintarlo."""
+    if resumen.sin_fecha_exif == 0:
+        return
+
+    mensaje = (
+        f"**{resumen.sin_fecha_exif} de {resumen.total} foto(s) no traen fecha de captura "
+        "(EXIF).**\n\n"
+        "**Qué se pierde:** sin esa fecha, la app no puede separar los productos por el "
+        "momento en que los fotografiaste, y tendrás que corregir más grupos a mano.\n\n"
+        "**Causa más probable:** WhatsApp y otras aplicaciones de mensajería (y algunas "
+        "herramientas de descarga) borran la fecha de las fotos. Pásalas por cable desde el "
+        "móvil (o con una app que conserve los metadatos) y la app podrá agrupar mucho "
+        "mejor.\n\n"
+        "Puedes seguir igual — a veces no hay otra opción — pero revisa los grupos con más "
+        "cuidado."
+    )
+    if resumen.porcentaje_sin_exif / 100.0 >= _UMBRAL_MAYORIA_SIN_EXIF:
+        st.error(mensaje)
+    else:
+        st.warning(mensaje)
 
 
 def _ingerir(
@@ -189,6 +221,8 @@ def render(store: LoteStore) -> str | None:
 
     if not rutas:
         return None
+
+    _avisar_exif_ausente(resumen_exif(rutas))
 
     st.info(
         "Coste estimado de procesar este lote: **0,00 €**. Fase 1 usa sólo "
