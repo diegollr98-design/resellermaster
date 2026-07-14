@@ -14,13 +14,15 @@ Tres capas, de la más fundamental a la más de extremo a extremo:
    del script (no un rerun de fragmento — `AppTest.run()` no manda
    `fragment_id`, se comprobó ejecutando un caso mínimo), así que el botón
    que abrió el diálogo no vuelve a pulsarse y el diálogo no reaparece: el
-   click "SÍ"/"NO" de dentro del modal no se puede ejercitar end-to-end vía
-   `AppTest`. Por eso aquí se comprueba (a) que el diálogo ABRE sin
-   excepción y con el contenido correcto (los dos grupos enteros) — eso sí
-   lo ve `AppTest`, porque el primer render del diálogo ocurre en el MISMO
-   script run que el click que lo abre — y (b) la mutación que hace el
-   botón "SÍ" (`ui.curar._cerrar_costura`) se llama directamente, que es
-   exactamente la función que ese botón invoca.
+   click "SÍ"/"NO" de `_dialog_fusionar`, o "✂ Dividir aquí" de
+   `_dialog_dividir`, no se pueden ejercitar end-to-end vía `AppTest`. Por
+   eso aquí se comprueba (a) que el diálogo ABRE sin excepción y con el
+   contenido correcto (los grupos enteros involucrados) — eso sí lo ve
+   `AppTest`, porque el primer render del diálogo ocurre en el MISMO script
+   run que el click que lo abre — y (b) la mutación que hace cada botón de
+   confirmar (`ui.curar._cerrar_costura`, `ui.curar._accion_dividir_grupo`)
+   se llama directamente, que es exactamente la función que ese botón
+   invoca.
 3. **EL GATE** — sobre las 33 fotos reales de Diego: cerrar EXACTAMENTE las
    costuras que el algoritmo cortó de más (y ninguna otra) reproduce los 7
    productos de su verdad (`tests/golden/truth.json`).
@@ -272,32 +274,106 @@ def _preparar_lote_dos_grupos_y_suelta(tmp_path: Path) -> tuple[str, dict[str, s
     return lote_id, por_nombre
 
 
+def _preparar_lote_grupo_de_cuatro(tmp_path: Path) -> tuple[str, dict[str, str]]:
+    """UN solo grupo de 4 fotos, con las TRES costuras interiores CERRADAS
+    (particiones ya guardadas, no depende de que `agrupar()` las reproduzca).
+    Sirve para probar que dividir por UN punto de corte deja EXACTAMENTE dos
+    grupos contiguos, sin perder ninguna foto."""
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote grupo de cuatro", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+
+    nombres_colores = [
+        ("C0", (10, 10, 10)),
+        ("C1", (20, 20, 20)),
+        ("C2", (30, 30, 30)),
+        ("C3", (40, 40, 40)),
+    ]
+    timestamps = {
+        "C0": "2026-07-14T11:00:00",
+        "C1": "2026-07-14T11:00:05",
+        "C2": "2026-07-14T11:00:10",
+        "C3": "2026-07-14T11:00:15",
+    }
+    fotos: list[Foto] = []
+    for nombre, color in nombres_colores:
+        ruta = carpeta / f"{nombre}.jpg"
+        _crear_foto_con_exif(ruta, color, datetime.fromisoformat(timestamps[nombre]))
+        fotos.append(Foto(ruta=str(ruta), hash=f"hash_{nombre}", timestamp_exif=timestamps[nombre]))
+    ids = store.añadir_fotos(lote_id, fotos)
+    por_nombre = dict(zip([n for n, _ in nombres_colores], ids))
+
+    store.guardar_agrupacion(lote_id, [[por_nombre[n] for n, _ in nombres_colores]])
+    return lote_id, por_nombre
+
+
 def test_render_sin_excepcion(tmp_path):
     lote_id, _ = _preparar_lote_dos_grupos_y_suelta(tmp_path)
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     assert not at.exception
 
 
-def test_descoser_separa_el_grupo_en_dos_sin_excepcion(tmp_path):
-    """CICATRIZ: el botón "✂" de la costura INTERNA de un grupo (siempre
-    cerrada, es la cicatriz) lo separa en dos, de un click, sin modal."""
+def test_dividir_abre_dialogo_con_las_fotos_del_grupo_en_orden(tmp_path):
+    """Un solo botón "✂ Dividir este grupo…" por tarjeta (nunca una tijera
+    por par) abre `_dialog_dividir`, que enseña TODAS las fotos del grupo
+    (aquí, la cicatriz A0-A1 que ya estaba cerrada). Mismo límite medido de
+    `AppTest` con `@st.dialog` que `_dialog_fusionar` (ver docstring del
+    módulo): se comprueba que el modal ABRE con el contenido correcto; la
+    mutación de confirmar se comprueba llamando a la función directamente,
+    más abajo."""
     lote_id, por_nombre = _preparar_lote_dos_grupos_y_suelta(tmp_path)
-    a0, a1 = por_nombre["A0"], por_nombre["A1"]
+    a0 = por_nombre["A0"]
 
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     assert not at.exception
 
-    boton = next(b for b in at.button if b.key == f"descoser_{a0}_{a1}")
+    boton = next(b for b in at.button if b.key == f"dividir_{a0}")
     boton.click().run()
-    assert not at.exception, f"'Descoser' lanzó: {at.exception}"
+    assert not at.exception, f"abrir el modal de dividir lanzó: {at.exception}"
 
+    textos = " ".join([m.value for m in at.markdown] + [c.value for c in at.caption])
+    assert "A0.jpg" in textos and "A1.jpg" in textos, "el modal no muestra el grupo entero"
+
+
+def test_accion_dividir_grupo_separa_el_grupo_en_dos_sin_perder_fotos(tmp_path):
+    """La mutación real del botón "✂ Dividir aquí" dentro del modal:
+    `ui.curar._accion_dividir_grupo` es exactamente lo que ese botón llama
+    con los puntos de corte marcados. Aquí divide la cicatriz A0-A1, que
+    antes se descosía de un click con el botón "✂" que ya no existe."""
+    lote_id, por_nombre = _preparar_lote_dos_grupos_y_suelta(tmp_path)
+    a0, a1 = por_nombre["A0"], por_nombre["A1"]
     store = LoteStore(data_dir=tmp_path)
+
+    ok = curar._accion_dividir_grupo(store, lote_id, [(a0, a1)])
+    assert ok is True
+
     estado = store.cargar_lote(lote_id)
     no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
     grupos = {frozenset(p["fotos"]) for p in no_confirmados}
     assert frozenset({a0}) in grupos
     assert frozenset({a1}) in grupos
     assert not any(frozenset({a0, a1}) == g for g in grupos)
+
+
+def test_dividir_por_un_punto_produce_dos_grupos_contiguos_sin_perder_fotos(tmp_path):
+    """Sobre un grupo de 4 fotos (todas sus costuras interiores cerradas),
+    dividir por UN solo punto de corte debe producir EXACTAMENTE dos
+    grupos, ambos contiguos, y ninguna foto perdida ni duplicada."""
+    lote_id, por_nombre = _preparar_lote_grupo_de_cuatro(tmp_path)
+    c0, c1, c2, c3 = por_nombre["C0"], por_nombre["C1"], por_nombre["C2"], por_nombre["C3"]
+    store = LoteStore(data_dir=tmp_path)
+
+    ok = curar._accion_dividir_grupo(store, lote_id, [(c1, c2)])
+    assert ok is True
+
+    estado = store.cargar_lote(lote_id)
+    no_confirmados = [p for p in estado["productos"] if not p["confirmado"]]
+    grupos = {frozenset(p["fotos"]) for p in no_confirmados}
+
+    assert len(no_confirmados) == 2
+    assert grupos == {frozenset({c0, c1}), frozenset({c2, c3})}
+    todas_las_fotos = {fid for p in no_confirmados for fid in p["fotos"]}
+    assert todas_las_fotos == {c0, c1, c2, c3}, "se perdió o duplicó una foto al dividir"
 
 
 def test_costura_abierta_abre_dialogo_con_los_dos_grupos_enteros(tmp_path):

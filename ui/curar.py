@@ -22,18 +22,28 @@ selección. Meter la foto del producto 2 en el 7 no está "mal hecho": no
 está en el espacio de estados. NO se debe romper esto añadiendo un "mover
 foto" por comodidad.
 
-## El pestillo
-Un click en una costura ABIERTA nunca fusiona nada directamente: abre un
-`@st.dialog` (`_dialog_fusionar`) que enseña los DOS GRUPOS ENTEROS y
-pregunta SÍ/NO. La mutación real (`core.grouping.particion` + `guardar_
-agrupacion`) vive SÓLO dentro del modal. Por qué: tras varias uniones
-seguidas la página colapsa y el siguiente botón sube bajo el ratón quieto
-— un click reflejo fusionaría dos productos reales. Con el pestillo, un
-mis-click sólo abre un panel que Diego cierra.
+## Dos modales, dos motivos distintos
+Un click en una costura ABIERTA (la franja ENTRE dos tarjetas) nunca
+fusiona nada directamente: abre un `@st.dialog` (`_dialog_fusionar`) que
+enseña los DOS GRUPOS ENTEROS y pregunta SÍ/NO. La mutación real
+(`core.grouping.particion` + `guardar_agrupacion`) vive SÓLO dentro del
+modal. Por qué: tras varias uniones seguidas la página colapsa y el
+siguiente botón sube bajo el ratón quieto — un click reflejo fusionaría
+dos productos reales. Con el pestillo, un mis-click sólo abre un panel que
+Diego cierra.
 
-Descoser (abrir una costura ya cerrada, dentro de una tarjeta) SÍ es de un
-click sin modal: sobre-cortar es la operación segura de la asimetría de
-`truth-loop.md` §E, deshacer siempre disponible.
+Dividir un grupo (un solo botón "✂ Dividir este grupo…" por tarjeta, no
+una tijera entre cada par de fotos — eso confundía) TAMBIÉN abre un
+`@st.dialog` (`_dialog_dividir`), pero por un motivo distinto: no es una
+operación insegura — partir SIEMPRE es segura, es la asimetría de
+`truth-loop.md` §E — es que un grupo puede tener varios puntos de corte
+candidatos y hacía falta un sitio para marcarlos de una vez. Dentro de
+ese modal NO hay pestillo SÍ/NO: los puntos marcados se abren
+directamente al confirmar (`_accion_dividir_grupo`). Ahí mismo vive
+también "descoser" una costura interior que Diego ya había cerrado a mano
+(la "cicatriz" de antes): estructuralmente es el mismo punto de corte,
+sólo cambia de dónde salió que estuviera cerrado — deshacer una unión
+sigue siendo tan accesible como abrir cualquier otro punto del grupo.
 
 ## Persistencia y errores (`[INC-006]`, `decision-making.md` §13)
 Nada vive en `st.session_state` salvo un mensaje de error de un callback
@@ -231,24 +241,31 @@ def _guardar_particion(
 
 
 # --------------------------------------------------------------------------
-# Mutaciones. DESCOSER (abrir una costura cerrada) es de un click, sin
-# modal: sobre-cortar es la operación SEGURA de la asimetría de
-# `truth-loop.md` §E. Vive en un callback `on_click` (nunca en el cuerpo
-# del script, `[INC-006]`).
+# Mutaciones. DIVIDIR (abrir una o varias costuras cerradas) es SIEMPRE la
+# operación SEGURA de la asimetría de `truth-loop.md` §E — sobre-cortar
+# nunca fusiona. Vive dentro del `@st.dialog` de dividir, nunca en el
+# cuerpo del script (`[INC-006]`).
 # --------------------------------------------------------------------------
-def _accion_abrir_costura(store: LoteStore, lote_id: str, izq: str, der: str) -> None:
-    estado, fotos_ordenadas, _grupos, costuras = _estado_cremallera(store, lote_id)
-    nuevas_costuras = set(costuras) | {(izq, der)}
-    nuevos_grupos = particion(fotos_ordenadas, nuevas_costuras)
-    _guardar_particion(store, lote_id, estado, nuevos_grupos, desde_callback=True)
-
-
 def _cerrar_costura(store: LoteStore, lote_id: str, izq: str, der: str) -> bool:
     """La única mutación que FUSIONA dos grupos. Vive detrás del pestillo:
     sólo se llama desde dentro de `_dialog_fusionar`, nunca directamente
     desde un botón del cuerpo del script."""
     estado, fotos_ordenadas, _grupos, costuras = _estado_cremallera(store, lote_id)
     nuevas_costuras = set(costuras) - {(izq, der)}
+    nuevos_grupos = particion(fotos_ordenadas, nuevas_costuras)
+    return _guardar_particion(store, lote_id, estado, nuevos_grupos, desde_callback=False)
+
+
+def _accion_dividir_grupo(store: LoteStore, lote_id: str, pares: list[tuple[str, str]]) -> bool:
+    """La mutación real del botón de confirmar de `_dialog_dividir`: abre
+    de una vez TODOS los puntos de corte que Diego marcó dentro de un
+    mismo grupo — abrir es SIEMPRE la operación segura de la asimetría de
+    `truth-loop.md` §E. Un solo `guardar_particion` para no dejar un
+    estado a medias si marcó varios puntos y sólo el primero se guardara.
+    Vive dentro del `@st.dialog`, nunca en un `on_click` fuera de él
+    (`[INC-006]`)."""
+    estado, fotos_ordenadas, _grupos, costuras = _estado_cremallera(store, lote_id)
+    nuevas_costuras = set(costuras) | set(pares)
     nuevos_grupos = particion(fotos_ordenadas, nuevas_costuras)
     return _guardar_particion(store, lote_id, estado, nuevos_grupos, desde_callback=False)
 
@@ -383,6 +400,68 @@ def _dialog_fusionar(
             st.rerun()
 
 
+# --------------------------------------------------------------------------
+# DIVIDIR UN GRUPO — un solo botón por tarjeta abre esto, en vez de una
+# tijera entre cada par de fotos. Enseña el grupo ENTERO en orden y deja
+# marcar uno o varios puntos de corte a la vez. Sin pestillo SÍ/NO: partir
+# es SIEMPRE la operación segura (`truth-loop.md` §E) — lo que hacía falta
+# aquí no era una confirmación de riesgo, era un sitio para elegir POR
+# DÓNDE, sin ruido. La mutación real vive SÓLO dentro del modal
+# (`_accion_dividir_grupo`, `[INC-006]`).
+# --------------------------------------------------------------------------
+@st.dialog("Dividir este grupo en varios productos", width="large")
+def _dialog_dividir(
+    store: LoteStore,
+    lote_id: str,
+    grupo: list[str],
+    fotos_por_id: dict[str, dict],
+) -> None:
+    st.caption(
+        f"{len(grupo)} foto(s), en el orden en que se tomaron. Marca ✂ en cada "
+        "punto por donde quieras separar — cada marca crea un producto nuevo a "
+        "partir de ahí."
+    )
+
+    pares = list(zip(grupo, grupo[1:]))
+    anchos = [4] * len(grupo) + [1] * len(pares)
+    columnas = st.columns(anchos)
+
+    idx = 0
+    seleccionados: list[tuple[str, str]] = []
+    for i, fid in enumerate(grupo):
+        with columnas[idx]:
+            _render_imagen_segura(fotos_por_id[fid], width=110)
+            st.caption(Path(fotos_por_id[fid]["ruta"]).name)
+        idx += 1
+        if i < len(grupo) - 1:
+            izq_id, der_id = fid, grupo[i + 1]
+            with columnas[idx]:
+                st.write("┊")
+                cortar_aqui = st.checkbox(
+                    "✂",
+                    key=f"corte_{izq_id}_{der_id}",
+                    help="Separar aquí en dos productos distintos.",
+                )
+                if cortar_aqui:
+                    seleccionados.append((izq_id, der_id))
+            idx += 1
+
+    st.divider()
+    if seleccionados:
+        st.caption(f"Se creará(n) {len(seleccionados) + 1} producto(s) a partir de este grupo.")
+    else:
+        st.caption("Sin ningún punto ✂ marcado no se divide nada.")
+
+    if st.button(
+        "✂ Dividir aquí",
+        type="primary",
+        use_container_width=True,
+        disabled=not seleccionados,
+    ):
+        if _accion_dividir_grupo(store, lote_id, seleccionados):
+            st.rerun()
+
+
 @st.dialog("Revisión antes de confirmar", width="large")
 def _dialog_confirmar(
     store: LoteStore,
@@ -413,11 +492,14 @@ def _dialog_confirmar(
 
 
 # --------------------------------------------------------------------------
-# Tarjeta de un grupo: sus fotos en fila. Los seams INTERIORES (siempre
-# cerrados, por construcción de `particion()`) se pintan como una
-# "cicatriz" (┊) con un botón "✂" de un click, sin modal — descoser es la
-# operación segura. Caso general: cero código especial para 1 foto, 2
-# fotos o N fotos.
+# Tarjeta de un grupo: sus fotos en fila, y UN solo botón "✂ Dividir este
+# grupo…" al pie (sólo si tiene más de 1 foto) — NUNCA una tijera entre
+# cada par de fotos: la mayoría de grupos están bien y no se parten, y una
+# tijera por par era ruido que confundía a Diego. El botón abre
+# `_dialog_dividir`, donde se elige POR DÓNDE cortar (uno o varios puntos
+# a la vez) — ahí vive también "descoser" una costura interior que Diego
+# ya había cerrado a mano (la cicatriz de antes): es el mismo punto de
+# corte, sólo cambia de dónde salió que estuviera cerrado.
 # --------------------------------------------------------------------------
 def _render_tarjeta_grupo(
     store: LoteStore, lote_id: str, grupo: list[str], fotos_por_id: dict[str, dict]
@@ -429,31 +511,14 @@ def _render_tarjeta_grupo(
             st.caption(Path(fotos_por_id[grupo[0]]["ruta"]).name)
             return
 
-        anchos: list[int] = []
-        for i in range(len(grupo)):
-            anchos.append(4)
-            if i < len(grupo) - 1:
-                anchos.append(1)
-        columnas = st.columns(anchos)
+        _render_filmstrip(grupo, fotos_por_id, ancho=130)
 
-        idx = 0
-        for i, fid in enumerate(grupo):
-            with columnas[idx]:
-                _render_imagen_segura(fotos_por_id[fid], width=130)
-                st.caption(Path(fotos_por_id[fid]["ruta"]).name)
-            idx += 1
-            if i < len(grupo) - 1:
-                izq_id, der_id = fid, grupo[i + 1]
-                with columnas[idx]:
-                    st.write("┊")
-                    st.button(
-                        "✂",
-                        key=f"descoser_{izq_id}_{der_id}",
-                        help="Separar aquí — deshacer siempre disponible, es la operación segura.",
-                        on_click=_accion_abrir_costura,
-                        args=(store, lote_id, izq_id, der_id),
-                    )
-                idx += 1
+        if st.button(
+            "✂ Dividir este grupo…",
+            key=f"dividir_{grupo[0]}",
+            help="Separar estas fotos en dos o más productos distintos.",
+        ):
+            _dialog_dividir(store, lote_id, grupo, fotos_por_id)
 
 
 def _render_costura_abierta(
@@ -477,7 +542,7 @@ def _render_costura_abierta(
         else:
             st.caption("✂ — — — — — — — — — — — — —")
         if st.button(
-            "🔗 ¿el mismo producto?",
+            "🔗 Unir: ¿el mismo producto?",
             key=f"seam_{izq_id}_{der_id}",
             use_container_width=True,
         ):
@@ -538,6 +603,10 @@ def render(store: LoteStore, lote_id: str) -> None:
 
     st.header("2. Curar agrupación")
     st.caption(f"Lote «{estado['lote']['nombre']}» — {len(estado['fotos'])} foto(s).")
+    st.caption(
+        "✂ **Dividir este grupo…** = separar en dos o más productos distintos · "
+        "🔗 **Unir: ¿el mismo producto?** = juntar dos grupos en uno solo"
+    )
 
     if not estado["fotos"]:
         st.info("Este lote todavía no tiene fotos. Ve a «Ingesta» para añadirlas.")
