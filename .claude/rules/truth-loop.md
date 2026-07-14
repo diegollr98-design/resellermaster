@@ -147,4 +147,5 @@ Dos leyes, heredadas y no negociables:
 ---
 
 ## Changelog
-- **v1.0** (2026-07-13) — creado con la infra. Sin incidentes todavía: todas las reglas de aquí son **a priori**, derivadas de los modos de fallo de los otros repos de Diego. Se ganarán o se retirarán con datos reales.
+- **v1.1** (2026-07-14) — §E reescrita entera contra las **33 fotos reales** de Diego: el umbral (15 s), la zona segura (1-23 s) y el acantilado (24 s) son **medidos**, no supuestos; CLIP y OCR **descartados con dato** como clasificador de tipo de foto. Ya no son reglas a priori: `[INC-002]`…`[INC-009]` las ganaron. La regla nueva que más cara salió — *el default tiene que caer del lado barato de la asimetría, y hay que EJECUTARLO para saberlo* — vive en `decision-making.md` §16.
+- **v1.0** (2026-07-13) — creado con la infra. Sin incidentes todavía: todas las reglas de aquí eran **a priori**, derivadas de los modos de fallo de los otros repos de Diego.

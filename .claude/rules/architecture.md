@@ -1,6 +1,6 @@
 # Arquitectura — RESELLERMASTER
 
-> **Estado: las costuras están DECIDIDAS, la implementación NO.** Este fichero define los contratos que cualquier plan debe respetar. El detalle (proveedor, esquema exacto, librerías) se cierra en la sesión de planificación.
+> **Estado (2026-07-14):** `ListingSchema` (`core/schema.py`) **implementado**; `ExtractorEngine` y `PriceEngine` **se construyen en la Fase 2**. Este fichero define los contratos que cualquier plan debe respetar.
 
 ## Las 3 costuras
 

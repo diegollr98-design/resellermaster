@@ -26,6 +26,8 @@ Por **superficie**, no por número de líneas. La lista de superficies sensibles
 
 4. **Verde local ≠ ficha correcta.** `pytest` verde, `ruff` limpio y la app arrancando **no dicen nada** sobre si la talla que extrajo es la real. La única señal que cuenta para una superficie sensible es **`/eval` contra el golden set** + el ojo de Diego. Un fallback honesto (campo `null`, valor por defecto) **jamás** puede tragarse un error de extracción en silencio: loguear ruidoso y marcar el campo.
 
+   **La superficie que Diego TOCA CON LAS MANOS necesita sus propios tests** `[INC-006]`. Los 241 tests verdes de `schema`/`images`/`store`/`grouping` no cubrían **ni una línea** de la pantalla de curado — y ahí vivían los dos bugs (uno de ellos capaz de meter una foto en la ficha equivocada). `streamlit.testing.v1.AppTest` reproduce esos fallos en 10 líneas: no era caro, es que no estaba. Todo cambio en `ui/` que mueva fotos entre grupos lleva su test de `AppTest`.
+
 5. **Coste antes de ejecutar.** Cualquier cambio que altere cuántas llamadas al LLM se hacen por producto → **recalcular el coste/producto y decirlo**, aunque nadie lo pregunte. Un cambio de prompt que duplica el coste es un cambio de arquitectura disfrazado.
 
 ## §D — Reconciliación de estado antes de cada fase

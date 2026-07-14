@@ -1,6 +1,10 @@
 # CLAUDE.md — RESELLERMASTER
 
-## v0.3 | Actualizado: 2026-07-14 | App local (Streamlit): fotos de reventa en masa → agrupar por producto → campos de Wallapop y Vinted → copiar-pegar. **FASE 1 casi cerrada.** `schema`/`images`/`store`/`ui` HECHOS y auditados (198 tests). **`core/grouping.py` ROTO** — 3 versiones, 3 `listing-audit` BLOQUEANTE: se diseñó 3 rondas contra imágenes sintéticas **sin mirar una foto real de Diego**. **Ya hay golden set real** (`tests/golden/truth.json`: 33 fotos, 7 productos, verdad fijada por él) y **el diseño está MEDIDO** (`truth-loop.md` §E): el hueco temporal sesgado a **sobre-cortar** da 6/6 fronteras y **CERO fusiones**; un modelo de visión de pago repara los cortes sobrantes clasificando el tipo de foto (metro/etiqueta/papel no pueden empezar producto). **CLIP no sirve** (medido 2×). **SIGUIENTE PASO: sesión FRESCA con `docs/seeds/fase-1b.md`** — reescribir `grouping.py` sobre datos reales.
+## v0.4 | Actualizado: 2026-07-14 | App local (Streamlit): fotos de reventa en masa → agrupar por producto → campos de Wallapop y Vinted → copiar-pegar.
+
+**FASE 1 CERRADA ✅** — Diego curó y confirmó su primer lote real. `schema`/`images`/`store`/`grouping`/`ui` hechos y auditados: **280 tests verdes**, ruff limpio, la app arranca. `core/grouping.py` es la **v5** ("el reloj puede PARTIR, pero no puede CONFIRMAR"): hueco temporal a **15 s**, cero fusiones sobre las 33 fotos reales del golden set (`tests/golden/truth.json`, 7 productos). La pantalla de curado es **`ui/curar.py`, la CREMALLERA CON PESTILLO** — la unidad es la **frontera**, no la foto, así que meter una foto del producto A en el grupo del B es **inexpresable**, no sólo desaconsejado (elegida por un panel adversarial de 21 agentes tras 4 `listing-audit` BLOQUEANTE contra el diseño anterior, `[INC-008]`).
+
+**SIGUIENTE PASO: FASE 2 (extracción de atributos + precio) en sesión FRESCA con `docs/seeds/fase-2.md`.** Decisión de Diego: **no da ground truth de atributos** → el `/eval` deja de comparar contra una tabla y pasa a medir la **alucinación adversarialmente** (¿es legible este dato en este píxel?) + su ojo en la revisión. Señales ya medidas, no reabrir: **CLIP no sirve** (2×, `[INC-004]`), **OCR no sirve como clasificador de tipo de foto** (`[INC-007]`) pero **sí lee marcas y tallas gratis** (`Reebok`, `XXL`, `UMBRO`…) y **caza el metro solo** (ristra de dígitos).
 
 ## ⚠️ CÓMO TRABAJAR CON EL USUARIO (Diego) — LEER SIEMPRE PRIMERO
 Diego pregunta/propone POCO; cuando lo hace es señal de ALTA prioridad y suele tener razón (detecta patrones bien). Detalle en `.claude/rules/decision-making.md`.
@@ -28,7 +32,7 @@ El modo de fallo de este proyecto **no** es el código: es que **el pipeline mie
 App **local** (Streamlit, un solo usuario: Diego) que ingiere un lote de fotos mezcladas de varios productos de segunda mano, las agrupa por producto (con confirmación humana), y produce para cada uno la ficha completa lista para **copiar y pegar** en **Wallapop** y **Vinted**: título, descripción, categoría, marca, talla, estado, color, material y precio. Objetivo primario: **minimizar segundos-hasta-publicar por producto**. Export CSV/JSON para inventario. **No automatiza la publicación** (ambas plataformas lo prohíben en sus términos).
 
 ## ARQUITECTURA — LAS 3 COSTURAS (detalle en `rules/architecture.md`)
-Aún no hay código. Cuando lo haya, estas tres costuras son innegociables:
+`ListingSchema` ya existe (`core/schema.py`). `LLMEngine` y `PriceEngine` **se construyen en la Fase 2**. Las tres son innegociables:
 1. **`LLMEngine`** — TODA llamada a cualquier proveedor (Claude/Gemini/GPT/local) pasa por un único módulo. Contabiliza coste por producto y cachea por hash de imagen. El proveedor es una **decisión reversible**, no una dependencia esparcida por el código.
 2. **`PriceEngine`** — el precio **nunca** sale de la imaginación del LLM. Sale de comparables observados con su URL. Sin comparables suficientes → `precio=None` + motivo. Nunca un número inventado.
 3. **`ListingSchema`** — los campos obligatorios de cada plataforma/categoría viven en UN sitio. El LLM **rellena un esquema**, no inventa campos.
@@ -47,7 +51,7 @@ Sonnet 4.6: implementación, UI Streamlit, pipeline, cambios rutinarios
 Sonnet tiende a: no verificar supuestos, dar por hecho que el LLM "acertó" sin mirar la foto
 Opus tiende a: conservadurismo excesivo — recordar "Anclar en el plan del usuario"
 ```
-Elección del proveedor de visión: **pendiente, se decide con `/eval` sobre el golden set, no por intuición.** Hardware de Diego: RTX 3050 Laptop **4 GB VRAM** / 16 GB RAM → **visión local descartada** (no entra un VLM con calidad suficiente para leer logos y etiquetas).
+Elección del proveedor de visión: **se decide MIDIENDO sobre las fotos reales, nunca por intuición** — y antes de proponer nada de pago, `decision-making.md` §7 (lleva 3 incidencias). Hardware de Diego: RTX 3050 Laptop **4 GB VRAM** / 16 GB RAM → **visión local descartada** (no entra un VLM que lea logos y etiquetas). Coste medido del candidato de pago: Haiku 4.5 con visión ≈ **0,2 cts/foto ≈ 1 ct/producto**, y con caché por hash se paga **una sola vez**. La suscripción Pro/Max **no vale** (Anthropic prohíbe enrutar apps de terceros por credenciales de consumidor): hace falta API key de Console.
 
 ## LO QUE NUNCA DEBES HACER
 - **Afirmar un atributo del producto (marca, talla, material, medidas) que no sea legible en una foto.** Un campo vacío es recuperable; una ficha con la talla equivocada es una devolución.
