@@ -380,3 +380,16 @@ def test_badge_de_fuente_distingue_leido_de_inferido(tmp_path):
     textos = " ".join(m.value for m in at.markdown)
     assert "leído en foto" in textos  # modelo/ean son fuente=foto
     assert "inferido" in textos       # marca lufthous es inferido
+
+
+def test_valor_pegado_de_extraccion_vieja_se_refresca(tmp_path):
+    """EL BUG QUE VIO DIEGO: extrajo con código viejo (marca=null), la key
+    quedó pegada en "" en session_state, y al re-extraer (marca=lufthous)
+    Streamlit ignoraba el value= nuevo -> input vacío teniendo el dato.
+    La siembra por firma lo refresca sin reiniciar la app."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)  # marca=lufthous
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id))
+    at.session_state[f"ficha_{pid}_marca_valor"] = ""  # valor pegado, sin marcador de firma
+    at.run()
+    assert not at.exception
+    assert _texto_input(at, f"ficha_{pid}_marca_valor").value == "lufthous"

@@ -266,6 +266,34 @@ def _rellenar_valor(key: str, valor: str) -> None:
     st.session_state[key] = valor
 
 
+def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
+    """Pre-siembra en `session_state` el valor por defecto de cada campo, y
+    RE-SIEMBRA cuando la extracción cambia (firma distinta).
+
+    Por qué: Streamlit IGNORA el `value=`/`index=` de un widget cuya `key`
+    ya está en `session_state`. Sin esto, un valor de una extracción ANTERIOR
+    (o de antes de re-extraer, o de una versión vieja del código) se queda
+    pegado y TAPA el nuevo — el bug que hacía ver `marca` vacía teniendo
+    'Lufthous' persistido. Al sembrar nosotros y re-sembrar sólo cuando la
+    propuesta cambia, re-extraer resetea los campos a lo nuevo y las
+    ediciones de Diego dentro de una misma extracción se conservan."""
+    firma = tuple(
+        (campo, _valor_por_defecto(campo, dc)) for campo, dc in sorted(campos.items())
+    )
+    marcador = f"_ficha_firma_{pid}"
+    if st.session_state.get(marcador) == firma:
+        return
+    for campo, dc in campos.items():
+        if campo == "estado":
+            sugerido = dc.get("valor")
+            st.session_state[f"ficha_{pid}_estado_estado"] = (
+                sugerido if sugerido in _OPCIONES_ESTADO else _OPCIONES_ESTADO[0]
+            )
+        else:
+            st.session_state[f"ficha_{pid}_{campo}_valor"] = _valor_por_defecto(campo, dc)
+    st.session_state[marcador] = firma
+
+
 def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
     propuesta = datos_campo.get("propuesta") or {}
     alternativas = propuesta.get("alternativas") or []
@@ -275,9 +303,8 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
     # completo y en caja multilínea editable.
     if campo in ("titulo", "descripcion"):
         st.markdown(f"**{campo}** · borrador del modelo, edítalo")
-        st.text_area(
+        st.text_area(  # sin value=: ya sembrado en session_state
             campo,
-            value=_valor_por_defecto(campo, datos_campo),
             key=key_valor,
             label_visibility="collapsed",
             height=70 if campo == "titulo" else 150,
@@ -324,29 +351,28 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
 
         if campo == "estado":
             # Lo cierra SIEMPRE Diego (`truth-loop.md` §A.4). Si el modelo dio
-            # un literal canónico, se pre-selecciona; si dio una estimación en
-            # prosa (el evaluador de estado la da), se muestra como PISTA y
-            # Diego elige el literal — un click guiado, no teclear. Pre-sembrar
-            # la key antes de instanciar el widget es el patrón legal (no
-            # `index=` con la key ya en session_state, que Streamlit rechaza).
+            # una estimación en prosa (el evaluador de estado la da), se
+            # muestra como PISTA; el literal lo elige él. La key ya está
+            # sembrada por `_sembrar_valores_iniciales` (canónico o "(sin
+            # elegir)") — NO se pasa `value=`/`index=` para no chocar con la
+            # key ya en session_state.
             sugerido = datos_campo.get("valor")
             if sugerido and sugerido not in _OPCIONES_ESTADO:
                 st.caption(f"El modelo estimó: _{str(sugerido)[:140]}_ — elige el estado:")
-            key_est = f"ficha_{pid}_{campo}_estado"
-            if key_est not in st.session_state:
-                st.session_state[key_est] = (
-                    sugerido if sugerido in _OPCIONES_ESTADO else _OPCIONES_ESTADO[0]
-                )
             st.selectbox(
                 "estado (lo confirmas tú)",
                 _OPCIONES_ESTADO,
-                key=key_est,
+                key=f"ficha_{pid}_{campo}_estado",
                 label_visibility="collapsed",
             )
         else:
+            # Sin `value=`: el valor por defecto ya está sembrado en
+            # session_state (ver `_sembrar_valores_iniciales`). Pasar `value=`
+            # con la key ya sembrada haría que Streamlit ignore uno de los dos
+            # — y era justo lo que dejaba pegado un valor de una extracción
+            # vieja tapando el nuevo.
             st.text_input(
                 campo,
-                value=_valor_por_defecto(campo, datos_campo),
                 key=key_valor,
                 label_visibility="collapsed",
                 placeholder="vacío = null",
@@ -511,6 +537,7 @@ def _render_producto(
             st.caption(f"· fallo técnico durante la extracción: {fallo}")
 
         campos = datos.get("campos", {})
+        _sembrar_valores_iniciales(pid, campos)
         orden = [c for c in _ORDEN_CAMPOS if c in campos] + [
             c for c in campos if c not in _ORDEN_CAMPOS
         ]
