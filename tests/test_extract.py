@@ -49,6 +49,7 @@ from core.extract import (
     VERSION_PROMPT_CROP,
     VERSION_PROMPT_ESTADO,
     VERSION_PROMPT_METRO,
+    VERSION_PROMPT_SINTESIS,
     Candidato,
     ExtractorEngine,
     ExtractorError,
@@ -164,6 +165,45 @@ def _respuesta_crop_simple(
     )
 
 
+def _respuesta_sintesis(
+    *,
+    marca: dict | None = None,
+    modelo: dict | None = None,
+    talla: dict | None = None,
+    color: dict | None = None,
+    estado: dict | None = None,
+    material: dict | None = None,
+    medidas: dict | None = None,
+    titulo: str = "",
+    descripcion: str = "",
+) -> dict:
+    """Construye una respuesta de sintesis completa (contrato de
+    `ESQUEMA_SINTESIS_FICHA`). Cada campo, si no se pasa, usa el default
+    "SIN OPINION" (valor=None, visible_en_foto=False, de_texto_detectado=
+    None, confianza="baja") -- asi `_MotorFake` puede usarlo como respuesta
+    por defecto (la sintesis no opina -> gap-filler no pisa nada) y los
+    tests de este archivo que NO les interesa la sintesis siguen viendo el
+    comportamiento de la agregacion vieja intacto."""
+
+    def _campo(override: dict | None) -> dict:
+        base = {"valor": None, "visible_en_foto": False, "de_texto_detectado": None, "confianza": "baja"}
+        if override:
+            base.update(override)
+        return base
+
+    return {
+        "marca": _campo(marca),
+        "modelo": _campo(modelo),
+        "talla": _campo(talla),
+        "color": _campo(color),
+        "estado": _campo(estado),
+        "material": _campo(material),
+        "medidas": _campo(medidas),
+        "titulo": titulo,
+        "descripcion": descripcion,
+    }
+
+
 class _MotorFake:
     """Sustituye a `LLMEngine`: `consultar()` devuelve lo que se haya
     configurado para ese `version_prompt`, o lanza la excepcion
@@ -171,11 +211,16 @@ class _MotorFake:
     por defecto es "legible=false" para que un test que solo le interesa
     el crop de marca/talla no tenga que configurarla siempre. El color NO
     pasa por aqui -- sale de pixeles (`_color_dominante_rgb`), nunca del
-    VLM (architecture.md Costura 1)."""
+    VLM (architecture.md Costura 1). La respuesta de sintesis por defecto
+    "no opina en nada" (`_respuesta_sintesis()`) -- gap-filler, ver
+    core/extract.py: si la sintesis no propone nada, no pisa nada, y los
+    tests que no configuran su propia respuesta de sintesis siguen viendo
+    el comportamiento de la agregacion vieja."""
 
     def __init__(self) -> None:
         self.respuestas: dict[str, dict] = {
             VERSION_PROMPT_ESTADO: {"estimacion_legible": False, "descripcion": None},
+            VERSION_PROMPT_SINTESIS: _respuesta_sintesis(),
         }
         self.excepciones: dict[str, Exception] = {}
         self.llamadas: list[tuple[str, str]] = []
@@ -1068,9 +1113,12 @@ class TestExtraerProductoFelizYAtajos:
         assert resultado.campos["color"].valor is None
         assert resultado.campos["color"].confianza == "baja"
         assert resultado.campos["color"].fuente == "inferido"
-        # el color nunca gasta una llamada VLM -- lo unico que puede haber
-        # llamado al motor es la evaluacion de estado (VERSION_PROMPT_ESTADO).
-        assert all(vp == VERSION_PROMPT_ESTADO for _, vp in motor.llamadas)
+        # el color nunca gasta una llamada VLM DIRECTA -- lo unico que puede
+        # haber llamado al motor es la evaluacion de estado y la sintesis
+        # (esta ultima SIEMPRE se llama, pero con el `_MotorFake` por
+        # defecto "no opina" -- gap-filler, no pisa el None de arriba).
+        assert all(vp != VERSION_PROMPT_CROP for _, vp in motor.llamadas)
+        assert {vp for _, vp in motor.llamadas} <= {VERSION_PROMPT_ESTADO, VERSION_PROMPT_SINTESIS}
 
     def test_color_convergente_sigue_con_techo_media_nunca_alta(self, tmp_path, monkeypatch):
         """C3(a): ni siquiera con las 3 fotos de acuerdo el color puede
@@ -1535,3 +1583,295 @@ class TestSerializacionRoundTrip:
         assert propuesta_talla["recorte"] is None
         assert propuesta_talla["alternativas"] == []
         assert propuesta_talla["lecturas"] == []
+
+
+# ============================================================================
+# LA SINTESIS COMPROMETIDA (2026-07-15, pivote de producto decidido por
+# Diego): "null -> mejor-intento comprometido". `ExtractorEngine.
+# _sintetizar_ficha` es GAP-FILLER -- solo pisa un campo si la agregacion
+# vieja lo dejo en `None` (conflicto/ilegible/sin foto/divergencia de
+# color); nunca sustituye una lectura ya solida de una etiqueta a
+# resolucion nativa. Estos tests EJECUTAN ese camino end-to-end via
+# `extraer_producto` con `_MotorFake` -- nunca tocan la red ni `anthropic`.
+# ============================================================================
+
+
+class TestSintesisComprometida:
+    def test_sintesis_elige_entre_cuatro_candidatos_en_conflicto(self, tmp_path, monkeypatch):
+        """La sintesis elige 'lufthous' entre 4 candidatos de marca en
+        conflicto (lufthous / Laser Rodilla / Intel Core / LLLT-200): el
+        campo se publica con ese valor, las OTRAS tres candidatas se
+        conservan en `alternativas` (con su propio recorte, NO se pierden),
+        y `fuente`/`evidencia` son correctos porque `visible_en_foto=true`
+        y `de_texto_detectado` casa con un candidato en `etiqueta_interior`
+        (ubicacion publicable para marca)."""
+        textos = ["lufthous", "Laser Rodilla", "Intel Core", "LLLT-200"]
+        fotos = [_foto_sintetica(tmp_path / f"IMG_{i}.jpg") for i in range(len(textos))]
+        textos_por_foto = {foto.name: texto for foto, texto in zip(fotos, textos)}
+        regiones = {
+            foto.name: [RegionOCR(fichero=foto.name, bbox=(5, 5, 20, 10), texto_ocr=texto, score=0.5)]
+            for foto, texto in zip(fotos, textos)
+        }
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: regiones[ruta.name])
+
+        respuesta_sintesis = _respuesta_sintesis(
+            marca={
+                "valor": "lufthous",
+                "visible_en_foto": True,
+                "de_texto_detectado": "lufthous",
+                "confianza": "media",
+            },
+        )
+        motor = _MotorFake()
+
+        def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
+            fichero = imagenes[0].fichero
+            motor.llamadas.append((fichero, version_prompt))
+            if version_prompt == VERSION_PROMPT_ESTADO:
+                return ResultadoLLM(
+                    datos={"estimacion_legible": False, "descripcion": None},
+                    fuente="api", coste_usd=0.0, tokens_entrada=10, tokens_salida=5,
+                )
+            if version_prompt == VERSION_PROMPT_SINTESIS:
+                return ResultadoLLM(
+                    datos=respuesta_sintesis, fuente="api", coste_usd=0.002, tokens_entrada=200, tokens_salida=80,
+                )
+            # VERSION_PROMPT_CROP: una marca distinta por fichero.
+            datos = _respuesta_crop_simple("marca", True, textos_por_foto[fichero])
+            return ResultadoLLM(datos=datos, fuente="api", coste_usd=0.001, tokens_entrada=100, tokens_salida=10)
+
+        motor.consultar = _consultar
+        extractor = ExtractorEngine(motor, carpeta_crops=tmp_path / "crops")
+        resultado = extractor.extraer_producto(fotos)
+
+        assert resultado.campos["marca"].valor == "lufthous"
+        assert resultado.campos["marca"].fuente == "foto"  # visible_en_foto=True + candidato en etiqueta_interior
+        assert resultado.campos["marca"].confianza == "media"
+        assert resultado.campos["marca"].evidencia is not None
+
+        propuesta = resultado.propuestas["marca"]
+        assert propuesta.valor == "lufthous"
+        alternativas = {c.valor for c in propuesta.alternativas}
+        assert alternativas == {"Laser Rodilla", "Intel Core", "LLLT-200"}
+        assert "lufthous" not in alternativas  # el elegido no se repite como alternativa
+        for candidato in propuesta.alternativas:
+            assert candidato.recorte is not None
+            assert candidato.recorte.exists()
+
+    def test_visible_en_foto_false_da_fuente_inferido_sin_evidencia_y_confianza_nunca_alta(
+        self, tmp_path, monkeypatch
+    ):
+        """GAP: color diverge entre 3 fotos (rosa/rojo vino/rosa, el caso
+        real del producto 6) -> `campos["color"].valor` queda en `None`
+        (ver `test_color_divergente_es_none_nunca_la_primera_lectura`). La
+        sintesis rellena ese hueco con `visible_en_foto=false` (una
+        inferencia, no una lectura) -> `fuente="inferido"`, SIN evidencia,
+        y `confianza` NUNCA "alta" (se fuerza a "baja" aunque el modelo
+        proponga "media")."""
+        rosa = (232, 160, 180)
+        rojo_vino = (110, 20, 40)
+        fotos = [
+            _foto_de_color(tmp_path / "IMG_c1.jpg", rosa),
+            _foto_de_color(tmp_path / "IMG_c2.jpg", rojo_vino),
+            _foto_de_color(tmp_path / "IMG_c3.jpg", rosa),
+        ]
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            color={
+                "valor": "granate",
+                "visible_en_foto": False,
+                "de_texto_detectado": None,
+                "confianza": "media",  # el modelo propone "media"...
+            },
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto(fotos)
+
+        assert resultado.campos["color"].valor == "granate"
+        assert resultado.campos["color"].fuente == "inferido"
+        assert resultado.campos["color"].evidencia is None
+        assert resultado.campos["color"].confianza == "baja"  # ... pero se FUERZA a "baja"
+        assert resultado.campos["color"].confianza != "alta"
+
+    def test_titulo_y_descripcion_se_publican_siempre_como_campos_fuente_inferido(self, tmp_path, monkeypatch):
+        """`titulo`/`descripcion` son campos NUEVOS (no existian antes de
+        la sintesis): siempre se toman de ella, sin gap-filler (no hay
+        nada previo que preservar), y viajan como cualquier otro `Campo`/
+        `Propuesta` de la ficha."""
+        foto = _foto_sintetica(tmp_path / "IMG_td.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            titulo="Sudadera gris talla M, buen estado",
+            descripcion="Sudadera gris de segunda mano, sin manchas visibles. Revisar antes de publicar.",
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["titulo"].valor == "Sudadera gris talla M, buen estado"
+        assert resultado.campos["titulo"].fuente == "inferido"
+        assert resultado.campos["titulo"].confianza == "baja"
+        assert resultado.campos["descripcion"].valor.startswith("Sudadera gris de segunda mano")
+        assert resultado.campos["descripcion"].fuente == "inferido"
+        assert resultado.propuestas["titulo"].motivo == "borrador del modelo, editalo"
+        assert resultado.propuestas["titulo"].recorte is None
+        assert resultado.propuestas["descripcion"].recorte is None
+
+    def test_umbro_rami_jalab_la_sintesis_elige_una_la_otra_sigue_en_alternativas(self, tmp_path, monkeypatch):
+        """El caso real del golden set (Trampa 2, `[INC-012]`): 'UMBRO'
+        bordado (estampado_o_grafico) y 'RAMI JALAB' en la etiqueta de
+        cuello (etiqueta_interior) -- ANTES de la sintesis esto era
+        SIEMPRE `None` + ambas en alternativas (la unica salida "correcta"
+        de la ley vieja). Ahora la sintesis elige una (aqui, la de la
+        etiqueta -- la ubicacion publicable) y la OTRA se conserva en
+        `alternativas` CON SU RECORTE: no se pierde."""
+        foto_pecho = _foto_sintetica(tmp_path / "IMG_pecho.jpg")
+        foto_cuello = _foto_sintetica(tmp_path / "IMG_cuello.jpg")
+        region_pecho = RegionOCR(fichero=foto_pecho.name, bbox=(10, 10, 50, 20), texto_ocr="UMBRO", score=0.8)
+        region_cuello = RegionOCR(fichero=foto_cuello.name, bbox=(20, 20, 60, 25), texto_ocr="RAMI SALAB", score=0.7)
+        regiones = {foto_pecho.name: [region_pecho], foto_cuello.name: [region_cuello]}
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: regiones[ruta.name])
+
+        respuesta_sintesis = _respuesta_sintesis(
+            marca={
+                "valor": "RAMI JALAB",
+                "visible_en_foto": True,
+                "de_texto_detectado": "RAMI JALAB",
+                "confianza": "baja",
+            },
+        )
+        motor = _MotorFake()
+
+        def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
+            fichero = imagenes[0].fichero
+            motor.llamadas.append((fichero, version_prompt))
+            if version_prompt == VERSION_PROMPT_ESTADO:
+                return ResultadoLLM(
+                    datos={"estimacion_legible": False, "descripcion": None},
+                    fuente="api", coste_usd=0.0, tokens_entrada=10, tokens_salida=5,
+                )
+            if version_prompt == VERSION_PROMPT_SINTESIS:
+                return ResultadoLLM(
+                    datos=respuesta_sintesis, fuente="api", coste_usd=0.002, tokens_entrada=200, tokens_salida=80,
+                )
+            if fichero == foto_pecho.name:
+                datos = _respuesta_crop_simple("marca", True, "UMBRO", ubicacion="estampado_o_grafico")
+            else:
+                datos = _respuesta_crop_simple("marca", True, "RAMI JALAB", ubicacion="etiqueta_interior")
+            return ResultadoLLM(datos=datos, fuente="api", coste_usd=0.001, tokens_entrada=100, tokens_salida=10)
+
+        motor.consultar = _consultar
+        extractor = ExtractorEngine(motor, carpeta_crops=tmp_path / "crops")
+        resultado = extractor.extraer_producto([foto_pecho, foto_cuello])
+
+        assert resultado.campos["marca"].valor == "RAMI JALAB"
+        assert resultado.campos["marca"].fuente == "foto"
+        propuesta = resultado.propuestas["marca"]
+        assert len(propuesta.alternativas) == 1
+        assert propuesta.alternativas[0].valor == "UMBRO"
+        assert propuesta.alternativas[0].recorte is not None
+        assert propuesta.alternativas[0].recorte.exists()
+
+    def test_visible_en_foto_true_pero_ubicacion_no_publicable_se_degrada_a_inferido(self, tmp_path, monkeypatch):
+        """Regla dura #1 (estampado != marca EN LA PUBLICACION) se aplica
+        TAMBIEN al gap-filler de la sintesis: si `de_texto_detectado` casa
+        con un candidato de `estampado_o_grafico`, NUNCA se publica como
+        `fuente="foto"` para 'marca' aunque la sintesis diga
+        `visible_en_foto=true` -- se degrada a 'inferido', pero el recorte
+        SI se ensena (de contexto)."""
+        foto = _foto_sintetica(tmp_path / "IMG_estampado.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(10, 10, 40, 20), texto_ocr="ORIGINALS", score=0.8)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple(
+            "marca", True, "ORIGINALS", ubicacion="estampado_o_grafico"
+        )
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            marca={
+                "valor": "ORIGINALS",
+                "visible_en_foto": True,  # el modelo AFIRMA verlo -- no basta
+                "de_texto_detectado": "ORIGINALS",
+                "confianza": "media",
+            },
+        )
+        extractor = ExtractorEngine(motor, carpeta_crops=tmp_path / "crops")
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["marca"].valor == "ORIGINALS"
+        assert resultado.campos["marca"].fuente == "inferido"  # degradado -- regla dura #1
+        assert resultado.campos["marca"].evidencia is None
+        assert resultado.campos["marca"].confianza == "baja"
+        assert resultado.propuestas["marca"].recorte is not None  # recorte de CONTEXTO, se ensena igual
+
+    def test_gap_filler_no_pisa_un_valor_ya_solido(self, tmp_path, monkeypatch):
+        """Si la agregacion vieja YA resolvio 'marca' de forma solida (un
+        unico valor legible en etiqueta_interior), la sintesis NUNCA la
+        pisa aunque proponga otra cosa distinta -- gap-filler, no
+        reemplazo ciego."""
+        foto = _foto_sintetica(tmp_path / "IMG_solida.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(10, 10, 40, 20), texto_ocr="Raabdk", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple("marca", True, "Reebok")
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            marca={
+                "valor": "Otra Marca Cualquiera",
+                "visible_en_foto": True,
+                "de_texto_detectado": "Reebok",
+                "confianza": "media",
+            },
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["marca"].valor == "Reebok"  # la sintesis NO la piso
+
+    def test_fallo_de_la_sintesis_no_toca_ningun_campo(self, tmp_path, monkeypatch):
+        """`decision-making.md` SS13: nunca fallback silencioso. Si la
+        llamada de sintesis revienta, se loguea + se anota en `fallos` y
+        NINGUN campo cambia -- el producto se queda exactamente con lo que
+        la agregacion vieja ya tenia."""
+        foto = _foto_sintetica(tmp_path / "IMG_falla.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(10, 10, 40, 20), texto_ocr="Raabdk", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple("marca", True, "Reebok")
+        motor.excepciones[VERSION_PROMPT_SINTESIS] = LLMLlamadaFallidaError("limite de tasa excedido")
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        # la agregacion vieja ya resolvio 'marca' solidamente -- el fallo de
+        # la sintesis no la toca (nunca fallback silencioso: el fallo
+        # tecnico queda escrito en `fallos`, nunca disfrazado de "no legible").
+        assert resultado.campos["marca"].valor == "Reebok"
+        assert any("vlm_sintesis" in f for f in resultado.fallos)
+        # la excepcion corta ANTES del bucle de titulo/descripcion -- ni
+        # siquiera se anaden esas claves (nunca un valor a medias).
+        assert "titulo" not in resultado.campos
+
+    def test_construir_solicitudes_incluye_la_solicitud_de_sintesis(self, tmp_path, monkeypatch):
+        """`change-loop.md` SS C5: si esta llamada no se contara en
+        `construir_solicitudes`, el coste estimado quedaria por debajo del
+        real."""
+        foto = _foto_sintetica(tmp_path / "IMG_est.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(10, 10, 40, 20), texto_ocr="Raabdk", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        extractor = ExtractorEngine(motor)
+        solicitudes = extractor.construir_solicitudes([foto])
+
+        assert motor.llamadas == []  # construir_solicitudes NUNCA llama de verdad
+        version_prompts = [vp for _, _, vp in solicitudes]
+        assert version_prompts.count(VERSION_PROMPT_SINTESIS) == 1
+
+        imagenes_sintesis, prompt_sintesis, _ = next(s for s in solicitudes if s[2] == VERSION_PROMPT_SINTESIS)
+        assert len(imagenes_sintesis) == 1  # una sola foto en este producto
+        assert imagenes_sintesis[0].fichero == foto.name
+        assert isinstance(prompt_sintesis, str) and len(prompt_sintesis) > 0

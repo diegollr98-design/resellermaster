@@ -170,12 +170,71 @@ el VLM: revisa este recorte con mas cuidado"), nunca para tocar
 `confianza`. Es informativo, no decisorio.
 
 COSTE -- sin cambios respecto a la version anterior (medido, no opinable):
-  - EL COLOR NUNCA PASA POR EL VLM (`architecture.md` Costura 1: "color por
-    pixeles"). `_color_dominante_rgb` lo resuelve gratis.
+  - EL COLOR NUNCA PASA POR EL VLM COMO FUENTE PRIMARIA (`architecture.md`
+    Costura 1: "color por pixeles"). `_color_dominante_rgb` lo resuelve
+    gratis; el VLM solo entra como GAP-FILLER de la sintesis (ver abajo)
+    cuando los pixeles ya se abstuvieron.
   - EL PRESUPUESTO DEL VLM VA DONDE EL OCR FALLA (la ropa), NO DONDE SOBRA
     TEXTO (las cajas): `_es_bloque_de_texto_largo` y
     `_es_repeticion_de_un_campo_ya_resuelto` descartan bloques largos y
     repeticiones de un dato ya resuelto por el atajo, ANTES de llamar al VLM.
+
+LA SINTESIS COMPROMETIDA (2026-07-15, pivote de producto decidido por Diego)
+------------------------------------------------------------------------
+Hasta aqui, el diseno de este modulo optimizaba ABSTENERSE: ante conflicto
+o falta de senal, `valor=None`. Diego decidio INVERTIR ese default para la
+etapa final: EL revisa cada campo con su recorte delante antes de publicar,
+asi que en SU flujo un campo vacio le cuesta TECLEARLO y un valor
+pre-rellenado que falle le cuesta 2 SEGUNDOS corregirlo -- el coste ya no
+es simetrico, y el diseno tiene que seguir a esa asimetria nueva.
+
+Por eso, tras construir los candidatos/lecturas de siempre (el pool
+determinista de arriba, SIN cambios), `ExtractorEngine._sintetizar_ficha`
+hace UNA llamada VLM mas que ve el producto ENTERO (hasta
+`N_FOTOS_MUESTRA_SINTESIS` fotos GENERALES, nunca crops -- no hay
+clasificador de tipo de foto en este repo, `truth-loop.md` SS E, asi que se
+reparten con `_muestrear_fotos` igual que el muestreo de color, no se
+"eligen las de mas resolucion" de verdad) MAS la lista en texto de todo lo
+que el OCR/VLM YA detecto en los crops, y PROPONE un valor COMPROMETIDO
+para `marca`/`modelo`/`talla`/`color`/`estado`/`material`/`medidas`, ademas
+de redactar `titulo`/`descripcion` (campos NUEVOS que no existian antes de
+este paso).
+
+GAP-FILLER, NUNCA reemplazo ciego: la sintesis solo toca un campo si la
+agregacion determinista (o el histograma de pixeles) YA lo dejo en
+`valor=None` -- una lectura de una etiqueta a resolucion NATIVA, o un
+histograma de pixeles, sigue siendo mas fiable que una opinion sobre la
+foto general reescalada a 1568px, asi que la sintesis NUNCA pisa un valor
+que la agregacion ya resolvio con solidez (ni siquiera para "corroborar":
+esa via ya murio una vez, `[INC-010]`/`[INC-012]`, no se reintenta aqui).
+`ean` (unico camino a `confianza="alta"`, via checksum matematico) y
+`desperfectos` (regla dura #6, transcripcion literal de una nota
+manuscrita) quedan ESTRUCTURALMENTE fuera de la sintesis -- no estan en su
+`json_schema`, no hay ningun camino en este archivo por el que la sintesis
+pueda tocarlos.
+
+La ley de procedencia (`truth-loop.md` SS A) sigue intacta: `visible_en_foto`
+decide `fuente` -- "foto" SOLO si hay un candidato REAL que lo respalde
+(`de_texto_detectado` casa con una lectura legible del pool) Y su ubicacion
+es publicable para ese campo (regla dura #1 se aplica TAMBIEN aqui: un
+"visible_en_foto=true" sobre un candidato de `estampado_o_grafico` para
+`marca` se DEGRADA a "inferido" en codigo, la misma disciplina de
+"un prompt es una peticion, un if es una garantia" del resto del modulo).
+"inferido" en cualquier otro caso. `confianza="alta"` sigue siendo
+estructuralmente IMPOSIBLE desde este camino -- el `json_schema` de la
+sintesis solo admite "media"/"baja" (nunca "alta"), y el camino "inferido"
+la fuerza a "baja" en codigo, pase lo que diga el modelo.
+
+Lo que SI cambia respecto a `truth-loop.md` SS A.3 ("inferido nunca se pega
+tal cual en un campo estructurado"): un valor "inferido" AHORA SI se
+publica en `marca`/`talla`/`material`/`medidas`/`color`/`estado` -- ese es
+el pivote explicito de Diego para ESTE camino, y SOLO para el hueco que la
+agregacion determinista dejo vacio. Se publica siempre marcado
+`fuente="inferido"`, con su recorte de CONTEXTO si lo hay (nunca "el
+recorte que se mando", si no hay un candidato real que lo respalde) y
+techo `confianza="baja"` -- la UI (`ui/ficha.py`, pendiente) es quien debe
+distinguir visualmente "foto" de "inferido" para que Diego sepa, de un
+vistazo, cual confirma y cual corrige.
 
 Sin dependencias de red directas: la unica llamada a un proveedor pasa por
 `core/llm.py` (`LLMEngine.consultar`), inyectado -- este modulo NUNCA
@@ -235,9 +294,13 @@ class RespuestaVLMInvalidaError(ExtractorError):
 VERSION_PROMPT_CROP = "extract-crop-v2"  # v2: hallazgos como LISTA (regla 4)
 VERSION_PROMPT_METRO = "extract-metro-v1"
 VERSION_PROMPT_ESTADO = "extract-estado-v1"
+VERSION_PROMPT_SINTESIS = "extract-sintesis-v1"  # ver "LA SINTESIS COMPROMETIDA"
 # NO existe VERSION_PROMPT_COLOR: el color sale de pixeles
 # (`architecture.md` Costura 1, tabla de proveedores: "color por pixeles"),
-# nunca del VLM -- ver `_color_dominante_rgb` mas abajo.
+# nunca del VLM -- ver `_color_dominante_rgb` mas abajo. La sintesis SI
+# puede rellenar `color` (ver mas abajo), pero solo como GAP-FILLER cuando
+# el histograma de pixeles ya se abstuvo (`valor=None`) -- los pixeles
+# siguen siendo la fuente PRIMARIA, nunca se le pregunta al VLM primero.
 
 # Ristra de digitos que delata el METRO (golden set: 33 digitos reales,
 # '69899995999291909698925959556575'). El EAN mas largo verificado es de 14
@@ -310,6 +373,15 @@ MARGEN_RECORTE_MINIMO_PX = 50
 # nunca de una sola foto -- medido en el golden set, producto 6: rosa en
 # una foto, rojo vino en otra bajo luz distinta).
 N_FOTOS_MUESTRA_COLOR = 3
+
+# Cuantas fotos GENERALES (planteadas como "producto entero", nunca crops)
+# ve la sintesis comprometida. Mismo valor que el color a proposito -- NO
+# es una seleccion real por resolucion/generalidad (no hay clasificador de
+# tipo de foto en este repo, `truth-loop.md` SS E, ya se midio y se
+# descarto CLIP/OCR para eso), asi que se reparten con `_muestrear_fotos`
+# igual que el muestreo de color: cobertura de la secuencia, no un
+# "elegir las mejores fotos" que este codigo no puede hacer honestamente.
+N_FOTOS_MUESTRA_SINTESIS = 3
 
 CALIDAD_JPEG_RECORTE = 92
 
@@ -504,6 +576,8 @@ CAMPOS_PRODUCIDOS: tuple[str, ...] = (
     "color",
     "estado",
     "desperfectos",
+    "titulo",  # NUEVO (LA SINTESIS COMPROMETIDA): borrador redactado, fuente=inferido SIEMPRE
+    "descripcion",  # NUEVO, idem
 )
 
 _CAMPOS_IDENTIDAD_PRODUCTO: tuple[str, ...] = ("marca", "talla", "modelo", "ean")
@@ -1262,6 +1336,112 @@ ESQUEMA_ESTADO: dict = {
 
 
 # ============================================================================
+# ETAPA 4B -- LA SINTESIS COMPROMETIDA (ver docstring del modulo): UNA
+# llamada mas, sobre el producto ENTERO + los candidatos ya detectados, que
+# PROPONE un valor comprometido por campo y redacta titulo/descripcion.
+# EAN y desperfectos quedan fuera a proposito -- no estan en este esquema.
+# ============================================================================
+
+# Los 7 campos de identidad/atributo que la sintesis puede rellenar (nombre
+# tal y como lo usa el json_schema/prompt -- "material", no "composicion":
+# `_CAMPOS_SINTESIS_GAP` mas abajo traduce al nombre canonico del modulo).
+_CAMPOS_SINTESIS: tuple[str, ...] = (
+    "marca", "modelo", "talla", "color", "estado", "material", "medidas"
+)
+
+PROMPT_SINTESIS_FICHA = """Estas viendo UN producto de segunda mano (varias fotos
+GENERALES del mismo articulo, no recortes). Tu trabajo es PROPONER la mejor
+ficha posible para que un humano (Diego) la revise y corrija en segundos --
+NO te abstengas: para cada campo da tu MEJOR estimacion aunque no estes
+100% seguro. Un valor con confianza baja que Diego corrige en 2 segundos es
+mejor que un hueco vacio que Diego tiene que teclear desde cero.
+
+IGNORA cualquier texto u objeto de FONDO ajeno a este producto (otro
+articulo, un portatil, una caja de otro objeto en el encuadre) -- solo te
+interesa ESTE producto.
+
+Ademas de las fotos, aqui tienes los textos que YA se detectaron en
+recortes de etiquetas/estampados/codigos de este mismo producto (leidos por
+un paso de OCR/vision anterior -- no los inventes ni los cambies si los
+usas, cita el texto EXACTO):
+
+{texto_candidatos}
+
+Para cada uno de estos 7 campos -- marca, modelo, talla, color, estado,
+material, medidas -- responde un objeto con:
+  - valor: tu mejor estimacion en texto corto, o null SOLO si no tienes
+    ninguna base razonable ni siquiera para inferir (esto debe ser RARO:
+    se prefiere un valor con confianza=baja a un null, porque Diego lo
+    revisa de todas formas antes de publicar).
+  - visible_en_foto: true UNICAMENTE si el valor que propones se LEE
+    LITERALMENTE en un texto/etiqueta del producto (de la lista de arriba,
+    o algo que tu mismo leas con seguridad en la foto). false si es una
+    INFERENCIA tuya (a ojo, por estilo, por contexto, por como cae la
+    prenda) -- por ejemplo "parece algodon" o "parece talla M por como
+    cae" son SIEMPRE false. NUNCA pongas true si no puedes senalar el
+    texto exacto que lo demuestra.
+  - de_texto_detectado: si visible_en_foto=true y tu valor viene de la
+    lista de textos detectados de arriba, copia EXACTAMENTE ese texto aqui
+    (para poder ensenarle a Diego el recorte del que salio). null en
+    cualquier otro caso (incluido si lo leiste tu mismo en la foto general,
+    fuera de la lista).
+  - confianza: "media" si tienes bases razonables, "baja" si es una
+    estimacion mas debil. NUNCA "alta" -- eso solo lo decide una regla
+    matematica verificable (un codigo de barras), nunca tu.
+
+NUNCA propongas un valor que CONTRADIGA algo visible (si un texto
+detectado dice claramente "Nike", no propongas "Adidas").
+
+Ademas, redacta:
+  - titulo: un titulo de venta corto y honesto para Wallapop/Vinted (maximo
+    100 caracteres), sin mayusculas excesivas, sin emojis en ristra, sin
+    mencionar ninguna marca distinta de la que propusiste.
+  - descripcion: una descripcion de venta corta (maximo 600 caracteres),
+    en espanol, sin emails, sin enlaces, sin mayusculas excesivas, sin
+    ristras de simbolos/emojis, mencionando solo la marca que propusiste
+    (si alguna) -- honesta sobre lo que se ve, sin inventar caracteristicas
+    que no puedas justificar con lo que ves.
+
+Responde SOLO el JSON pedido."""
+
+
+def _construir_prompt_sintesis(texto_candidatos: str) -> str:
+    """Rellena `PROMPT_SINTESIS_FICHA` con la lista de candidatos ya
+    detectados -- funcion separada porque `LLMEngine._clave_cache` hashea
+    el TEXTO REAL del prompt (C6), asi que `construir_solicitudes` y
+    `extraer_producto` tienen que construir el prompt exactamente igual
+    para que la estimacion de coste y la llamada real usen la misma
+    clave de cache cuando el texto de candidatos coincide."""
+    return PROMPT_SINTESIS_FICHA.format(texto_candidatos=texto_candidatos)
+
+
+def _esquema_campo_sintesis() -> dict:
+    return {
+        "type": "object",
+        "properties": {
+            "valor": {"type": ["string", "null"]},
+            "visible_en_foto": {"type": "boolean"},
+            "de_texto_detectado": {"type": ["string", "null"]},
+            "confianza": {"type": "string", "enum": ["media", "baja"]},  # NUNCA "alta"
+        },
+        "required": ["valor", "visible_en_foto", "de_texto_detectado", "confianza"],
+        "additionalProperties": False,
+    }
+
+
+ESQUEMA_SINTESIS_FICHA: dict = {
+    "type": "object",
+    "properties": {
+        **{campo: _esquema_campo_sintesis() for campo in _CAMPOS_SINTESIS},
+        "titulo": {"type": "string"},
+        "descripcion": {"type": "string"},
+    },
+    "required": [*_CAMPOS_SINTESIS, "titulo", "descripcion"],
+    "additionalProperties": False,
+}
+
+
+# ============================================================================
 # ETAPA 5 -- PARSEO DEFENSIVO de la respuesta del VLM
 # ============================================================================
 
@@ -1327,6 +1507,53 @@ def _parsear_lectura_crop(
             )
         )
 
+    return resultado
+
+
+def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
+    """Convierte el dict crudo de la sintesis en un dict normalizado,
+    aplicando el mismo contrato minimo defensivo que `_parsear_lectura_crop`
+    (claves obligatorias, enum de `confianza` cerrado a "media"/"baja" --
+    "alta" NUNCA sale de aqui, ni del json_schema ni de esta funcion).
+
+    Normaliza `valor`/`de_texto_detectado` vacios o solo-espacios a `None`
+    (mismo patron que `_parsear_lectura_crop` con `texto`)."""
+    claves_requeridas = (*_CAMPOS_SINTESIS, "titulo", "descripcion")
+    for clave in claves_requeridas:
+        if clave not in datos:
+            raise RespuestaVLMInvalidaError(
+                f"falta la clave {clave!r} en la respuesta de sintesis: {datos!r}"
+            )
+
+    resultado: dict[str, Any] = {}
+    for campo in _CAMPOS_SINTESIS:
+        bloque = datos[campo]
+        if not isinstance(bloque, dict):
+            raise RespuestaVLMInvalidaError(f"el campo {campo!r} de la sintesis no es un objeto: {bloque!r}")
+        for clave in ("valor", "visible_en_foto", "de_texto_detectado", "confianza"):
+            if clave not in bloque:
+                raise RespuestaVLMInvalidaError(
+                    f"falta la clave {clave!r} en el campo {campo!r} de la sintesis: {bloque!r}"
+                )
+        if bloque["confianza"] not in ("media", "baja"):
+            raise RespuestaVLMInvalidaError(
+                f"confianza invalida en el campo {campo!r} de la sintesis: {bloque['confianza']!r}"
+            )
+
+        valor = bloque["valor"]
+        valor = str(valor).strip() if valor is not None and str(valor).strip() else None
+        de_texto = bloque["de_texto_detectado"]
+        de_texto = str(de_texto).strip() if de_texto is not None and str(de_texto).strip() else None
+
+        resultado[campo] = {
+            "valor": valor,
+            "visible_en_foto": bool(bloque["visible_en_foto"]),
+            "de_texto_detectado": de_texto,
+            "confianza": bloque["confianza"],
+        }
+
+    resultado["titulo"] = str(datos["titulo"]).strip()
+    resultado["descripcion"] = str(datos["descripcion"]).strip()
     return resultado
 
 
@@ -1576,12 +1803,127 @@ def _agregar_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> _GrupoCampo:
 
 
 def _campo_composicion() -> Campo:
-    """Regla dura #4: SIEMPRE None. Decision explicita de Diego
-    (2026-07-14): ninguna foto del lote fotografia la etiqueta de
-    composicion -- el dato no existe en ningun pixel, en ningun producto.
-    Esta funcion no recibe ningun argumento a proposito: es
-    estructuralmente imposible que devuelva otra cosa."""
+    """Regla dura #4 -- HISTORICA: hasta la sintesis comprometida
+    (2026-07-15), este campo era SIEMPRE None (ninguna foto del lote
+    fotografiaba la etiqueta de composicion). Sigue siendo la funcion PURA
+    que modela "sin ninguna senal": `ExtractorEngine._sintetizar_ficha`
+    puede ahora rellenar el HUECO que esta funcion deja (gap-filler, ver
+    docstring del modulo, "LA SINTESIS COMPROMETIDA") con la mejor
+    estimacion de `material` marcada `fuente="inferido"` -- pero esta
+    funcion en si misma sigue sin recibir argumentos, y sigue devolviendo
+    SIEMPRE None: es el punto de partida honesto, no el resultado final."""
     return Campo(valor=None, fuente="inferido", confianza="baja")
+
+
+# ============================================================================
+# ETAPA 6B -- LA SINTESIS COMPROMETIDA: helpers puros (formatear candidatos
+# para el prompt, indexarlos para poder ligar `de_texto_detectado` a su
+# recorte, y traducir UNA decision de sintesis a un `Campo`. La llamada
+# real y el gap-filler viven en `ExtractorEngine._sintetizar_ficha`.
+# ============================================================================
+
+
+def _formatear_candidatos_para_sintesis(lecturas: Sequence[LecturaCrop]) -> str:
+    """Lista en texto de TODO lo que el OCR/VLM ya detecto en los crops de
+    este producto, para que la sintesis vea CANDIDATOS reales, no tenga
+    que inventarselos -- etiquetados con su `ubicacion` para que el propio
+    prompt pueda razonar sobre cual es publicable (aunque la regla dura #1
+    se aplica EN CODIGO despues, no solo se le pide amablemente al modelo).
+
+    Solo entran lecturas LEGIBLES, con texto, que pertenecen al producto
+    (regla dura #7 -- el fondo ajeno no debe llegar ni como candidato de
+    contexto). Deduplica preservando orden -- una region fusionada y su
+    atajo pueden repetir el mismo texto."""
+    candidatos = [
+        lectura
+        for lectura in lecturas
+        if lectura.pertenece_al_producto and lectura.legible and lectura.texto
+    ]
+    if not candidatos:
+        return "(el paso de OCR/vision anterior no detecto ningun texto candidato en las fotos de este producto)"
+
+    lineas = [f"- [{lectura.ubicacion}] {lectura.contenido_probable}: {lectura.texto!r}" for lectura in candidatos]
+    return "\n".join(dict.fromkeys(lineas))  # dedup preservando orden
+
+
+def _indexar_candidatos_por_texto(lecturas: Sequence[LecturaCrop]) -> dict[str, LecturaCrop]:
+    """`texto normalizado -> LecturaCrop` para ligar `de_texto_detectado`
+    (lo que la sintesis dice haber usado) a SU recorte real -- el mismo
+    filtro que `_formatear_candidatos_para_sintesis` (legible, con texto,
+    pertenece al producto), asi que todo lo que la sintesis puede CITAR es
+    exactamente lo que se le enseno en el prompt. La primera ocurrencia
+    gana (determinista) si dos lecturas comparten texto normalizado."""
+    indice: dict[str, LecturaCrop] = {}
+    for lectura in lecturas:
+        if lectura.pertenece_al_producto and lectura.legible and lectura.texto:
+            clave = lectura.texto.strip().lower()
+            if clave not in indice:
+                indice[clave] = lectura
+    return indice
+
+
+def _construir_campo_desde_sintesis(
+    decision: dict[str, Any],
+    indice_candidatos: dict[str, LecturaCrop],
+    ubicaciones_validas: frozenset[str] | None,
+) -> tuple[Campo, LecturaCrop | None]:
+    """Traduce UNA decision de sintesis (para UN campo) a un `Campo`, mas
+    el `LecturaCrop` que la respalda (si lo hay) para poder ensenar su
+    recorte -- devuelve `(Campo(valor=None,...), None)` si la sintesis
+    tampoco tuvo opinion (valor=None): quien llama debe entonces dejar el
+    campo previo intacto (gap-filler, no lo sustituye por un None nuevo).
+
+    Regla dura #1 (estampado != marca EN LA PUBLICACION) se aplica TAMBIEN
+    aqui: si la sintesis dice `visible_en_foto=true` pero el candidato que
+    cita viene de una `ubicacion` NO publicable para este campo (p.ej. un
+    `estampado_o_grafico` para `marca`), NUNCA se publica como
+    `fuente="foto"` -- se degrada a "inferido", la misma disciplina de
+    "un prompt es una peticion, un if es una garantia" del resto del
+    modulo. Lo mismo si `de_texto_detectado` no casa con NINGUN candidato
+    real (una cita que no existe no es evidencia, aunque el modelo diga
+    `visible_en_foto=true`): sin candidato, no hay recorte que ensenar, y
+    "foto" sin evidencia real es exactamente el bug que `Campo` bloquea en
+    su `__post_init__` -- aqui se evita ANTES de construirlo."""
+    valor = decision["valor"]
+    if valor is None:
+        return Campo(valor=None, fuente="inferido", confianza="baja"), None
+
+    candidato: LecturaCrop | None = None
+    if decision["de_texto_detectado"]:
+        candidato = indice_candidatos.get(decision["de_texto_detectado"].strip().lower())
+
+    ubicacion_publicable = candidato is not None and (
+        ubicaciones_validas is None or candidato.ubicacion in ubicaciones_validas
+    )
+
+    if decision["visible_en_foto"] and ubicacion_publicable:
+        assert candidato is not None  # ubicacion_publicable ya lo exige
+        campo = Campo(
+            valor=valor,
+            fuente="foto",
+            confianza=decision["confianza"],  # ya viene acotado a "media"/"baja" por el json_schema
+            evidencia=Evidencia(fichero=candidato.fichero, bbox=candidato.bbox),
+        )
+        return campo, candidato
+
+    # Inferido: sin candidato real que lo respalde, la ubicacion no es
+    # publicable para este campo, o la propia sintesis lo marco como su
+    # inferencia -- techo "baja" SIEMPRE (nunca lo que diga el modelo).
+    campo = Campo(valor=valor, fuente="inferido", confianza="baja")
+    return campo, candidato  # candidato puede servir de recorte de CONTEXTO
+
+
+# nombre_del_campo_en_el_json_schema -> (nombre_canonico_del_modulo, ubicaciones_validas)
+# EAN y desperfectos quedan fuera A PROPOSITO -- no estan en `_CAMPOS_SINTESIS`.
+_CAMPOS_SINTESIS_GAP: dict[str, tuple[str, frozenset[str] | None]] = {
+    "marca": ("marca", _UBICACIONES_VALIDAS_MARCA),
+    "modelo": ("modelo", _UBICACIONES_VALIDAS_MODELO),
+    "talla": ("talla", _UBICACIONES_VALIDAS_TALLA),
+    "color": ("color", None),  # sin restriccion de ubicacion -- el color no viene de un texto
+    "estado": ("estado", None),
+    "material": ("composicion", None),  # nombre canonico del modulo es "composicion"
+    "medidas": ("medidas", None),
+}
 
 
 # ============================================================================
@@ -1857,8 +2199,9 @@ class ExtractorEngine:
                 ([Imagen(bytes_=foto_bytes, fichero=foto.name)], PROMPT_MEDIDA_METRO, VERSION_PROMPT_METRO)
             )
 
-        # El color NO genera ninguna solicitud VLM: sale de pixeles
-        # (`_color_dominante_rgb`), gratis -- no hay nada que estimar aqui.
+        # El color NO genera ninguna solicitud VLM PRIMARIA: sale de pixeles
+        # (`_color_dominante_rgb`), gratis -- solo puede entrar via la
+        # sintesis de abajo, como gap-filler.
 
         if fotos:
             imagen_pil = _abrir_foto_o_none(fotos[0], fallos_descartados, "estado")
@@ -1867,6 +2210,26 @@ class ExtractorEngine:
                 solicitudes.append(
                     ([Imagen(bytes_=foto_bytes, fichero=fotos[0].name)], PROMPT_ESTADO, VERSION_PROMPT_ESTADO)
                 )
+
+        # LA SINTESIS COMPROMETIDA: UNA llamada mas, SIEMPRE (produce
+        # titulo/descripcion ademas de rellenar huecos) -- si no se contara
+        # aqui, el coste estimado quedaria por debajo del real
+        # (`change-loop.md` SS C5). El texto de candidatos en esta fase de
+        # ESTIMACION solo puede usar `_candidatos_atajo` (gratis, sin VLM):
+        # los hallazgos de los crops de arriba todavia no se conocen (esa
+        # es la llamada que se esta ESTIMANDO, no ejecutando) -- es un
+        # subconjunto conservador del texto real, nunca de mas.
+        imagenes_sintesis: list[Imagen] = []
+        for foto in _muestrear_fotos(fotos, N_FOTOS_MUESTRA_SINTESIS):
+            imagen_pil = _abrir_foto_o_none(foto, fallos_descartados, "sintesis")
+            if imagen_pil is None:
+                continue
+            imagenes_sintesis.append(Imagen(bytes_=foto_completa_a_bytes(imagen_pil), fichero=foto.name))
+        if imagenes_sintesis:
+            texto_candidatos = _formatear_candidatos_para_sintesis(_candidatos_atajo)
+            solicitudes.append(
+                (imagenes_sintesis, _construir_prompt_sintesis(texto_candidatos), VERSION_PROMPT_SINTESIS)
+            )
 
         return solicitudes
 
@@ -1947,6 +2310,116 @@ class ExtractorEngine:
             alternativas=alternativas,
             motivo=grupo.motivo,
         )
+
+    # -- LA SINTESIS COMPROMETIDA (gap-filler, ver docstring del modulo) ------
+
+    def _sintetizar_ficha(
+        self,
+        fotos: Sequence[Path],
+        lecturas_totales: Sequence[LecturaCrop],
+        campos: dict[str, Campo],
+        propuestas: dict[str, Propuesta],
+        rutas_por_nombre: dict[str, Path],
+        carpeta_crops: Path,
+        fallos: list[str],
+        producto_id: str | None,
+    ) -> None:
+        """UNA llamada VLM mas (Diego, 2026-07-15: "null -> mejor-intento
+        comprometido") que ve el producto ENTERO (hasta
+        `N_FOTOS_MUESTRA_SINTESIS` fotos GENERALES, nunca crops) + la lista
+        de textos ya detectados, y PROPONE un valor comprometido por campo,
+        ademas de redactar `titulo`/`descripcion`. Muta `campos` y
+        `propuestas` EN SITIO (mismo patron que el resto del pipeline, que
+        ya construyo esos dicts antes de llamar aqui).
+
+        GAP-FILLER: para marca/modelo/talla/color/estado/material(->
+        composicion)/medidas, solo sobreescribe si `campos[nombre].valor`
+        YA es `None` -- una lectura de una etiqueta a resolucion NATIVA (o
+        un histograma de pixeles) es mas fiable que una opinion sobre la
+        foto general, asi que nunca se pisa un valor solido. `ean` y
+        `desperfectos` quedan fuera a proposito -- no estan en
+        `_CAMPOS_SINTESIS_GAP`. `titulo`/`descripcion` SON campos nuevos
+        (no habia nada previo que preservar): se toman de la sintesis
+        siempre, sin gap-filler.
+
+        Fallo tecnico (rate limit, sin API key, JSON invalido): se loguea +
+        se anota en `fallos` (nunca fallback silencioso) y NINGUN campo
+        cambia -- el producto se queda con lo que ya tenia antes de este
+        paso, nunca peor."""
+        imagenes: list[Imagen] = []
+        for foto in _muestrear_fotos(fotos, N_FOTOS_MUESTRA_SINTESIS):
+            imagen_pil = _abrir_foto_o_none(foto, fallos, "sintesis")
+            if imagen_pil is None:
+                continue
+            imagenes.append(Imagen(bytes_=foto_completa_a_bytes(imagen_pil), fichero=foto.name))
+
+        if not imagenes:
+            fallos.append("sintesis:sin_fotos_abribles")
+            return
+
+        texto_candidatos = _formatear_candidatos_para_sintesis(lecturas_totales)
+        prompt = _construir_prompt_sintesis(texto_candidatos)
+
+        try:
+            resultado = self.motor_llm.consultar(
+                imagenes,
+                prompt,
+                ESQUEMA_SINTESIS_FICHA,
+                version_prompt=VERSION_PROMPT_SINTESIS,
+                producto_id=producto_id,
+            )
+            decisiones = _parsear_respuesta_sintesis(resultado.datos)
+        except (LLMLlamadaFallidaError, ApiKeyFaltanteError, RespuestaVLMInvalidaError) as exc:
+            logger.error("Fallo VLM en la sintesis de ficha: %s", exc)
+            fallos.append(f"vlm_sintesis: {exc}")
+            return
+
+        indice_candidatos = _indexar_candidatos_por_texto(lecturas_totales)
+
+        for campo_sintesis, (nombre_campo, ubicaciones_validas) in _CAMPOS_SINTESIS_GAP.items():
+            if campos[nombre_campo].valor is not None:
+                continue  # ya solido -- la sintesis NUNCA pisa (gap-filler)
+
+            campo_nuevo, candidato = _construir_campo_desde_sintesis(
+                decisiones[campo_sintesis], indice_candidatos, ubicaciones_validas
+            )
+            if campo_nuevo.valor is None:
+                continue  # la sintesis tampoco tuvo opinion -- se deja el previo intacto
+
+            recorte, evidencia_recorte, lecturas_crudas = self._recorte_y_lecturas(
+                candidato, rutas_por_nombre, carpeta_crops, fallos
+            )
+            propuesta_previa = propuestas[nombre_campo]
+            alternativas_restantes = tuple(
+                alt
+                for alt in propuesta_previa.alternativas
+                if alt.valor is None or alt.valor.strip().lower() != campo_nuevo.valor.strip().lower()
+            )
+
+            campos[nombre_campo] = campo_nuevo
+            propuestas[nombre_campo] = Propuesta(
+                campo=nombre_campo,
+                valor=campo_nuevo.valor,
+                recorte=recorte if recorte is not None else propuesta_previa.recorte,
+                evidencia=evidencia_recorte if evidencia_recorte is not None else propuesta_previa.evidencia,
+                lecturas=lecturas_crudas if lecturas_crudas else propuesta_previa.lecturas,
+                alternativas=alternativas_restantes,
+                motivo=(
+                    "propuesto por la sintesis (mejor intento comprometido, Diego revisa): "
+                    + ("visible en foto" if campo_nuevo.fuente == "foto" else "inferido, sin etiqueta que lo respalde")
+                ),
+            )
+
+        for campo_texto in ("titulo", "descripcion"):
+            texto = decisiones[campo_texto]
+            campos[campo_texto] = Campo(valor=texto, fuente="inferido", confianza="baja")
+            propuestas[campo_texto] = Propuesta(
+                campo=campo_texto,
+                valor=texto,
+                recorte=None,
+                evidencia=None,
+                motivo="borrador del modelo, editalo",
+            )
 
     # -- ejecucion real -------------------------------------------------------
 
@@ -2101,6 +2574,21 @@ class ExtractorEngine:
             "estado": propuesta_estado,
             "desperfectos": propuesta_desperfectos,
         }
+
+        # LA SINTESIS COMPROMETIDA (ver docstring del modulo): UNA llamada
+        # mas, GAP-FILLER -- solo rellena lo que arriba quedo en None, mas
+        # titulo/descripcion (campos nuevos, siempre). Muta `campos` y
+        # `propuestas` en sitio; nunca pisa un valor ya solido.
+        self._sintetizar_ficha(
+            fotos,
+            lecturas_totales,
+            campos,
+            propuestas,
+            rutas_por_nombre,
+            carpeta_crops_efectiva,
+            fallos,
+            producto_id,
+        )
 
         # "LA FICHA FRANKENSTEIN": si los campos de identidad no estan todos
         # en la misma componente conexa, degradar (techo "media") y avisar
