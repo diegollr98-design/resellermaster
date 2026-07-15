@@ -43,12 +43,14 @@ from typing import Any, Callable
 
 import streamlit as st
 
+from core import pricing
 from core.extract import (
     ExtractorEngine,
     deserializar_extraccion,
     serializar_extraccion,
 )
 from core.llm import LLMEngine, LLMEngineError
+from core.schema import Campo
 from core.store import LoteStore, StoreError
 
 logger = logging.getLogger(__name__)
@@ -56,7 +58,10 @@ logger = logging.getLogger(__name__)
 # Orden de presentación de los campos. Los que no aparezcan aquí se pintan
 # después, en el orden en que vengan. `estado` va al final: SIEMPRE lo pone
 # Diego (`truth-loop.md` §A.4), no es una lectura del modelo.
-_ORDEN_CAMPOS = ("marca", "talla", "modelo", "ean", "color", "medidas", "material", "estado")
+_ORDEN_CAMPOS = (
+    "marca", "modelo", "ean", "talla", "color", "composicion", "medidas",
+    "estado", "desperfectos", "titulo", "descripcion",
+)
 
 # Escala de estado (interna, friendly). El mapeo exacto a los literales de
 # Wallapop/Vinted vive en `core/schema.py` y se aplica en el EXPORT, no aquí:
@@ -220,28 +225,20 @@ def _dialog_extraer(
 # alternativas a propuesta confirmable en un click.
 # --------------------------------------------------------------------------
 def _valor_por_defecto(campo: str, datos_campo: dict) -> str:
-    """Lo que se pre-rellena en el input. El `valor` publicado si existe; si
-    no (el caso frecuente: marca leída pero no publicada, Paso 1), la primera
-    lectura disponible — para que Diego confirme en un click en vez de
-    teclearla. NUNCA se pre-rellena con una alternativa en conflicto (ahí
-    Diego DEBE elegir a mano: `truth-loop.md`, dos marcas → el pipeline no
-    elige). Y NUNCA se pre-rellena nada cuyo recorte no esté en disco (el
-    píxel con dientes, ver abajo)."""
-    propuesta = datos_campo.get("propuesta") or {}
-    if propuesta.get("alternativas"):
-        return ""  # conflicto: que elija Diego, no se sugiere ninguna
+    """Lo que se pre-rellena en el input: el `valor` comprometido por la
+    extracción (el mejor intento de la síntesis), o la primera lectura si aún
+    no hay valor.
 
-    # EL PÍXEL CON DIENTES (`[INC-008]`/§16): sólo se pre-rellena un valor —el
-    # publicado O una lectura— si su recorte EXISTE en disco. Si Diego no
-    # puede ver el píxel (crops borrados, o reanudación sin la carpeta), el
-    # default seguro es null, no un valor plausible confirmable a ciegas. La
-    # asimetría manda: un valor falso rubricado cuesta una devolución; un
-    # campo vacío, 5 s. El gate va ANTES del `valor` publicado a propósito.
-    recorte = propuesta.get("recorte")
-    if recorte is None or not Path(recorte).exists():
-        return ""
+    DECISIÓN DE DIEGO (revierte el `[INC-008]`/§16 anterior): se pre-rellena
+    SIEMPRE con el mejor intento, aunque el recorte no esté a la vista. En SU
+    flujo la asimetría es la contraria: un campo vacío le cuesta teclearlo
+    entero; un valor mal, 2 s corregirlo. La verificación es su ojo con el
+    recorte al lado (cuando lo hay), no un hueco en blanco. Un conflicto ya
+    NO deja el campo vacío: la síntesis eligió un valor y las otras candidatas
+    quedan a un click en `alternativas`."""
     if datos_campo.get("valor"):
         return str(datos_campo["valor"])
+    propuesta = datos_campo.get("propuesta") or {}
     for lec in propuesta.get("lecturas", []):
         if lec.get("texto"):
             return str(lec["texto"])
@@ -261,23 +258,36 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
     alternativas = propuesta.get("alternativas") or []
     key_valor = f"ficha_{pid}_{campo}_valor"
 
+    # Título y descripción: borradores del modelo, sin recorte, a ancho
+    # completo y en caja multilínea editable.
+    if campo in ("titulo", "descripcion"):
+        st.markdown(f"**{campo}** · borrador del modelo, edítalo")
+        st.text_area(
+            campo,
+            value=_valor_por_defecto(campo, datos_campo),
+            key=key_valor,
+            label_visibility="collapsed",
+            height=70 if campo == "titulo" else 150,
+        )
+        return
+
     col_pixel, col_dato = st.columns([1, 2])
 
     with col_pixel:
-        if alternativas:
-            # Conflicto: cada candidata con SU recorte (nunca se elige una).
-            for i, cand in enumerate(alternativas):
-                st.caption(f"candidata: **{cand.get('valor')}**")
-                _render_recorte(cand.get("recorte"), width=200)
-                st.button(
-                    f"usar «{cand.get('valor')}»",
-                    key=f"use_{pid}_{campo}_alt{i}",
-                    on_click=_rellenar_valor,
-                    args=(key_valor, str(cand.get("valor") or "")),
-                    use_container_width=True,
-                )
-        else:
-            _render_recorte(propuesta.get("recorte"))
+        _render_recorte(propuesta.get("recorte"))
+        # Conflicto: la síntesis eligió un valor; las OTRAS candidatas quedan
+        # aquí, cada una con su recorte, para cambiar con un click. Nunca se
+        # pierde ninguna (`truth-loop.md`: el pipeline no elige a ciegas).
+        for i, cand in enumerate(alternativas):
+            st.caption(f"otra: **{cand.get('valor')}**")
+            _render_recorte(cand.get("recorte"), width=180)
+            st.button(
+                f"usar «{cand.get('valor')}»",
+                key=f"use_{pid}_{campo}_alt{i}",
+                on_click=_rellenar_valor,
+                args=(key_valor, str(cand.get("valor") or "")),
+                use_container_width=True,
+            )
 
     with col_dato:
         st.markdown(f"**{campo}** · confianza {_badge_confianza(datos_campo.get('confianza'))}")
@@ -285,9 +295,7 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
         if motivo:
             st.caption(motivo)
 
-        # Botón "usar" para la lectura cruda cuando no hay valor publicado ni
-        # conflicto (el caso del Paso 1: 'Reebok' leído, no publicado).
-        if not datos_campo.get("valor") and not alternativas:
+        if not datos_campo.get("valor"):
             for i, lec in enumerate(propuesta.get("lecturas", [])):
                 texto, origen = lec.get("texto"), lec.get("origen")
                 if texto:
@@ -299,12 +307,24 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
                     )
 
         if campo == "estado":
-            # SIEMPRE Diego (`truth-loop.md` §A.4). Selectbox, nunca un valor
-            # del modelo pre-elegido.
+            # Lo cierra SIEMPRE Diego (`truth-loop.md` §A.4). Si el modelo dio
+            # un literal canónico, se pre-selecciona; si dio una estimación en
+            # prosa (el evaluador de estado la da), se muestra como PISTA y
+            # Diego elige el literal — un click guiado, no teclear. Pre-sembrar
+            # la key antes de instanciar el widget es el patrón legal (no
+            # `index=` con la key ya en session_state, que Streamlit rechaza).
+            sugerido = datos_campo.get("valor")
+            if sugerido and sugerido not in _OPCIONES_ESTADO:
+                st.caption(f"El modelo estimó: _{str(sugerido)[:140]}_ — elige el estado:")
+            key_est = f"ficha_{pid}_{campo}_estado"
+            if key_est not in st.session_state:
+                st.session_state[key_est] = (
+                    sugerido if sugerido in _OPCIONES_ESTADO else _OPCIONES_ESTADO[0]
+                )
             st.selectbox(
-                "estado (lo eliges tú)",
+                "estado (lo confirmas tú)",
                 _OPCIONES_ESTADO,
-                key=f"ficha_{pid}_{campo}_estado",
+                key=key_est,
                 label_visibility="collapsed",
             )
         else:
@@ -313,7 +333,7 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
                 value=_valor_por_defecto(campo, datos_campo),
                 key=key_valor,
                 label_visibility="collapsed",
-                placeholder="vacío = null (correcto si no se ve en la foto)",
+                placeholder="vacío = null",
             )
 
 
@@ -378,6 +398,37 @@ def _accion_confirmar_ficha(store: LoteStore, pid: str, serial: dict) -> bool:
 
 
 # --------------------------------------------------------------------------
+# Comparables de precio — Costura 2 (`core/pricing.py`): NO tasa, abre la
+# búsqueda del producto en Wallapop/Vinted para que Diego vea precios reales.
+# --------------------------------------------------------------------------
+def _render_comparables(datos: dict) -> None:
+    campos = datos.get("campos", {})
+    atributos: dict[str, Campo] = {}
+    for campo in ("marca", "modelo", "ean", "talla"):
+        dc = campos.get(campo)
+        if dc and dc.get("valor"):
+            # fuente="diego" para no exigir evidencia (Campo la pide sólo con
+            # fuente="foto"); a `pricing.buscar` sólo le importa `.valor`.
+            atributos[campo] = Campo(valor=str(dc["valor"]), fuente="diego", confianza="baja")
+
+    consulta = pricing.buscar(atributos)
+    if not consulta.urls_busqueda:
+        st.caption("💰 Comparables: rellena marca/modelo o el código de barras y podrás buscarlos.")
+        return
+
+    match = (
+        "código de barras — el MISMO producto"
+        if consulta.tipo_match == "exacto"
+        else "texto — productos parecidos, míralos"
+    )
+    st.caption(f"💰 Comparables por {match}: «{consulta.terminos}»")
+    columnas = st.columns(len(consulta.urls_busqueda))
+    for columna, (plataforma, url) in zip(columnas, consulta.urls_busqueda.items()):
+        with columna:
+            st.link_button(f"🔎 Ver en {plataforma.capitalize()}", url, use_container_width=True)
+
+
+# --------------------------------------------------------------------------
 # Tarjeta de un producto.
 # --------------------------------------------------------------------------
 def _render_producto(
@@ -417,6 +468,9 @@ def _render_producto(
         for campo in orden:
             st.divider()
             _render_campo(pid, campo, campos[campo])
+
+        st.divider()
+        _render_comparables(datos)
 
         st.divider()
         col_conf, col_reextraer = st.columns([2, 1])

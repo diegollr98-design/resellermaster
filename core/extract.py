@@ -294,7 +294,7 @@ class RespuestaVLMInvalidaError(ExtractorError):
 VERSION_PROMPT_CROP = "extract-crop-v2"  # v2: hallazgos como LISTA (regla 4)
 VERSION_PROMPT_METRO = "extract-metro-v1"
 VERSION_PROMPT_ESTADO = "extract-estado-v1"
-VERSION_PROMPT_SINTESIS = "extract-sintesis-v1"  # ver "LA SINTESIS COMPROMETIDA"
+VERSION_PROMPT_SINTESIS = "extract-sintesis-v2"  # v2: estado canonico + medidas solo cm
 # NO existe VERSION_PROMPT_COLOR: el color sale de pixeles
 # (`architecture.md` Costura 1, tabla de proveedores: "color por pixeles"),
 # nunca del VLM -- ver `_color_dominante_rgb` mas abajo. La sintesis SI
@@ -1391,6 +1391,16 @@ material, medidas -- responde un objeto con:
 
 NUNCA propongas un valor que CONTRADIGA algo visible (si un texto
 detectado dice claramente "Nike", no propongas "Adidas").
+
+DOS campos con reglas ESPECIALES (no des una frase libre en ellos):
+  - estado: usa EXACTAMENTE uno de estos seis valores, nada mas: "Nuevo",
+    "Como nuevo", "Muy bueno", "Bueno", "Satisfactorio", "Para reparar".
+    Ante la duda elige el MAS BAJO (mas conservador). Para estado,
+    visible_en_foto es SIEMPRE false (es un juicio, no un texto que se lea).
+  - medidas: SOLO una dimension real en cm que puedas ver medida con un
+    metro/regla en la foto (p.ej. "largo 70 cm"). Si no hay ninguna medida
+    tomada a la vista, pon null -- NO metas aqui una descripcion del
+    producto ni una medida inventada.
 
 Ademas, redacta:
   - titulo: un titulo de venta corto y honesto para Wallapop/Vinted (maximo

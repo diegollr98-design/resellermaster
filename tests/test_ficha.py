@@ -170,15 +170,76 @@ def test_lectura_no_publicada_se_promueve_si_hay_recorte(tmp_path):
     assert _texto_input(at, f"ficha_{pid}_talla_valor").value == "M"
 
 
-def test_sin_recorte_no_se_prerellena_ningun_valor(tmp_path):
-    """EL PÍXEL CON DIENTES (hallazgo del listing-audit, §16): si el recorte
-    NO existe en disco, NO se pre-rellena el valor — el default seguro es
-    null, no un valor plausible confirmable a ciegas."""
+def test_se_prerellena_aunque_falte_el_recorte(tmp_path):
+    """DECISIÓN DE DIEGO (revierte el 'píxel con dientes' anterior): se
+    pre-rellena SIEMPRE con el mejor intento, aunque el recorte no esté en
+    disco. En su flujo un campo vacío cuesta teclearlo; un valor mal, 2 s
+    corregirlo. La verificación es su ojo con el recorte al lado, no un hueco."""
     lote_id, pid = _preparar(tmp_path, lambda c: _marca_leida_no_publicada(c, con_crops=False))
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     assert not at.exception
-    assert _texto_input(at, f"ficha_{pid}_marca_valor").value == ""
-    assert _texto_input(at, f"ficha_{pid}_talla_valor").value == ""
+    assert _texto_input(at, f"ficha_{pid}_marca_valor").value == "Reebok"
+    assert _texto_input(at, f"ficha_{pid}_talla_valor").value == "M"
+
+
+# ============================================================================
+# La ficha "todo relleno" que produce la síntesis: marca inferida, título y
+# descripción redactados, estado canónico, comparables por EAN.
+# ============================================================================
+def _ficha_completa(crops: Path) -> ResultadoExtraccion:
+    ev = _evidencia()
+    rc = crops / "modelo.jpg"
+    _crear_img(rc)
+    campos = {
+        "marca": Campo(valor="lufthous", fuente="inferido", confianza="baja"),
+        "modelo": Campo(valor="LLLT-200", fuente="foto", confianza="media", evidencia=ev),
+        "ean": Campo(valor="8445061029720", fuente="foto", confianza="alta", evidencia=ev),
+        "estado": Campo(valor="Como nuevo", fuente="inferido", confianza="baja"),
+        "titulo": Campo(valor="Masajeador lufthous LLLT-200", fuente="inferido", confianza="baja"),
+        "descripcion": Campo(valor="Masajeador de rodilla lufthous, como nuevo.", fuente="inferido", confianza="baja"),
+    }
+    propuestas = {
+        "marca": Propuesta(campo="marca", valor="lufthous", recorte=None, evidencia=None, motivo="mejor intento"),
+        "modelo": Propuesta(campo="modelo", valor="LLLT-200", recorte=rc, evidencia=ev, motivo="leído"),
+        "ean": Propuesta(campo="ean", valor="8445061029720", recorte=rc, evidencia=ev, motivo="checksum"),
+        "estado": Propuesta(campo="estado", valor="Como nuevo", recorte=None, evidencia=None, motivo="estímalo"),
+        "titulo": Propuesta(campo="titulo", valor="Masajeador lufthous LLLT-200", recorte=None, evidencia=None, motivo="borrador"),
+        "descripcion": Propuesta(campo="descripcion", valor="Masajeador de rodilla lufthous, como nuevo.", recorte=None, evidencia=None, motivo="borrador"),
+    }
+    return ResultadoExtraccion(campos=campos, propuestas=propuestas, fallos=(), coste_usd=0.02)
+
+
+def test_marca_inferida_se_prerellena(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    assert _texto_input(at, f"ficha_{pid}_marca_valor").value == "lufthous"
+
+
+def test_titulo_y_descripcion_son_cajas_editables(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    areas = {a.key: a.value for a in at.text_area}
+    assert areas.get(f"ficha_{pid}_titulo_valor", "").startswith("Masajeador")
+    assert "rodilla" in areas.get(f"ficha_{pid}_descripcion_valor", "")
+
+
+def test_estado_se_preselecciona_del_mejor_intento(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    selebox = next(s for s in at.selectbox if s.key == f"ficha_{pid}_estado_estado")
+    assert selebox.value == "Como nuevo"
+
+
+def test_comparables_por_ean_muestra_enlaces(tmp_path):
+    """El botón de comparables (Costura 2): con EAN, match 'exacto' (mismo
+    producto). Nunca tasa; abre la búsqueda para que Diego vea precios."""
+    lote_id, _pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    textos = " ".join(c.value for c in at.caption)
+    assert "código de barras" in textos
 
 
 def test_conflicto_no_se_pre_elige_y_muestra_ambas_candidatas(tmp_path):
