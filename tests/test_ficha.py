@@ -339,3 +339,44 @@ def test_sin_agrupacion_confirmada_no_se_muestra_ficha(tmp_path):
     assert not any(t.key == f"ficha_{pid}_marca_valor" for t in at.text_input)
     textos = " ".join(m.value for m in at.info)
     assert "agrupación" in textos.lower()
+
+
+def test_confirmar_bloquea_marca_ajena_en_la_descripcion(tmp_path):
+    """Sanitizador con dientes (product.md §7, §12): una descripción que
+    menciona OTRA marca (Nike, sobre un producto lufthous) NO se puede
+    confirmar — en Vinted `MENTIONS_OTHER_BRAND` oculta el anuncio."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)  # marca = lufthous
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    key_desc = f"ficha_{pid}_descripcion_valor"
+    next(a for a in at.text_area if a.key == key_desc).set_value(
+        "Masajeador Nike de rodilla, como nuevo."
+    ).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    estado = LoteStore(data_dir=tmp_path).cargar_lote(lote_id)
+    fichas = [c for c in estado["confirmaciones"] if c["tipo"] == "ficha" and c["producto_id"] == pid]
+    assert not fichas, "no debió confirmarse con una marca ajena en el texto"
+    assert len(at.error) >= 1
+
+
+def test_texto_limpio_si_confirma(tmp_path):
+    """El caso positivo: título/descripción sin marca ajena ni email/enlace
+    confirman sin problema (no falso positivo del sanitizador)."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)  # descripción limpia
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    estado = LoteStore(data_dir=tmp_path).cargar_lote(lote_id)
+    fichas = [c for c in estado["confirmaciones"] if c["tipo"] == "ficha" and c["producto_id"] == pid]
+    assert len(fichas) == 1
+
+
+def test_badge_de_fuente_distingue_leido_de_inferido(tmp_path):
+    """La UI muestra la FUENTE (hallazgo del audit): un inferido no puede
+    verse igual de confirmable que un leído en foto."""
+    lote_id, _pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    textos = " ".join(m.value for m in at.markdown)
+    assert "leído en foto" in textos  # modelo/ean son fuente=foto
+    assert "inferido" in textos       # marca lufthous es inferido

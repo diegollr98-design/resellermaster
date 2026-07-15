@@ -1906,7 +1906,22 @@ def _construir_campo_desde_sintesis(
         ubicaciones_validas is None or candidato.ubicacion in ubicaciones_validas
     )
 
-    if decision["visible_en_foto"] and ubicacion_publicable:
+    # GARANTIA DE PROCEDENCIA (truth-loop.md SS A.1; hallazgo BLOQUEANTE del
+    # listing-audit). `fuente="foto"` exige que el VALOR propuesto este
+    # CONTENIDO en el texto LEGIBLE del candidato citado -- no basta con que
+    # la cita exista. Si el modelo EXTIENDE una lectura real ("Reebok" ->
+    # "Reebok Classic 100% algodon") o la sustituye ("Nike" citando un crop
+    # de "Reebok"), la parte que no esta en el pixel NO es legible: se
+    # degrada a "inferido" (el crop pasa a ser CONTEXTO, no evidencia). Antes
+    # el codigo ligaba el recorte a la cita pero nunca comprobaba el valor:
+    # "un if es una garantia", el docstring lo prometia y no lo forzaba.
+    valor_en_el_pixel = (
+        candidato is not None
+        and candidato.texto is not None
+        and valor.strip().lower() in candidato.texto.strip().lower()
+    )
+
+    if decision["visible_en_foto"] and ubicacion_publicable and valor_en_el_pixel:
         assert candidato is not None  # ubicacion_publicable ya lo exige
         campo = Campo(
             valor=valor,

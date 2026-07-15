@@ -1875,3 +1875,40 @@ class TestSintesisComprometida:
         assert len(imagenes_sintesis) == 1  # una sola foto en este producto
         assert imagenes_sintesis[0].fichero == foto.name
         assert isinstance(prompt_sintesis, str) and len(prompt_sintesis) > 0
+
+
+def test_sintesis_fuente_foto_exige_que_el_valor_este_en_el_pixel():
+    """Hallazgo BLOQUEANTE del listing-audit: `fuente="foto"` solo si el
+    VALOR propuesto esta CONTENIDO en el texto legible del candidato citado.
+    Extender una lectura real ("Reebok" -> "Reebok Classic 100% algodon") o
+    sustituirla ("Nike" citando un crop de "Reebok") NO es legible en ese
+    pixel -> se degrada a `inferido`. Antes el codigo ligaba el recorte a la
+    cita pero no comprobaba el valor (truth-loop.md SS A.1)."""
+    from core.extract import (
+        _UBICACIONES_VALIDAS_MARCA,
+        LecturaCrop,
+        _construir_campo_desde_sintesis,
+    )
+
+    cand = LecturaCrop(
+        fichero="IMG.jpg", bbox=(1, 2, 3, 4), legible=True, pertenece_al_producto=True,
+        ubicacion="etiqueta_interior", contenido_probable="marca", texto="Reebok",
+    )
+    indice = {"reebok": cand}
+
+    def decision(valor):
+        return {"valor": valor, "visible_en_foto": True, "de_texto_detectado": "Reebok", "confianza": "media"}
+
+    # valor == texto legible -> foto (caso legitimo)
+    campo, _ = _construir_campo_desde_sintesis(decision("Reebok"), indice, _UBICACIONES_VALIDAS_MARCA)
+    assert campo.fuente == "foto" and campo.valor == "Reebok"
+
+    # valor EXTIENDE la lectura -> inferido (la parte extra no es legible)
+    campo, _ = _construir_campo_desde_sintesis(
+        decision("Reebok Classic 100% algodon"), indice, _UBICACIONES_VALIDAS_MARCA
+    )
+    assert campo.fuente == "inferido", "un valor extendido no puede salir como fuente=foto"
+
+    # valor SUSTITUYE la lectura -> inferido (el crop dice Reebok, el valor Nike)
+    campo, _ = _construir_campo_desde_sintesis(decision("Nike"), indice, _UBICACIONES_VALIDAS_MARCA)
+    assert campo.fuente == "inferido", "un valor que no esta en el crop no es fuente=foto"

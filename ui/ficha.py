@@ -50,7 +50,7 @@ from core.extract import (
     serializar_extraccion,
 )
 from core.llm import LLMEngine, LLMEngineError
-from core.schema import Campo
+from core.schema import Campo, validar_texto
 from core.store import LoteStore, StoreError
 
 logger = logging.getLogger(__name__)
@@ -119,6 +119,19 @@ def _badge_confianza(confianza: str | None) -> str:
     return {"alta": "🟢 alta", "media": "🟡 media", "baja": "🔴 baja"}.get(
         confianza or "baja", "🔴 baja"
     )
+
+
+def _badge_fuente(fuente: str | None) -> str:
+    """De un vistazo: ¿el dato se LEYÓ en una foto o lo INFIRIÓ el modelo?
+    Un inferido no puede verse igual de confirmable que un leído
+    (`[INC-008]`, hallazgo del listing-audit: mostrar la fuente ES la
+    defensa que hace visible qué revisar)."""
+    return {
+        "foto": "📷 leído en foto",
+        "diego": "✍️ tuyo",
+        "comparable": "🔗 comparable",
+        "inferido": "🧠 inferido — verifícalo",
+    }.get(fuente or "inferido", "🧠 inferido — verifícalo")
 
 
 # --------------------------------------------------------------------------
@@ -290,7 +303,10 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
             )
 
     with col_dato:
-        st.markdown(f"**{campo}** · confianza {_badge_confianza(datos_campo.get('confianza'))}")
+        st.markdown(
+            f"**{campo}** · {_badge_fuente(datos_campo.get('fuente'))} · "
+            f"confianza {_badge_confianza(datos_campo.get('confianza'))}"
+        )
         motivo = propuesta.get("motivo")
         if motivo:
             st.caption(motivo)
@@ -382,12 +398,45 @@ def _construir_confirmado(pid: str, serial: dict) -> dict[str, Any]:
     return nuevo
 
 
+# Título/descripción → nombre del campo en `core/schema.py`. Las violaciones
+# de LONGITUD no bloquean la confirmación (el export las reajusta); las de
+# CONTENIDO sí — una marca ajena, un email o un enlace en Vinted ocultan el
+# anuncio (`product.md §7`, defensa con dientes §12).
+_CAMPO_TEXTO_A_SCHEMA = {"titulo": "title", "descripcion": "description"}
+_CODIGOS_LONGITUD = frozenset({"TOO_SHORT", "TOO_LONG"})
+
+
+def _problemas_de_texto(confirmado: dict, marca: str | None) -> list[str]:
+    """Corre el sanitizador (`schema.validar_texto`) sobre título y
+    descripción para AMBAS plataformas. Devuelve los problemas de CONTENIDO
+    (no de longitud) que impiden confirmar; vacío = limpio."""
+    problemas: list[str] = []
+    for campo, campo_schema in _CAMPO_TEXTO_A_SCHEMA.items():
+        dc = confirmado.get("campos", {}).get(campo)
+        texto = (dc or {}).get("valor")
+        if not texto:
+            continue
+        for plataforma in ("wallapop", "vinted"):
+            for viol in validar_texto(texto, plataforma, marca, campo_schema):  # type: ignore[arg-type]
+                if viol.codigo not in _CODIGOS_LONGITUD:
+                    problemas.append(f"{campo}: {viol.mensaje}")
+    return sorted(set(problemas))
+
+
 def _accion_confirmar_ficha(store: LoteStore, pid: str, serial: dict) -> bool:
     """Corre en el mismo script run que el click del botón (no en un
     on_click), así que `st.session_state` ya tiene los valores de los
     widgets y `st.error` es válido — mismo criterio que
     `ui/curar.py::_accion_archivar_foto`."""
     confirmado = _construir_confirmado(pid, serial)
+    marca = (confirmado.get("campos", {}).get("marca") or {}).get("valor")
+    problemas = _problemas_de_texto(confirmado, marca)
+    if problemas:
+        st.error(
+            "Arregla el texto antes de confirmar (Wallapop/Vinted lo rechazan):\n\n"
+            + "\n".join(f"- {p}" for p in problemas)
+        )
+        return False
     try:
         store.confirmar_ficha(pid, confirmado)
     except StoreError as exc:
