@@ -17,6 +17,8 @@ hace falta el VLM (leer una etiqueta estilizada) se usa `_MotorFake` de
 from __future__ import annotations
 
 import json
+import os
+import unicodedata
 from pathlib import Path
 
 import pytest
@@ -32,12 +34,14 @@ from core.extract import (
     localizar_regiones_ocr,
 )
 from core.images import abrir_derecha
-from core.llm import ResultadoLLM
+from core.llm import LLMEngine, ResultadoLLM
 from tests.test_extract import _MotorFake, _respuesta_crop, _respuesta_crop_simple
 
 _REPO = Path(__file__).resolve().parent.parent
 _FOTOS = _REPO / "fotos"
 _TRUTH = json.loads((_REPO / "tests" / "golden" / "truth.json").read_text(encoding="utf-8"))
+_LEG = json.loads((_REPO / "tests" / "golden" / "legibilidad.json").read_text(encoding="utf-8"))
+_LEG_POR_PRODUCTO: dict[int, dict] = {p["id"]: p["campos"] for p in _LEG["productos"]}
 
 
 @pytest.fixture(scope="module")
@@ -403,3 +407,219 @@ def test_medir_cobertura_con_vlm_oraculo_sobre_los_7_productos(fotos_reales, tmp
     # No se fija un umbral -- se deja constancia legible de que el test
     # corrio de verdad sobre las 33 fotos reales (7 productos).
     assert len(filas) == len(productos) * 4
+
+
+# ============================================================================
+# MEDICION CON HAIKU 4.5 REAL -- EL PASO 1 DE LA CONTINUACION DE FASE 2
+# (docs/seeds/fase-2-continuacion.md).
+#
+# Todo lo demas de esta suite prueba COMO EL CODIGO TRATA lo que el modelo
+# diga (con un oraculo o con `_MotorFake`). Esto es lo unico que mide CON QUE
+# FRECUENCIA HAIKU MIENTE en los crops reales de Diego -- la Capa 2 del
+# `truth-loop` ejecutada de verdad, no razonada. Ningun test verde la
+# sustituye.
+#
+# DOBLE CANDADO DE COSTE (`decision-making.md` SS 15): corre SOLO si estan
+# ademas de las 33 fotos-- (a) `ANTHROPIC_API_KEY` en el entorno y (b) el
+# opt-in explicito `MEDIR_VLM_REAL=1`. Un `pytest` normal con la key ya
+# puesta en `.env`/entorno NO puede gastar 19 cts sin querer: hay que
+# pedirlo. La cache por hash hace que la 2a ejecucion cueste 0.
+#
+#   Como correrlo (una vez, ~19 cts; despues 0 por la cache):
+#     MEDIR_VLM_REAL=1 pytest tests/test_extract_golden.py -s \
+#       -k medir_alucinacion_con_haiku_real
+#
+# QUE MIDE, contra `tests/golden/legibilidad.json` (el mapa de que dato es
+# legible en que pixel, fijado a ojo por el orquestador -- NO es la "verdad
+# del producto", Diego no la da: es LEGIBILIDAD y PROCEDENCIA):
+#   - ALUCINACION (la metrica que MANDA): el extractor publica un valor en
+#     una celda NO_FOTOGRAFIADO / PRESENTE_ILEGIBLE. Con `confianza=alta`
+#     es el fallo catastrofico que este proyecto existe para evitar -> se
+#     ASSERTA == 0 (candado duro). Con confianza media/baja se reporta
+#     ruidoso (lleva un crop que Diego vera, pero no deberia haberse
+#     propuesto).
+#   - LECTURA_ERRONEA: Haiku leyo un texto distinto del que legibilidad.json
+#     dice que pone el pixel. NO es fallo automatico (el valor de referencia
+#     lo leyo un modelo, no Diego): es una ALERTA para que Diego mire ese
+#     crop. Se reporta, no se assertar.
+#   - COBERTURA: para cuantas celdas legibles Diego recibe algo confirmable
+#     (un valor, un conflicto con sus candidatas, o al menos un recorte).
+# ============================================================================
+
+# Solo los campos de IDENTIDAD que legibilidad.json audita como texto -- es
+# donde se juega "Haiku miente". color=pixeles (nunca VLM), estado=siempre
+# Diego, composicion=NO_FOTOGRAFIADO por diseno (se comprueba aparte abajo).
+_CAMPOS_IDENTIDAD = ("marca", "talla", "modelo", "ean")
+
+_MEDIR_VLM_REAL = os.environ.get("MEDIR_VLM_REAL") == "1"
+_HAY_KEY = bool(os.environ.get("ANTHROPIC_API_KEY"))
+
+
+def _norm(s: str | None) -> str | None:
+    """Normaliza para comparar lecturas: sin acentos, mayusculas, espacios
+    colapsados. 'Jack & Jones' == 'JACK & JONES'; 'Reebok' == 'REEBOK'."""
+    if s is None:
+        return None
+    s = unicodedata.normalize("NFKD", s)
+    s = "".join(c for c in s if not unicodedata.combining(c))
+    return " ".join(s.upper().split()) or None
+
+
+def _clasificar_celda(pid: int, campo: str, campo_obj, propuesta) -> tuple[str, str] | None:
+    """Clasifica UNA celda (producto x campo) del extractor real contra
+    legibilidad.json. Devuelve `(clasificacion, detalle)` o `None` si la
+    celda no esta auditada para ese producto. La unica clase catastrofica
+    es ALUCINACION_ALTA; el resto se reporta."""
+    celda = _LEG_POR_PRODUCTO[pid].get(campo)
+    if celda is None:
+        return None
+    etiqueta = celda["etiqueta"]
+    got = campo_obj.valor
+
+    # 1. Celdas donde NADIE puede leer el dato -> el extractor DEBE abstenerse.
+    if etiqueta in ("NO_FOTOGRAFIADO", "PRESENTE_ILEGIBLE"):
+        if got is None:
+            return ("ABSTENCION_OK", f"{etiqueta} -> null (correcto)")
+        if campo_obj.confianza == "alta":
+            return ("ALUCINACION_ALTA", f"emitio {got!r} con confianza=ALTA sobre {etiqueta}")
+        return ("ALUCINACION", f"emitio {got!r} (conf={campo_obj.confianza}) sobre {etiqueta}")
+
+    # 2. Celda de CONFLICTO real (p.ej. P5 marca UMBRO vs RAMI JALAB): lo
+    #    correcto es NO elegir -> valor=null + ambas candidatas a la vista.
+    candidatas = celda.get("candidatas")
+    if candidatas:
+        esperadas = {_norm(c) for c in candidatas}
+        vistas = {_norm(c.valor) for c in propuesta.alternativas} | {_norm(propuesta.valor)}
+        if got is None and esperadas <= vistas:
+            return ("CONFLICTO_OK", " vs ".join(candidatas))
+        if got is not None:
+            return ("CONFLICTO_RESUELTO_MAL", f"eligio {got!r} entre {candidatas}")
+        return ("CONFLICTO_INCOMPLETO", f"faltan candidatas; se ven {sorted(v for v in vistas if v)}")
+
+    # 3. Celda LEGIBLE_TEXTO con un valor de referencia concreto.
+    esperado = celda.get("valor_legible")
+    exp = _norm(esperado)
+    if exp is not None and _norm(got) == exp:
+        return ("ACIERTO", f"{got}")
+    if got is not None:
+        return ("LECTURA_ERRONEA", f"leyo {got!r}, legibilidad dice {esperado!r}")
+    # got is None: mirar si al menos llego cobertura (lecturas/recorte).
+    vistas = {_norm(c.valor) for c in propuesta.alternativas} | {
+        _norm(lec.texto) for lec in propuesta.lecturas
+    }
+    if exp in vistas:
+        return ("EN_LECTURAS_SIN_PUBLICAR", f"{esperado!r} esta en lecturas pero no se publico")
+    if propuesta.recorte is not None:
+        return ("RECORTE_SIN_VALOR", propuesta.motivo[:70] or "hay recorte que mirar")
+    return ("PERDIDO", propuesta.motivo[:70] or "el OCR no localizo la region; nada llega a Diego")
+
+
+# Clasificaciones que NO son problema: Diego recibe algo util o una
+# abstencion correcta. El resto (ALUCINACION*, LECTURA_ERRONEA, PERDIDO,
+# CONFLICTO_*_MAL/INCOMPLETO) se destaca para que Diego lo mire.
+_CLASES_OK = frozenset(
+    {"ABSTENCION_OK", "CONFLICTO_OK", "ACIERTO", "RECORTE_SIN_VALOR", "EN_LECTURAS_SIN_PUBLICAR"}
+)
+
+
+@pytest.mark.skipif(
+    not (_MEDIR_VLM_REAL and _HAY_KEY),
+    reason=(
+        "Medicion con Haiku REAL: requiere MEDIR_VLM_REAL=1 y ANTHROPIC_API_KEY "
+        "(gasta ~19 cts la 1a vez; despues 0 por cache). Opt-in explicito a "
+        "proposito -- decision-making.md SS 15."
+    ),
+)
+def test_medir_alucinacion_con_haiku_real(fotos_reales, capsys):
+    """EL PASO 1. Corre el ExtractorEngine REAL (OCR local + Haiku 4.5 via
+    core/llm.py, con cache por hash) sobre los 7 productos reales y, para
+    cada campo de identidad, lo clasifica contra legibilidad.json. Imprime
+    la tabla, la tasa de alucinacion, la cobertura, el coste real y LOS
+    CROPS que Diego debe mirar. Candado duro: cero alucinaciones con
+    confianza=alta."""
+    motor = LLMEngine()  # Haiku 4.5 por defecto; lee ANTHROPIC_API_KEY del entorno
+    carpeta_crops = _REPO / "data" / "eval_vlm_real"
+    extractor = ExtractorEngine(motor, carpeta_crops=carpeta_crops)
+
+    filas: list[tuple] = []
+    n_alucinacion = 0
+    n_alucinacion_alta = 0
+    n_legibles = 0
+    n_cubiertos = 0
+    fallos_tecnicos: list[str] = []
+    coste_real = 0.0
+
+    for producto in _TRUTH["productos"]:
+        pid = producto["id"]
+        fotos = [fotos_reales[nombre] for nombre in producto["fotos"]]
+        resultado = extractor.extraer_producto(fotos, producto_id=f"prod-{pid}")
+        coste_real += resultado.coste_usd
+        fallos_tecnicos.extend(f"P{pid}: {f}" for f in resultado.fallos)
+
+        # invariante de diseno barato: composicion/material SIEMPRE null
+        # (NO_FOTOGRAFIADO en los 7, legibilidad.json) -- un valor aqui es
+        # invencion pura.
+        comp = resultado.campos.get("composicion")
+        if comp is not None and comp.valor is not None:
+            n_alucinacion += 1
+            filas.append((pid, "composicion", "ALUCINACION", f"emitio {comp.valor!r}; material NO esta fotografiado", None))
+
+        for campo in _CAMPOS_IDENTIDAD:
+            campo_obj = resultado.campos.get(campo)
+            propuesta = resultado.propuestas.get(campo)
+            if campo_obj is None or propuesta is None:
+                continue
+            clas = _clasificar_celda(pid, campo, campo_obj, propuesta)
+            if clas is None:
+                continue
+            clasificacion, detalle = clas
+            crop = str(propuesta.recorte) if propuesta.recorte is not None else None
+            filas.append((pid, campo, clasificacion, detalle, crop))
+
+            celda = _LEG_POR_PRODUCTO[pid][campo]
+            if celda["etiqueta"] == "LEGIBLE_TEXTO":
+                n_legibles += 1
+                if clasificacion in _CLASES_OK or clasificacion.startswith("LECTURA"):
+                    n_cubiertos += 1  # llego algo confirmable (valor/conflicto/recorte)
+            if clasificacion == "ALUCINACION":
+                n_alucinacion += 1
+            elif clasificacion == "ALUCINACION_ALTA":
+                n_alucinacion_alta += 1
+                n_alucinacion += 1
+
+    with capsys.disabled():
+        print("\n\n=== MEDICION CON HAIKU 4.5 REAL sobre las 33 fotos (Paso 1, Fase 2) ===")
+        print("producto | campo       | clasificacion             | detalle")
+        print("-" * 100)
+        for pid, campo, clasificacion, detalle, _crop in filas:
+            marca_ojo = "  " if clasificacion in _CLASES_OK else ">>"
+            print(f"{marca_ojo} P{pid} | {campo:11s} | {clasificacion:25s} | {detalle}")
+
+        print("\n--- CROPS A MIRAR (¿es el pixel de verdad legible a ojo? si no, la propuesta es inutil) ---")
+        for pid, campo, clasificacion, _detalle, crop in filas:
+            if crop is not None and clasificacion not in ("ABSTENCION_OK",):
+                print(f"  P{pid} {campo:8s} [{clasificacion}] -> {crop}")
+
+        cobertura = f"{n_cubiertos}/{n_legibles}" if n_legibles else "n/a"
+        print("\n=== RESUMEN ===")
+        print(f"  TASA DE ALUCINACION: {n_alucinacion} campos publicados sin pixel que los pruebe")
+        print(f"    de ellos con confianza=ALTA (catastrofico): {n_alucinacion_alta}  <- el candado duro exige 0")
+        print(f"  COBERTURA legible: {cobertura} celdas LEGIBLE_TEXTO con algo confirmable para Diego")
+        print(f"  COSTE REAL: {coste_real:.4f} USD (estimado en CLAUDE.md: ~0.192 USD el lote entero)")
+        print(f"    coste_lote motor: {motor.coste_lote.coste_usd:.4f} USD, {motor.coste_lote.llamadas} llamadas")
+        if fallos_tecnicos:
+            print(f"  FALLOS TECNICOS (VLM/OCR/foto): {len(fallos_tecnicos)}")
+            for f in fallos_tecnicos:
+                print(f"    - {f}")
+        print()
+
+    # CANDADO DURO (truth-loop.md SS C): una alucinacion con confianza=alta es
+    # la mentira plausible que se publica sin que nadie la mire. Cero, o
+    # BLOQUEA. El resto (lecturas erroneas, alucinaciones de baja confianza)
+    # se REPORTA arriba para el ojo de Diego, no se assertar (el valor de
+    # referencia lo leyo un modelo, no el; y RapidOCR varia entre versiones).
+    assert n_alucinacion_alta == 0, (
+        f"{n_alucinacion_alta} alucinacion(es) con confianza=ALTA -- ver tabla arriba. "
+        "Es el fallo catastrofico del truth-loop: un valor sin pixel, publicado sin revision."
+    )
+    assert filas, "no se clasifico ninguna celda -- ¿se localizo alguna region?"
