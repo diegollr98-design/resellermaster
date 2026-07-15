@@ -764,6 +764,74 @@ class LoteStore:
                 (producto_id, fila["lote_id"], ahora, json.dumps(detalle or {}, ensure_ascii=False)),
             )
 
+    # -- extracción de atributos (superficie sensible) -------------------
+
+    def guardar_extraccion(self, producto_id: str, extraccion: dict[str, Any]) -> None:
+        """Persiste el resultado de `core.extract.serializar_extraccion(...)`
+        en `productos.campos` (JSON en texto plano — ver "Contrato de
+        campos" en el docstring del módulo, columna que existe desde la
+        Fase 1 justo para esto).
+
+        Re-ejecutable a propósito: volver a extraer un producto (relanzar
+        el VLM) sobreescribe su ficha con la versión nueva. `campos` NO es
+        append-only (a diferencia de `confirmaciones`) — es el borrador
+        vigente que la UI de revisión lee y Diego confirma después con
+        `confirmar_ficha`. El coste ya gastado en la extracción anterior
+        no se pierde por esto: vive en la caché de `core/llm.py` por hash
+        de imagen, nunca aquí.
+
+        Si el producto no existe → `ProductoNoEncontradoError` (mismo
+        patrón que `confirmar_producto`)."""
+        with self._transaccion() as conn:
+            fila = conn.execute(
+                "SELECT id FROM productos WHERE id = ?", (producto_id,)
+            ).fetchone()
+            if fila is None:
+                raise ProductoNoEncontradoError(f"producto no encontrado: {producto_id}")
+            conn.execute(
+                "UPDATE productos SET campos = ? WHERE id = ?",
+                (json.dumps(extraccion, ensure_ascii=False), producto_id),
+            )
+
+    def confirmar_ficha(
+        self,
+        producto_id: str,
+        campos_confirmados: dict[str, Any],
+        detalle: dict[str, Any] | None = None,
+    ) -> None:
+        """Registra el HECHO de que Diego confirmó los ATRIBUTOS de la
+        ficha — distinto de `confirmar_producto`, que confirma la
+        AGRUPACIÓN de fotos (Fase 1). `truth-loop.md` §A: el campo
+        `estado` y cualquier otro que Diego edite a mano deben quedar con
+        `fuente="diego"` en `campos_confirmados` — esa decisión es de
+        quien llama (la UI); este método sólo persiste lo que le pasan,
+        tal cual, no reinterpreta procedencia.
+
+        Dentro de una única transacción: (a) sobreescribe
+        `productos.campos` con `campos_confirmados`, (b) añade una fila
+        append-only en `confirmaciones` con `tipo='ficha'` — nunca se
+        edita ni se borra, es el log auditable de "cuándo confirmó Diego
+        qué" (mismo patrón que `confirmar_producto`, que usa
+        `tipo='agrupacion'`).
+
+        Si el producto no existe → `ProductoNoEncontradoError`."""
+        with self._transaccion() as conn:
+            fila = conn.execute(
+                "SELECT id, lote_id FROM productos WHERE id = ?", (producto_id,)
+            ).fetchone()
+            if fila is None:
+                raise ProductoNoEncontradoError(f"producto no encontrado: {producto_id}")
+            ahora = _ahora()
+            conn.execute(
+                "UPDATE productos SET campos = ? WHERE id = ?",
+                (json.dumps(campos_confirmados, ensure_ascii=False), producto_id),
+            )
+            conn.execute(
+                """INSERT INTO confirmaciones (producto_id, lote_id, tipo, timestamp, detalle)
+                   VALUES (?, ?, 'ficha', ?, ?)""",
+                (producto_id, fila["lote_id"], ahora, json.dumps(detalle or {}, ensure_ascii=False)),
+            )
+
     # -- carga / reanudación --------------------------------------------
 
     def cargar_lote(self, lote_id: str) -> dict[str, Any]:

@@ -189,7 +189,7 @@ import logging
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Literal, Sequence
+from typing import Any, Literal, Sequence
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -507,6 +507,164 @@ CAMPOS_PRODUCIDOS: tuple[str, ...] = (
 )
 
 _CAMPOS_IDENTIDAD_PRODUCTO: tuple[str, ...] = ("marca", "talla", "modelo", "ean")
+
+
+# ============================================================================
+# SERIALIZACION -- persistencia de la extraccion (core/store.py, Fase 2 Paso 2)
+# ============================================================================
+# `ResultadoExtraccion` vive en memoria durante una sesion; `core/store.py`
+# lo guarda como JSON en texto plano (`productos.campos`, columna que YA
+# existe desde la Fase 1) para que sobreviva a un rerun de Streamlit, un
+# cierre de la app o una sesion distinta que abra la ficha para revision
+# (`truth-loop.md` SS A: la UI necesita el `valor`, la `fuente`, la
+# `confianza` Y el pixel exacto -- `Propuesta` entera, no solo `Campo` --
+# para que Diego pueda confirmar sin volver a mirar las fotos originales).
+#
+# `deserializar_extraccion` NO reconstruye los dataclasses frozen
+# (`Campo`/`Propuesta`/`Candidato`/`Lectura`/`Evidencia`): devuelve dicts
+# anidados, que es lo que la UI necesita leer. Las rutas de `recorte` SI se
+# devuelven como `Path` (son las que la UI abre con `Image.open`, no texto).
+#
+# Round-trip: `deserializar_extraccion(json.loads(json.dumps(serializar_extraccion(r))))`
+# preserva valores, rutas de recorte, evidencias (fichero+bbox), lecturas,
+# alternativas y motivos -- verificado en tests/test_extract.py.
+
+
+def _evidencia_a_dict(evidencia: Evidencia | None) -> dict[str, Any] | None:
+    if evidencia is None:
+        return None
+    return {
+        "fichero": evidencia.fichero,
+        "bbox": list(evidencia.bbox) if evidencia.bbox is not None else None,
+    }
+
+
+def _evidencia_desde_dict(datos: dict[str, Any] | None) -> dict[str, Any] | None:
+    if datos is None:
+        return None
+    bbox = datos.get("bbox")
+    return {
+        "fichero": datos["fichero"],
+        "bbox": tuple(bbox) if bbox is not None else None,
+    }
+
+
+def _lecturas_a_lista(lecturas: Sequence[Lectura]) -> list[list[str | None]]:
+    return [[lectura.origen, lectura.texto] for lectura in lecturas]
+
+
+def _lecturas_desde_lista(datos: Sequence[Sequence[str | None]]) -> list[dict[str, str | None]]:
+    return [{"origen": origen, "texto": texto} for origen, texto in datos]
+
+
+def _candidato_a_dict(candidato: Candidato) -> dict[str, Any]:
+    return {
+        "valor": candidato.valor,
+        "recorte": str(candidato.recorte) if candidato.recorte is not None else None,
+        "evidencia": _evidencia_a_dict(candidato.evidencia),
+        "lecturas": _lecturas_a_lista(candidato.lecturas),
+    }
+
+
+def _candidato_desde_dict(datos: dict[str, Any]) -> dict[str, Any]:
+    recorte = datos.get("recorte")
+    return {
+        "valor": datos.get("valor"),
+        "recorte": Path(recorte) if recorte is not None else None,
+        "evidencia": _evidencia_desde_dict(datos.get("evidencia")),
+        "lecturas": _lecturas_desde_lista(datos.get("lecturas", [])),
+    }
+
+
+def _propuesta_a_dict(propuesta: Propuesta) -> dict[str, Any]:
+    return {
+        "campo": propuesta.campo,
+        "valor": propuesta.valor,
+        "recorte": str(propuesta.recorte) if propuesta.recorte is not None else None,
+        "evidencia": _evidencia_a_dict(propuesta.evidencia),
+        "lecturas": _lecturas_a_lista(propuesta.lecturas),
+        "alternativas": [_candidato_a_dict(candidato) for candidato in propuesta.alternativas],
+        "motivo": propuesta.motivo,
+    }
+
+
+def _propuesta_desde_dict(datos: dict[str, Any]) -> dict[str, Any]:
+    recorte = datos.get("recorte")
+    return {
+        "campo": datos.get("campo"),
+        "valor": datos.get("valor"),
+        "recorte": Path(recorte) if recorte is not None else None,
+        "evidencia": _evidencia_desde_dict(datos.get("evidencia")),
+        "lecturas": _lecturas_desde_lista(datos.get("lecturas", [])),
+        "alternativas": [_candidato_desde_dict(alt) for alt in datos.get("alternativas", [])],
+        "motivo": datos.get("motivo", ""),
+    }
+
+
+def serializar_extraccion(resultado: ResultadoExtraccion) -> dict[str, Any]:
+    """`ResultadoExtraccion` -> dict JSON-serializable (`json.dumps` SIN
+    `default` custom -- todo lo que sale de aqui ya es `str`/`int`/`float`/
+    `bool`/`None`/`list`/`dict`, nunca un `Path` ni un dataclass crudo).
+
+    Por cada campo de `resultado.campos` (mismas claves que
+    `CAMPOS_PRODUCIDOS`) preserva TODO lo que `ui/ficha.py` necesita para
+    pintar el campo junto a su recorte: `valor`, `fuente`, `confianza`,
+    `evidencia` (fichero + bbox como lista) Y la `Propuesta` completa
+    (`valor`, `recorte`, `evidencia`, `lecturas`, `alternativas` -- cada
+    una con su propio recorte -- y `motivo`). Si `resultado.propuestas` no
+    trae ese campo (no deberia pasar en uso normal -- `ExtractorEngine`
+    siempre entrega las mismas claves en `campos` y `propuestas`, pero esta
+    funcion no confia en ese invariante sin comprobarlo), `propuesta` sale
+    `None` en vez de reventar: quien serializa nunca debe perder el
+    `Campo` (la parte exportable) porque falte la parte de revision.
+
+    A nivel raiz: `coste_usd`, `fallos` (lista) y `aviso_coherencia`.
+    """
+    campos_serializados: dict[str, Any] = {}
+    for nombre, campo in resultado.campos.items():
+        propuesta = resultado.propuestas.get(nombre)
+        campos_serializados[nombre] = {
+            "valor": campo.valor,
+            "fuente": campo.fuente,
+            "confianza": campo.confianza,
+            "evidencia": _evidencia_a_dict(campo.evidencia),
+            "propuesta": _propuesta_a_dict(propuesta) if propuesta is not None else None,
+        }
+    return {
+        "campos": campos_serializados,
+        "coste_usd": resultado.coste_usd,
+        "fallos": list(resultado.fallos),
+        "aviso_coherencia": resultado.aviso_coherencia,
+    }
+
+
+def deserializar_extraccion(datos: dict[str, Any]) -> dict[str, Any]:
+    """Inversa de `serializar_extraccion` -- NO reconstruye los dataclasses
+    frozen (`Campo`/`Propuesta`/`Candidato`/`Lectura`/`Evidencia`): devuelve
+    dicts anidados, comodos de consumir por la UI. Las rutas de `recorte`
+    SI vuelven como `Path` (la UI las abre con `Image.open`, no las trata
+    como texto).
+
+    Robusta a claves ausentes (`.get(...)` con default) para que un JSON
+    guardado por una version anterior del serializador no reviente al
+    leerlo -- degrada a `None`/lista vacia, nunca lanza por una clave que
+    falte."""
+    campos: dict[str, Any] = {}
+    for nombre, campo_datos in datos.get("campos", {}).items():
+        propuesta_datos = campo_datos.get("propuesta")
+        campos[nombre] = {
+            "valor": campo_datos.get("valor"),
+            "fuente": campo_datos.get("fuente"),
+            "confianza": campo_datos.get("confianza"),
+            "evidencia": _evidencia_desde_dict(campo_datos.get("evidencia")),
+            "propuesta": _propuesta_desde_dict(propuesta_datos) if propuesta_datos is not None else None,
+        }
+    return {
+        "campos": campos,
+        "coste_usd": datos.get("coste_usd", 0.0),
+        "fallos": list(datos.get("fallos", [])),
+        "aviso_coherencia": datos.get("aviso_coherencia"),
+    }
 
 
 # ============================================================================

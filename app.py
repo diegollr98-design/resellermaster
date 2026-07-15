@@ -13,15 +13,49 @@ para reelegir el lote, no el trabajo de curado (que vive en disco).
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 import streamlit as st
 
 from core.store import DEFAULT_DATA_DIR, LoteStore
-from ui import curar, ingesta
+from ui import curar, ficha, ingesta
+
+
+def _cargar_env() -> None:
+    """Carga `.env` (raíz del repo) en `os.environ` si existe, sin machacar
+    una variable ya puesta en el entorno. La extracción de atributos
+    (`ui/ficha.py` → `core/llm.py`) necesita `ANTHROPIC_API_KEY`; sin este
+    cargador Diego tendría que exportarla a mano cada vez que arranca la
+    app. Parser mínimo (KEY=VALUE, ignora comentarios y líneas en blanco) —
+    no se añade una dependencia por esto. `.env` está en `.gitignore`; la
+    clave NUNCA se loguea ni se commitea."""
+    ruta = Path(__file__).resolve().parent / ".env"
+    if not ruta.exists():
+        return
+    try:
+        for linea in ruta.read_text(encoding="utf-8").splitlines():
+            linea = linea.strip()
+            if not linea or linea.startswith("#") or "=" not in linea:
+                continue
+            clave, _, valor = linea.partition("=")
+            clave = clave.strip()
+            valor = valor.strip().strip('"').strip("'")
+            if clave and clave not in os.environ:
+                os.environ[clave] = valor
+    except OSError:
+        # Un .env ilegible no puede tumbar el arranque: la app sigue
+        # (la extracción avisará luego con ApiKeyFaltanteError si hace falta).
+        pass
+
+
+_cargar_env()
 
 st.set_page_config(page_title="RESELLERMASTER", layout="wide")
 
 _PANTALLA_INGESTA = "1. Ingesta"
 _PANTALLA_CONFIRMACION = "2. Curar agrupación"
+_PANTALLA_FICHA = "3. Ficha"
 
 
 @st.cache_resource
@@ -59,7 +93,9 @@ def main() -> None:
 
     st.sidebar.title("RESELLERMASTER")
     pantalla = st.sidebar.radio(
-        "Pantalla", [_PANTALLA_INGESTA, _PANTALLA_CONFIRMACION], key="sb_pantalla"
+        "Pantalla",
+        [_PANTALLA_INGESTA, _PANTALLA_CONFIRMACION, _PANTALLA_FICHA],
+        key="sb_pantalla",
     )
 
     st.sidebar.divider()
@@ -97,11 +133,16 @@ def main() -> None:
                 "lote_id": nuevo_lote_id,
             }
             st.rerun()
-    else:
+    elif pantalla == _PANTALLA_CONFIRMACION:
         if lote_id is None:
             st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
         else:
             curar.render(store, lote_id)
+    else:
+        if lote_id is None:
+            st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
+        else:
+            ficha.render(store, lote_id)
 
 
 if __name__ == "__main__":

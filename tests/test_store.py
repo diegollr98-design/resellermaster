@@ -7,6 +7,7 @@ una escritura (simula el proceso muriendo dentro de una transacción).
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from unittest.mock import patch
 
@@ -537,3 +538,154 @@ def test_un_error_crudo_de_sqlite_sale_como_StoreError(tmp_path, metodo, constru
     with patch.object(store, "_conectar", side_effect=sqlite3.OperationalError("database is locked")):
         with pytest.raises(StoreError):
             getattr(store, metodo)(*llamada)
+
+
+# --------------------------------------------------------------------------
+# `guardar_extraccion` / `confirmar_ficha` — Fase 2 Paso 2: persistencia de
+# la ficha (superficie sensible: atributos + persistencia). Guardan/leen lo
+# que produce `core.extract.serializar_extraccion` en `productos.campos`
+# (contrato documentado en el docstring del módulo).
+# --------------------------------------------------------------------------
+
+
+def _extraccion_de_ejemplo() -> dict:
+    """Una extracción JSON-serializable con la misma forma que produciría
+    `core.extract.serializar_extraccion` — no depende de ese módulo (test
+    de `store.py` puro), sólo replica el contrato de campos."""
+    return {
+        "campos": {
+            "marca": {
+                "valor": "Reebok",
+                "fuente": "foto",
+                "confianza": "media",
+                "evidencia": {"fichero": "IMG_0001.jpg", "bbox": [10, 10, 40, 20]},
+                "propuesta": {
+                    "campo": "marca",
+                    "valor": "Reebok",
+                    "recorte": "data/lotes/x/crops/IMG_0001_10-10-40-20.jpg",
+                    "evidencia": {"fichero": "IMG_0001.jpg", "bbox": [10, 10, 40, 20]},
+                    "lecturas": [["vlm", "Reebok"]],
+                    "alternativas": [],
+                    "motivo": "unico valor legible en ubicacion publicable",
+                },
+            },
+            "talla": {
+                "valor": None,
+                "fuente": "inferido",
+                "confianza": "baja",
+                "evidencia": None,
+                "propuesta": None,
+            },
+        },
+        "coste_usd": 0.004,
+        "fallos": [],
+        "aviso_coherencia": None,
+    }
+
+
+def _crear_lote_con_producto(store: LoteStore) -> tuple[str, str, list[str]]:
+    lote_id, foto_ids = _crear_lote_con_fotos(store, n=2)
+    productos = store.guardar_agrupacion(lote_id, [foto_ids])
+    return lote_id, productos[0], foto_ids
+
+
+def test_guardar_extraccion_persiste_y_sobrevive_a_cierre_y_reapertura(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, producto_id, _ = _crear_lote_con_producto(store)
+    extraccion = _extraccion_de_ejemplo()
+
+    store.guardar_extraccion(producto_id, extraccion)
+
+    del store
+    store2 = LoteStore(data_dir=tmp_path)
+    estado = store2.cargar_lote(lote_id)
+    producto = next(p for p in estado["productos"] if p["id"] == producto_id)
+
+    assert producto["campos"] == extraccion
+    assert producto["campos"]["campos"]["marca"]["valor"] == "Reebok"
+
+
+def test_guardar_extraccion_es_re_ejecutable_sobrescribe(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, producto_id, _ = _crear_lote_con_producto(store)
+
+    primera = _extraccion_de_ejemplo()
+    store.guardar_extraccion(producto_id, primera)
+
+    segunda = json.loads(json.dumps(primera))
+    segunda["campos"]["marca"]["valor"] = "Adidas"
+    segunda["coste_usd"] = 0.009
+    store.guardar_extraccion(producto_id, segunda)
+
+    estado = store.cargar_lote(lote_id)
+    producto = next(p for p in estado["productos"] if p["id"] == producto_id)
+    assert producto["campos"]["campos"]["marca"]["valor"] == "Adidas"
+    assert producto["campos"]["coste_usd"] == 0.009
+
+
+def test_guardar_extraccion_producto_inexistente_falla_ruidosamente(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    with pytest.raises(ProductoNoEncontradoError):
+        store.guardar_extraccion("producto-que-no-existe", _extraccion_de_ejemplo())
+
+
+def test_confirmar_ficha_persiste_campos_y_deja_rastro_append_only(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, producto_id, _ = _crear_lote_con_producto(store)
+    extraccion = _extraccion_de_ejemplo()
+    store.guardar_extraccion(producto_id, extraccion)
+
+    # Diego confirma: el campo 'marca' lo deja tal cual, pero cambia la
+    # 'talla' a mano (fuente='diego', decisión de la UI, no de store.py).
+    campos_confirmados = json.loads(json.dumps(extraccion))
+    campos_confirmados["campos"]["talla"] = {
+        "valor": "M",
+        "fuente": "diego",
+        "confianza": "alta",
+        "evidencia": None,
+        "propuesta": None,
+    }
+
+    store.confirmar_ficha(producto_id, campos_confirmados, detalle={"editor": "diego"})
+
+    estado = store.cargar_lote(lote_id)
+    producto = next(p for p in estado["productos"] if p["id"] == producto_id)
+    assert producto["campos"] == campos_confirmados
+    assert producto["campos"]["campos"]["talla"]["valor"] == "M"
+    assert producto["campos"]["campos"]["talla"]["fuente"] == "diego"
+
+    confirmaciones_ficha = [c for c in estado["confirmaciones"] if c["tipo"] == "ficha"]
+    assert len(confirmaciones_ficha) == 1
+    assert confirmaciones_ficha[0]["producto_id"] == producto_id
+    assert json.loads(confirmaciones_ficha[0]["detalle"]) == {"editor": "diego"}
+
+    # No pisa el rastro de la agrupación (Fase 1): sigue habiendo su propia
+    # fila 'agrupacion' -- aunque aquí nadie confirmó el producto (Fase 1)
+    # explícitamente, `confirmar_ficha` NUNCA escribe tipo='agrupacion'.
+    assert all(c["tipo"] in ("agrupacion", "ficha") for c in estado["confirmaciones"])
+
+
+def test_confirmar_ficha_es_append_only_no_edita_confirmaciones_previas(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, producto_id, _ = _crear_lote_con_producto(store)
+    extraccion = _extraccion_de_ejemplo()
+
+    store.confirmar_ficha(producto_id, extraccion, detalle={"vez": 1})
+    otra_vez = json.loads(json.dumps(extraccion))
+    otra_vez["campos"]["marca"]["valor"] = "Puma"
+    store.confirmar_ficha(producto_id, otra_vez, detalle={"vez": 2})
+
+    estado = store.cargar_lote(lote_id)
+    confirmaciones_ficha = [c for c in estado["confirmaciones"] if c["tipo"] == "ficha"]
+    assert len(confirmaciones_ficha) == 2  # append-only: las dos quedan, ninguna se borra
+    detalles = sorted(json.loads(c["detalle"])["vez"] for c in confirmaciones_ficha)
+    assert detalles == [1, 2]
+
+    producto = next(p for p in estado["productos"] if p["id"] == producto_id)
+    assert producto["campos"]["campos"]["marca"]["valor"] == "Puma"  # el estado actual es el último
+
+
+def test_confirmar_ficha_producto_inexistente_falla_ruidosamente(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    with pytest.raises(ProductoNoEncontradoError):
+        store.confirmar_ficha("producto-que-no-existe", _extraccion_de_ejemplo())

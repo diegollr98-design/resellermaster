@@ -37,6 +37,7 @@ Estructura:
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -72,7 +73,9 @@ from core.extract import (
     _UBICACIONES_VALIDAS_TALLA,
     _validar_campo_ean,
     _validar_checksum_ean,
+    deserializar_extraccion,
     fusionar_regiones_cercanas,
+    serializar_extraccion,
 )
 from core.llm import ApiKeyFaltanteError, LLMLlamadaFallidaError, ResultadoLLM
 from core.schema import Campo, Evidencia
@@ -1424,3 +1427,111 @@ class TestAvisoDeCoherencia:
         assert resultado.campos["talla"].valor == "XL"
         assert resultado.aviso_coherencia is not None
         assert resultado.campos["ean"].confianza == "media"  # degradado desde "alta"
+
+
+# ============================================================================
+# Fase 2 Paso 2 -- serializar_extraccion / deserializar_extraccion:
+# round-trip fiel por JSON (lo que core/store.py escribe en productos.campos)
+# ============================================================================
+
+
+class TestSerializacionRoundTrip:
+    """`serializar_extraccion` -> `json.dumps` -> `json.loads` ->
+    `deserializar_extraccion` tiene que devolver, para `ui/ficha.py`
+    (todavia sin construir), exactamente lo que el pipeline propuso: el
+    conflicto CON sus dos recortes (Trampa 2, UMBRO/RAMI JALAB) y el caso
+    `recorte=None`/`evidencia=None` (composicion, que nunca se fotografia
+    -- regla dura #4 de `core/extract.py`)."""
+
+    def _resultado_con_conflicto(self, tmp_path, monkeypatch):
+        foto_pecho = _foto_sintetica(tmp_path / "IMG_pecho.jpg")
+        foto_cuello = _foto_sintetica(tmp_path / "IMG_cuello.jpg")
+        region_pecho = RegionOCR(fichero=foto_pecho.name, bbox=(10, 10, 50, 20), texto_ocr="UMBRO", score=0.8)
+        region_cuello = RegionOCR(fichero=foto_cuello.name, bbox=(20, 20, 60, 25), texto_ocr="RAMI SALAB", score=0.7)
+        regiones = {foto_pecho.name: [region_pecho], foto_cuello.name: [region_cuello]}
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: regiones[ruta.name])
+
+        motor = _MotorFake()
+
+        def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
+            fichero = imagenes[0].fichero
+            motor.llamadas.append((fichero, version_prompt))
+            if version_prompt == VERSION_PROMPT_ESTADO:
+                return ResultadoLLM(
+                    datos={"estimacion_legible": False, "descripcion": None},
+                    fuente="api",
+                    coste_usd=0.0,
+                    tokens_entrada=10,
+                    tokens_salida=5,
+                )
+            if fichero == foto_pecho.name:
+                datos = _respuesta_crop_simple("marca", True, "UMBRO", ubicacion="estampado_o_grafico")
+            else:
+                datos = _respuesta_crop_simple("marca", True, "RAMI JALAB", ubicacion="etiqueta_interior")
+            return ResultadoLLM(datos=datos, fuente="api", coste_usd=0.001, tokens_entrada=100, tokens_salida=10)
+
+        motor.consultar = _consultar
+        extractor = ExtractorEngine(motor, carpeta_crops=tmp_path / "crops")
+        return extractor.extraer_producto([foto_pecho, foto_cuello])
+
+    def test_conflicto_sobrevive_el_round_trip_con_sus_dos_recortes(self, tmp_path, monkeypatch):
+        resultado = self._resultado_con_conflicto(tmp_path, monkeypatch)
+
+        serializado = serializar_extraccion(resultado)
+        tras_json = json.loads(json.dumps(serializado))  # simula el TEXT de productos.campos
+        recuperado = deserializar_extraccion(tras_json)
+
+        marca = recuperado["campos"]["marca"]
+        assert marca["valor"] is None
+        assert marca["fuente"] == "inferido"
+        assert marca["confianza"] == "baja"
+        assert marca["evidencia"] is None
+
+        propuesta_marca = marca["propuesta"]
+        assert propuesta_marca["valor"] is None
+        assert propuesta_marca["recorte"] is None
+        assert len(propuesta_marca["alternativas"]) == 2
+
+        originales_por_valor = {c.valor: c for c in resultado.propuestas["marca"].alternativas}
+        for candidato in propuesta_marca["alternativas"]:
+            assert candidato["valor"] in originales_por_valor
+            original = originales_por_valor[candidato["valor"]]
+            assert isinstance(candidato["recorte"], Path)
+            assert candidato["recorte"] == original.recorte
+            assert candidato["recorte"].exists()
+            assert candidato["evidencia"]["fichero"] == original.evidencia.fichero
+            assert candidato["evidencia"]["bbox"] == original.evidencia.bbox
+            assert len(candidato["lecturas"]) >= 1
+            assert candidato["lecturas"][0]["origen"] in ("vlm", "ocr")
+
+        assert recuperado["coste_usd"] == resultado.coste_usd
+        assert recuperado["fallos"] == list(resultado.fallos)
+        assert recuperado["aviso_coherencia"] == resultado.aviso_coherencia
+
+    def test_recorte_none_evidencia_none_y_tuplas_vacias_sobreviven(self, tmp_path, monkeypatch):
+        resultado = self._resultado_con_conflicto(tmp_path, monkeypatch)
+
+        serializado = serializar_extraccion(resultado)
+        recuperado = deserializar_extraccion(json.loads(json.dumps(serializado)))
+
+        # composicion: regla dura #4, SIEMPRE None -- ni recorte ni evidencia
+        # ni alternativas ni lecturas (todas las tuplas llegan vacias).
+        composicion = recuperado["campos"]["composicion"]
+        assert composicion["valor"] is None
+        assert composicion["evidencia"] is None
+        propuesta_composicion = composicion["propuesta"]
+        assert propuesta_composicion is not None
+        assert propuesta_composicion["recorte"] is None
+        assert propuesta_composicion["evidencia"] is None
+        assert propuesta_composicion["alternativas"] == []
+        assert propuesta_composicion["lecturas"] == []
+
+        # talla: ninguna foto de este producto trae talla -- NO_FOTOGRAFIADO,
+        # mismo patron (recorte=None, evidencia=None, tuplas vacias).
+        talla = recuperado["campos"]["talla"]
+        assert talla["valor"] is None
+        assert talla["evidencia"] is None
+        propuesta_talla = talla["propuesta"]
+        assert propuesta_talla["recorte"] is None
+        assert propuesta_talla["alternativas"] == []
+        assert propuesta_talla["lecturas"] == []
