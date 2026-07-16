@@ -1,6 +1,12 @@
 # CLAUDE.md — RESELLERMASTER
 
-## v0.4 | Actualizado: 2026-07-14 | App local (Streamlit): fotos de reventa en masa → agrupar por producto → campos de Wallapop y Vinted → copiar-pegar.
+## v0.6 | Actualizado: 2026-07-16 | App local (Streamlit): fotos de reventa en masa → agrupar por producto → campos de Wallapop y Vinted → copiar-pegar.
+
+**FASE 2 CERRADA ✅ (extracción + ficha)** — Haiku 4.5 **medido con la key real** sobre las 33 fotos: **0 alucinaciones**, se abstiene en las 6 trampas ilegibles, **3,4 cts/producto** (0 al reprocesar). `ui/ficha.py` pinta cada campo **junto a su recorte** con badge 📷 leído / 🧠 inferido; Diego confirma → `fuente=diego` persistido. **423 tests verdes**, ruff limpio, la app arranca.
+
+**⚠️ EL GIRO (Diego, 2026-07-16) — las reglas de abajo NO están actualizadas todavía:** el default se **invirtió a `null` → MEJOR INTENTO**. La extracción **rellena todos los campos** con su mejor estimación, porque Diego revisa cada uno con el píxel delante: un hueco le cuesta teclearlo, un valor mal 2 s. **La procedencia sigue intacta** (`fuente=foto` exige que el valor esté en el recorte citado; `alta` solo por checksum de EAN). Esto **contradice `truth-loop.md` §A.2/§A.3** y ya provocó un falso positivo de `listing-audit`. **Hasta que `/optimize` lo escriba, lee `docs/seeds/fase-3-export.md` §"DECISIONES QUE CONTRADICEN LAS REGLAS" antes de auditar nada.**
+
+**SIGUIENTE PASO: FASE 3 — EL EXPORT, en sesión FRESCA con `docs/seeds/fase-3-export.md`.** Un panel de 4 agentes lo midió: **el export es el ~66% del tiempo de Diego (~285 s/producto vs ~90 s todo lo demás) y no existe.** Cuesta **0 €** (son tablas de mapeo, no IA). Descartado y medido, **no reabrir**: búsqueda por imagen/Lens (todas las APIs exigen URL pública; la caja ya se identifica por OCR gratis y la ropa genérica no tiene identidad única), visión en el agrupado (ahorra ~30 s por LOTE y auto-fusionar reintroduce el fallo catastrófico), composición por búsqueda externa (en moda de Wallapop el campo **no existe**, en Vinted es opcional).
 
 **FASE 1 CERRADA ✅** — Diego curó y confirmó su primer lote real. `schema`/`images`/`store`/`grouping`/`ui` hechos y auditados: **280 tests verdes**, ruff limpio, la app arranca. `core/grouping.py` es la **v5** ("el reloj puede PARTIR, pero no puede CONFIRMAR"): hueco temporal a **15 s**, cero fusiones sobre las 33 fotos reales del golden set (`tests/golden/truth.json`, 7 productos). La pantalla de curado es **`ui/curar.py`, la CREMALLERA CON PESTILLO** — la unidad es la **frontera**, no la foto, así que meter una foto del producto A en el grupo del B es **inexpresable**, no sólo desaconsejado (elegida por un panel adversarial de 21 agentes tras 4 `listing-audit` BLOQUEANTE contra el diseño anterior, `[INC-008]`).
 
@@ -55,12 +61,16 @@ Elección del proveedor de visión: **se decide MIDIENDO sobre las fotos reales,
 
 **Coste — MEDIDO sobre las 33 fotos reales (2026-07-14), no estimado.** El "≈1 ct/producto" que decía aquí antes **era falso**: sale de `LLMEngine.estimar_coste_lote` sobre el pipeline real (`core/extract.py` manda **un recorte por región de texto**, no una llamada por foto):
 
+**Recalculado el 2026-07-16** tras añadir la llamada de **síntesis** (1 por producto: 3 fotos generales + los textos detectados → commitea todos los campos + redacta título/descripción). Delta: **+7 llamadas, +4,4 cts el lote, +0,63 cts/producto** respecto a la tabla anterior (62 llamadas / 19,2 cts / 2,75 cts-producto).
+
 | | llamadas | coste |
 |---|---|---|
-| Lote entero (33 fotos, 7 productos) | 62 | **19,2 cts** |
-| Media por producto | 8,9 | **2,75 cts** |
-| Peor caso (producto 1, caja con texto denso) | 21 | **6,5 cts** |
-| Ropa (productos 3-7) | 3-10 | 0,9-3,1 cts |
+| Lote entero (33 fotos, 7 productos) | 69 | **23,6 cts** |
+| Media por producto | 9,9 | **3,4 cts** |
+| Peor caso (producto 1, caja con texto denso) | 22 | **7,1 cts** |
+| Ropa (productos 3-7) | 4-11 | 1,6-3,7 cts |
+
+**Medido de verdad con la API (no estimado):** el lote de recortes costó **14,5 cts / 62 llamadas** con `0` alucinaciones; el `lufthous` completo con síntesis, **0,95 cts** (y **0** al repetirlo: caché).
 
 Con **caché por hash de imagen** se paga **una sola vez**: reprocesar el mismo lote cuesta **0 €**. La caché **nunca se borra sin permiso** — cada entrada es dinero ya gastado.
 

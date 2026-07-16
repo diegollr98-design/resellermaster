@@ -37,4 +37,6 @@ Si el seed de una fase futura no existe, genéralo con la plantilla de abajo ant
 - **Nunca derivar el estado real del seed anterior** (`change-loop.md` §D). Antes de ejecutar una fase, comprueba el estado **contra el repo**: `git log`, el código, el último `/eval`. Los seeds mienten; el código no.
 
 ## Estado
-_Sin seeds todavía. Se generan en la sesión de planificación, una vez Diego apruebe el plan._
+- `fase-1.md`, `fase-1b.md` — **consumidos** (ingesta + agrupación + curado; Fase 1 cerrada).
+- `fase-2.md`, `fase-2-continuacion.md` — **consumidos** (las 3 costuras + extracción + `ui/ficha.py`; Fase 2 cerrada).
+- **`fase-3-export.md` — EL SIGUIENTE.** El export (66% del tiempo de Diego, coste 0 €). Incluye la sección **"DECISIONES DE DIEGO QUE CONTRADICEN LAS REGLAS ESCRITAS"**: léela antes de auditar nada, o marcarás como violación lo que está bien a propósito.
