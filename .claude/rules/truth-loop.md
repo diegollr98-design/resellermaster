@@ -21,8 +21,16 @@
 
 **Reglas duras:**
 1. **`fuente=foto` sin `evidencia` es un bug, no un dato.** Si el modelo dice "talla M" pero no puede señalar dónde lo ve → el campo es `inferido`, no `foto`.
-2. **Un campo `null` es un éxito, no un fallo.** Cuesta 5 segundos que Diego lo rellene. Un campo *plausible y falso* cuesta una devolución y una reseña de 2 estrellas. **Ante la duda: `null` + `confianza=baja`.**
-3. **`inferido` nunca se pega tal cual en un campo estructurado** (marca, talla, material, medidas). Puede vivir en la descripción libre, redactado como lo que es ("parece algodón"), nunca como un hecho.
+2. **El default es el MEJOR INTENTO, no `null`.** *(INVERTIDO el 2026-07-16 por decisión de Diego. Antes decía: "un campo null es un éxito; ante la duda, null".)* La extracción **rellena todos los campos** con su mejor estimación aunque no esté segura, **porque Diego revisa cada campo con su recorte delante antes de publicar**. En SU flujo la asimetría es **la contraria** a la que esta regla asumía: un campo vacío le cuesta **teclearlo entero**; un valor mal, **2 segundos** corregirlo. La regla vieja optimizaba para un Diego que NO mira; el real mira.
+
+   **Por qué esto NO es licencia para mentir — y por qué el conjunto inmutable sigue intacto.** `CLAUDE.md` prohíbe *"afirmar un atributo que no sea legible en una foto"*, y sigue vigente **porque la app no AFIRMA: PROPONE**. Todo valor propuesto llega con las tres cosas a la vez:
+   - **procedencia honesta** — `fuente="foto"` SÓLO si el valor está *contenido en el texto legible del recorte citado* (garantizado por un `if`, no por el prompt: `core/extract.py::_construir_campo_desde_sintesis`); si no, `inferido` + `confianza="baja"`;
+   - **el píxel a la vista** — el recorte, junto al campo, en `ui/ficha.py`;
+   - **un badge visible** — 📷 leído en foto vs 🧠 inferido — verifícalo.
+
+   **Quien AFIRMA es Diego**, al confirmar (`fuente="diego"`). **Esta regla depende de eso:** si algún día se publica un campo sin que él lo haya visto (un "confirmar todo" a ciegas, un export automático), la premisa se cae y hay que volver a `null`. La defensa no es el default: **es su ojo con el píxel delante.**
+
+3. **`inferido` SÍ puede pre-rellenar un campo estructurado, pero JAMÁS sin marcar.** *(Relajado el 2026-07-16. Antes: "nunca se pega tal cual en un campo estructurado".)* Un valor inferido se pre-rellena con badge 🧠 y `confianza="baja"` para que Diego lo corrija o lo confirme de un vistazo. Lo que sigue **PROHIBIDO**: que un `inferido` salga **sin badge**, con **confianza alta** (imposible por construcción: el `json_schema` de la síntesis sólo admite `media`/`baja`), o **sin que Diego lo vea** antes de publicar.
 4. Los campos de **estado** (nuevo / muy bueno / bueno / aceptable) son SIEMPRE `inferido` y **siempre los confirma Diego**. Es el campo que más devoluciones causa y ningún modelo lo puede afirmar por una foto.
 
 ## §B — Superficies sensibles (calibrado de ceremonia)
@@ -70,7 +78,13 @@ Diego revisa el lote antes de publicar. La UI debe hacer que ese repaso cueste *
 
 El precio **no es un atributo del producto**: es una observación del mercado. Por tanto:
 1. El precio sale de **comparables reales** (anuncios del mismo producto), cada uno con su **URL** y su **precio observado**.
-2. **Confirmación de que el comparable es el MISMO producto** — es la petición explícita de Diego: búsqueda por imagen y match visual, no match por texto del título. Un comparable que no matchea visualmente **no cuenta**.
+2. **Hay DOS niveles de comparable, y la ficha SIEMPRE dice cuál es.** *(Añadido el 2026-07-16 por decisión de Diego. Antes esta regla exigía match visual para TODO comparable, lo que dejaba la ropa genérica sin poder tasarse.)*
+   - **EL MISMO producto** — exige confirmar la identidad: **EAN o modelo legible** (determinista, gratis vía OCR) o match visual. Sólo con eso se puede decir *"el precio de este producto"*.
+   - **PARECIDOS (cohorte)** — para **ropa genérica usada, que NO TIENE identidad única en internet**: una sudadera gris usada no existe como "producto" en ningún catálogo, así que *"el mismo producto"* es una categoría que no aplica. Se buscan **por texto** (marca + tipo + talla) y se entrega **"mediana de N artículos parecidos"** con sus URLs a la vista. **Nunca** se etiqueta como "el precio de tu producto".
+
+   **Lo que NO cambia (conjunto inmutable):** *sin comparables reales citados, no hay número*. La mediana de parecidos **cita comparables reales y verificables** — por eso es honesta. Un número salido del LLM, no. La diferencia no es la precisión: es que **Diego puede abrir los 15 enlaces y comprobarlo**.
+
+   **Límite honesto que hay que decir en la UI:** los anuncios publican lo que la gente **PIDE**, no por cuánto **VENDIÓ** (los precios de venta no son públicos en Wallapop/Vinted). Así que ni la mediana ni ninguna API dan "el precio óptimo": dan **el precio que otros piden**. El óptimo lo dice el mercado (si no se vende en 2 semanas, se baja).
 3. Sin comparables suficientes (`n < k`, umbral a definir en el plan) → **`precio=None` + motivo**. Nunca un rango inventado.
 4. Lo que el pipeline entrega es el **conjunto de comparables + un rango observado**, y Diego decide. La app no fija precios: informa.
 
@@ -147,5 +161,6 @@ Dos leyes, heredadas y no negociables:
 ---
 
 ## Changelog
+- **v1.2** (2026-07-16) — **Decisiones de Diego tras usar la app con sus fotos reales.** (1) §A.2: el default se **INVIERTE** — `null` → **mejor intento**. La regla vieja optimizaba para un Diego que no mira la ficha; el real la mira campo a campo con el recorte al lado, así que un hueco le cuesta teclearlo y un valor mal 2 s. La defensa deja de ser el default y pasa a ser **procedencia honesta + el píxel a la vista + su ojo** — y la regla lo dice explícitamente: si algún día se publica sin que él lo vea, se vuelve a `null`. (2) §A.3: `inferido` puede pre-rellenar un campo estructurado, **siempre marcado** (badge 🧠 + `confianza=baja`). (3) §D.2: **dos niveles de comparable** — "el mismo producto" (exige EAN/modelo o match visual) vs **"parecidos"** (cohorte, para ropa genérica usada, que no tiene identidad única en internet). Lo inmutable no se toca: sin comparables reales citados, no hay número. Contexto medido que lo respalda: Haiku 4.5 con 0 alucinaciones sobre las 33 fotos, y un panel de 4 agentes que midió que el **export es el 66% del tiempo** y que la búsqueda por imagen no sirve aquí. Ver `docs/seeds/fase-3-export.md` y la bitácora v0.6.
 - **v1.1** (2026-07-14) — §E reescrita entera contra las **33 fotos reales** de Diego: el umbral (15 s), la zona segura (1-23 s) y el acantilado (24 s) son **medidos**, no supuestos; CLIP y OCR **descartados con dato** como clasificador de tipo de foto. Ya no son reglas a priori: `[INC-002]`…`[INC-009]` las ganaron. La regla nueva que más cara salió — *el default tiene que caer del lado barato de la asimetría, y hay que EJECUTARLO para saberlo* — vive en `decision-making.md` §16.
 - **v1.0** (2026-07-13) — creado con la infra. Sin incidentes todavía: todas las reglas de aquí eran **a priori**, derivadas de los modos de fallo de los otros repos de Diego.

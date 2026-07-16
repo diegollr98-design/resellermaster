@@ -31,7 +31,9 @@
 
 **v1 (gratis):** el motor no tasa — **construye la consulta**. `buscar(producto) -> {urls_busqueda: {wallapop, vinted}, terminos: str, precio: None}`. Diego abre el enlace, ve los comparables reales y fija el precio. La app **informa, no tasa**; y su criterio vale más que el de cualquier modelo.
 
-**v2 (si algún día se paga):** SerpAPI/Google Lens devuelve comparables con `{url, precio, similitud_visual}` y el motor propone un rango observado. Mismo contrato, mismo sitio.
+**v2 (decidida el 2026-07-16 — NO es Google Lens):** el motor **lee la búsqueda pública por TEXTO** de Wallapop/Vinted (marca+tipo+talla, **nunca por EAN**: Diego verificó que nadie lo pone en los anuncios), coge los primeros ~15 resultados y devuelve **mediana + rango + las URLs**, que pre-rellenan un precio **editable**. Etiquetado según `truth-loop.md` §D.2: *"mediana de N parecidos"*, nunca "el precio de tu producto". Sin `n≥5` → `precio=None` + motivo. Coste 0 €.
+
+> **Google Lens / búsqueda por imagen: DESCARTADA, no reabrir.** Motivo duro: **todas** las APIs de Lens exigen una **URL pública de la imagen** (no aceptan subida ni base64) — esta app es local y no tiene hosting; habría que subir las fotos de Diego a un tercero. Motivo de fondo: **hace falta justo donde no funciona**. Un producto de caja ya se identifica **gratis** por OCR (EAN con checksum + `Model:XXX`), así que basta texto; y una **sudadera gris usada no tiene identidad única en internet**, así que Lens tampoco la encuentra. Lo confirmaron por separado 4 agentes (2 diseños ciegos + 2 ataques) el 2026-07-16. Y `[INC-004]`: CLIP tampoco vale para el match visual (0.90 de similitud entre dos sudaderas DISTINTAS).
 
 En ambos casos: sin comparables suficientes → `precio=None` + motivo. **Nunca un número sin fuente.**
 
@@ -56,7 +58,12 @@ ingerir  →  agrupar  →  extraer  →  tasar  →  exportar
 Un bug en cualquier etapa hay que buscarlo en **las cinco** (`change-loop.md` §C3).
 
 ## Lo que NO hacemos (y por qué)
-- **No automatizamos la publicación.** Ni Selenium ni Playwright contra Wallapop/Vinted. Va contra sus términos y el riesgo es el baneo de la cuenta — que *es* el negocio. La app llega hasta "copiar y pegar en 2 clicks".
+- **No automatizamos la publicación.** Ni Selenium ni Playwright contra los FORMULARIOS de Wallapop/Vinted, ni una extensión que autorellene su DOM. Va contra sus términos y el riesgo es el baneo de la cuenta — que *es* el negocio. La app llega hasta "copiar y pegar en 2 clicks".
+
+  **LEER su búsqueda pública NO es lo mismo que PUBLICAR** *(distinción añadida el 2026-07-16 por decisión de Diego; antes esta regla se leía como una prohibición total y bloqueaba el precio por comparables).* Pedir la búsqueda pública para leer precios **está permitido**, con estas condiciones:
+  - **Volumen doméstico.** Son ~7 productos por lote y pocos lotes al mes: **menos peticiones que un humano navegando** en una sola sesión. A ese ritmo el riesgo de baneo por tasa es **despreciable** — lo juzgó Diego y es correcto. Si algún día el volumen sube en un orden de magnitud, esta condición se re-evalúa.
+  - **PROHIBIDAS las herramientas *stealth*/anti-detección** (navegadores con fingerprints rotatorios, proxies rotativos, `navigator.webdriver=undefined`). A este volumen **no hacen falta**, y meterlas convierte "mirar precios" en "evadir deliberadamente su protección anti-bot" — que sí es un problema, y contra la plataforma que *es* el negocio.
+  - **Nada de escribir.** Leer resultados públicos, sí. Tocar una cuenta, publicar, editar o mensajear: **jamás**.
 - **No corremos un VLM local.** Medido: RTX 3050 Laptop con **4 GB de VRAM** — un VLM que lea logos y etiquetas no entra. Pero eso **no** implica pagar una API: el OCR local en CPU cubre lo que un VLM haría, sin alucinar. Ver `[INC-001]`.
 - **No pagamos por identificar el producto (de momento).** No existe reverse image search gratuita (Bing Visual Search se retiró en ago-2025; Google Lens sólo vía SerpAPI, de pago). La app genera el **enlace de búsqueda** a Wallapop/Vinted y Diego ve los comparables reales con un click. Su criterio sobre el precio es mejor que el de cualquier modelo, y cuesta 0 €.
 - **No multi-usuario, no cloud, no auth.** Es una app local de un solo usuario. Cualquier propuesta que meta una capa de servidor tiene que justificar por qué.
