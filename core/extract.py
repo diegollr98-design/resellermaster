@@ -129,10 +129,15 @@ golden set (`tests/golden/legibilidad.json`) se enfrentan ASI:
      instruccion y devuelva un texto plausible de todos modos no puede
      colarlo: es una red de seguridad barata, no una excusa para no seguir
      instruyendo bien el prompt.
-  4. `composicion`/`material` -> SIEMPRE `None` (`_campo_composicion`).
-     Ninguna foto del golden set fotografia esa etiqueta -- no es una
-     limitacion del modelo, el dato no existe en ningun pixel. Es
-     estructuralmente imposible que esta funcion devuelva otra cosa.
+  4. `composicion`/`material` -- CAMPO ELIMINADO DE LA FICHA (Diego,
+     2026-07-17): solo aplicaba a ropa y "no es realmente importante" para
+     su flujo. Ademas de que ninguna foto del golden set fotografia la
+     etiqueta de composicion, el campo YA NO se pide en la sintesis
+     (`_CAMPOS_SINTESIS` ya no incluye "material") ni aparece en
+     `CAMPOS_PRODUCIDOS`/`ui/ficha.py`. `core/export.py::_campo_composicion`
+     sigue existiendo para Vinted (su enum de materiales SI es un campo
+     valido alli) pero ya nunca recibe un valor del pipeline -- degrada a
+     `valor=None`, Diego lo rellena a mano si quiere.
   5. Una foto de metro NUNCA produce una medida por su digitos: la ristra
      se descarta antes de llegar al VLM. Si ademas la foto se marca como
      candidata a metro, se hace UNA llamada VLM sobre la foto COMPLETA
@@ -196,7 +201,7 @@ clasificador de tipo de foto en este repo, `truth-loop.md` SS E, asi que se
 reparten con `_muestrear_fotos` igual que el muestreo de color, no se
 "eligen las de mas resolucion" de verdad) MAS la lista en texto de todo lo
 que el OCR/VLM YA detecto en los crops, y PROPONE un valor COMPROMETIDO
-para `marca`/`modelo`/`talla`/`color`/`estado`/`material`/`medidas`, ademas
+para `marca`/`modelo`/`talla`/`color`/`estado`/`medidas`, ademas
 de redactar `titulo`/`descripcion` (campos NUEVOS que no existian antes de
 este paso).
 
@@ -207,9 +212,11 @@ histograma de pixeles, sigue siendo mas fiable que una opinion sobre la
 foto general reescalada a 1568px, asi que la sintesis NUNCA pisa un valor
 que la agregacion ya resolvio con solidez (ni siquiera para "corroborar":
 esa via ya murio una vez, `[INC-010]`/`[INC-012]`, no se reintenta aqui).
-`ean` (unico camino a `confianza="alta"`, via checksum matematico) y
+`ean` (unico camino a `confianza="alta"`, via checksum matematico),
 `desperfectos` (regla dura #6, transcripcion literal de una nota
-manuscrita) quedan ESTRUCTURALMENTE fuera de la sintesis -- no estan en su
+manuscrita) y `composicion`/`material` (ELIMINADO de la ficha entera,
+Diego 2026-07-17: solo aplicaba a ropa y no aportaba valor a su flujo)
+quedan ESTRUCTURALMENTE fuera de la sintesis -- no estan en su
 `json_schema`, no hay ningun camino en este archivo por el que la sintesis
 pueda tocarlos.
 
@@ -227,7 +234,7 @@ la fuerza a "baja" en codigo, pase lo que diga el modelo.
 
 Lo que SI cambia respecto a `truth-loop.md` SS A.3 ("inferido nunca se pega
 tal cual en un campo estructurado"): un valor "inferido" AHORA SI se
-publica en `marca`/`talla`/`material`/`medidas`/`color`/`estado` -- ese es
+publica en `marca`/`talla`/`medidas`/`color`/`estado` -- ese es
 el pivote explicito de Diego para ESTE camino, y SOLO para el hueco que la
 agregacion determinista dejo vacio. Se publica siempre marcado
 `fuente="inferido"`, con su recorte de CONTEXTO si lo hay (nunca "el
@@ -258,7 +265,7 @@ import logging
 import re
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Literal, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 import numpy as np
 from PIL import Image, ImageDraw
@@ -584,7 +591,10 @@ CAMPOS_PRODUCIDOS: tuple[str, ...] = (
     "talla",
     "modelo",
     "ean",
-    "composicion",
+    # "composicion" ELIMINADO de la ficha (Diego, 2026-07-17): solo
+    # aplicaba a ropa y no aportaba valor a su flujo -- ver la regla
+    # dura #4 del docstring del modulo. Ya no se pide en la sintesis
+    # ni se produce nunca.
     "medidas",
     "color",
     "estado",
@@ -2943,3 +2953,201 @@ def _muestrear_fotos(fotos: Sequence[Path], k: int) -> list[Path]:
         return fotos
     indices = {round(i * (n - 1) / (k - 1)) for i in range(k)} if k > 1 else {0}
     return [fotos[i] for i in sorted(indices)]
+
+
+# ============================================================================
+# ETAPA 6 -- REDACCION DESDE CAMPOS CONFIRMADOS (2026-07-17, fix del bug de
+# Diego: "la descripcion no menciona la CREMALLERA ROTA")
+# ============================================================================
+# CAUSA RAIZ del bug: `_sintetizar_ficha` redacta `titulo`/`descripcion`
+# DURANTE LA EXTRACCION, a partir de lo que el modelo CREE ver en las fotos
+# -- ANTES de que Diego corrija nada. Si Diego luego cambia `marca`
+# ("Umbro" -> "Reebok") o rellena `desperfectos` ("CREMALLERA ROTA", leido
+# de un papel manuscrito, `fuente="foto"`), el texto de venta NUNCA se
+# actualizaba: `ui/ficha.py::_accion_confirmar_ficha` sobreescribia todos
+# los DEMAS campos con lo que Diego dejo en pantalla, pero titulo y
+# descripcion se colaban tal cual, describiendo el producto PRE-correccion.
+#
+# LA LEY DE ESTE MODULO ("EL EXTRACTOR NO AFIRMA, PROPONE") no se rompe con
+# este fix -- se REFUERZA: `redactar_desde_campos_confirmados` es una
+# llamada de puro TEXTO (via `LLMEngine.consultar_texto`, que ni siquiera
+# TIENE un parametro `imagenes` en su firma -- no hay donde colar una foto)
+# cuyo UNICO input son los VALORES YA CONFIRMADOS (marca, talla, color,
+# estado, desperfectos, categoria...), nunca las fotos ni las propuestas
+# crudas del modelo. Es la garantia estructural, no una promesa de prompt,
+# de que el texto de venta JAMAS puede mencionar una marca que Diego no
+# confirmo (`product.md` SS"Reglas de contenido": `MENTIONS_OTHER_BRAND`
+# OCULTA el anuncio en Vinted) ni inventar un dato que el no tecleo -- si
+# el dato no esta en el input, no existe para el modelo, punto.
+#
+# Quien orquesta esta llamada (`ui/ficha.py::_accion_confirmar_ficha`) debe
+# invocarla EN EL MOMENTO DE CONFIRMAR, con los campos que Diego acaba de
+# dejar en pantalla -- nunca durante la extraccion. Un titulo/descripcion
+# que Diego edito A MANO (difiere de lo que la extraccion propuso) NUNCA se
+# pisa: eso lo decide quien llama, comparando contra el valor previo, este
+# modulo solo redacta cuando se le pide.
+#
+# `desperfectos` es OBLIGATORIO en la descripcion cuando tiene valor -- es
+# el campo que evita la devolucion (el motivo entero de este fix), y el
+# prompt lo instruye con dureza, sin margen de "suavizarlo hasta que no se
+# note".
+
+VERSION_PROMPT_REDACCION = "extract-redaccion-v1"
+
+# Orden de presentacion de los campos en el prompt -- SOLO campos de
+# atributo (nunca titulo/descripcion, que es lo que este paso REDACTA, ni
+# `ean`, que no aporta nada a un texto de venta legible). `desperfectos` va
+# el ultimo A PROPOSITO: es el campo con la instruccion mas dura del
+# prompt, y quedarse el ultimo en la lista reduce que se pierda entre los
+# demas.
+_CAMPOS_REDACCION_ORDEN: tuple[str, ...] = (
+    "categoria", "marca", "modelo", "talla", "color", "estado",
+    "composicion", "medidas", "desperfectos",
+)
+
+_NOMBRE_CAMPO_LEGIBLE: dict[str, str] = {
+    "categoria": "categoria",
+    "marca": "marca",
+    "modelo": "modelo/referencia",
+    "talla": "talla",
+    "color": "color",
+    "estado": "estado de conservacion",
+    "composicion": "material/composicion",
+    "medidas": "medidas",
+    "desperfectos": "DESPERFECTOS (nota manuscrita del vendedor)",
+}
+
+PROMPT_REDACCION_FICHA = """Vas a redactar el TITULO y la DESCRIPCION de venta
+de UN producto de segunda mano, para publicarlos en Wallapop y Vinted.
+
+NO has visto ninguna foto de este producto. Tu UNICA fuente de informacion
+son estos datos, ya confirmados por el vendedor (Diego):
+
+{campos_texto}
+
+REGLAS DURAS -- son invariantes, no sugerencias:
+  1. NO menciones NINGUNA marca que no sea EXACTAMENTE la del campo "marca"
+     de la lista de arriba. Si "marca" no aparece en la lista, NO
+     menciones ninguna marca (ni la insinues, ni digas "de marca
+     reconocida"). Mencionar una marca ajena OCULTA el anuncio en Vinted
+     -- es la regla mas importante de este prompt.
+  2. NO inventes NINGUN dato (talla, color, material, medida, modelo,
+     estado, defecto) que no este LITERALMENTE en la lista de arriba. Si
+     un campo no aparece en la lista, ese dato NO EXISTE para ti -- no lo
+     menciones, no lo insinues, no lo "completes a ojo".
+  3. Si en la lista aparece "DESPERFECTOS", DEBES mencionarlo EXPLICITA y
+     CLARAMENTE en la descripcion, con esas mismas palabras o muy
+     parecidas -- es la informacion que evita una devolucion. Prohibido
+     omitirlo, minimizarlo o redactarlo de forma que quede irreconocible.
+  4. Nada de emails, enlaces, MAYUSCULAS excesivas, ristras de simbolos o
+     emojis repetidos. Español, tono honesto de segunda mano (ni de venta
+     agresiva ni alarmista).
+
+FORMATO:
+  - titulo: maximo 100 caracteres, corto y claro (incluye marca+tipo de
+    producto si los tienes; nunca vacio).
+  - descripcion: maximo 600 caracteres, honesta sobre lo que hay en la
+    lista (incluido cualquier desperfecto, regla 3).
+
+Responde SOLO el JSON pedido."""
+
+
+def _construir_prompt_redaccion(texto_campos: str) -> str:
+    """Funcion separada por el mismo motivo que `_construir_prompt_sintesis`
+    (C6, `LLMEngine._clave_cache` hashea el TEXTO REAL del prompt): quien
+    estime coste y quien llame de verdad deben construir el prompt
+    IDENTICO para compartir clave de cache."""
+    return PROMPT_REDACCION_FICHA.format(campos_texto=texto_campos)
+
+
+ESQUEMA_REDACCION_FICHA: dict = {
+    "type": "object",
+    "properties": {
+        "titulo": {"type": "string"},
+        "descripcion": {"type": "string"},
+    },
+    "required": ["titulo", "descripcion"],
+    "additionalProperties": False,
+}
+
+
+def _formatear_campos_para_redaccion(campos_confirmados: Mapping[str, Any]) -> str:
+    """`campos_confirmados` es un dict PLANO `nombre_campo -> valor` (texto
+    o `None`) -- NO la estructura `Campo`/`Propuesta` completa: quien llama
+    (`ui/ficha.py`) ya extrajo `.valor` de cada campo confirmado antes de
+    pasarlo aqui, precisamente para que este modulo no tenga ni la
+    TENTACION de leer una `evidencia` o una `propuesta` que apunte a una
+    foto. Los campos ausentes o vacios se OMITEN de la lista -- para el
+    modelo, "ausente en la lista" y "no existe" son la misma cosa (regla
+    dura #2 del prompt)."""
+    lineas: list[str] = []
+    for campo in _CAMPOS_REDACCION_ORDEN:
+        valor = campos_confirmados.get(campo)
+        if valor is None:
+            continue
+        texto = str(valor).strip()
+        if not texto:
+            continue
+        lineas.append(f"- {_NOMBRE_CAMPO_LEGIBLE.get(campo, campo)}: {texto}")
+    if not lineas:
+        return "(el vendedor aun no ha confirmado ningun dato de este producto)"
+    return "\n".join(lineas)
+
+
+def redactar_desde_campos_confirmados(
+    campos_confirmados: Mapping[str, Any],
+    motor: LLMEngine,
+    producto_id: str | None = None,
+) -> tuple[str, str]:
+    """Redacta `(titulo, descripcion)` a partir de los campos YA
+    CONFIRMADOS por Diego -- CERO fotos, CERO propuestas del modelo, cero
+    lecturas de OCR/VLM. Es LA LEY de este modulo aplicada a la redaccion:
+    el extractor no afirma nada que no pueda respaldar, y aqui lo que se
+    "afirma" en prosa es exactamente lo que Diego ya afirmo en los campos
+    estructurados -- ni una palabra mas.
+
+    `campos_confirmados`: dict PLANO `nombre_campo -> valor` (ver
+    `_formatear_campos_para_redaccion`). NUNCA se le pasan imagenes: la
+    llamada usa `LLMEngine.consultar_texto`, que estructuralmente no
+    acepta ninguna (no tiene parametro `imagenes`) -- la garantia
+    anti-marca-ajena no depende de que quien llame "se acuerde" de no
+    mandar fotos, esta en la firma del metodo que se usa.
+
+    Fallo tecnico (red, rate limit, sin API key, JSON invalido): se
+    PROPAGA (`LLMLlamadaFallidaError`/`ApiKeyFaltanteError`/
+    `RespuestaVLMInvalidaError`) -- NUNCA devuelve un texto plausible de
+    repuesto. Quien llama (`ui/ficha.py`) debe capturarlo y avisar a
+    Diego, nunca confirmar en silencio con el texto viejo (describiria el
+    producto PRE-correccion, que es exactamente el bug que esto arregla).
+    """
+    texto_campos = _formatear_campos_para_redaccion(campos_confirmados)
+    prompt = _construir_prompt_redaccion(texto_campos)
+    resultado = motor.consultar_texto(
+        prompt,
+        ESQUEMA_REDACCION_FICHA,
+        version_prompt=VERSION_PROMPT_REDACCION,
+        producto_id=producto_id,
+    )
+    datos = resultado.datos
+    if "titulo" not in datos or "descripcion" not in datos:
+        raise RespuestaVLMInvalidaError(f"redaccion: faltan claves en la respuesta: {datos!r}")
+
+    titulo = str(datos["titulo"]).strip()
+    descripcion = str(datos["descripcion"]).strip()
+    if not titulo or not descripcion:
+        raise RespuestaVLMInvalidaError(
+            f"redaccion: titulo o descripcion vacios (titulo={titulo!r}, descripcion={descripcion!r})"
+        )
+    return titulo, descripcion
+
+
+def construir_solicitud_redaccion(
+    campos_confirmados: Mapping[str, Any],
+) -> tuple[str, str]:
+    """`(prompt, version_prompt)` de la llamada de redaccion, SIN llamar a
+    nadie -- para que quien quiera estimar coste ANTES de confirmar (si
+    algun dia hace falta un gate explicito aqui, `decision-making.md` §15)
+    pueda construir la MISMA solicitud que `redactar_desde_campos_confirmados`
+    sin gastar. No hay imagenes que reportar: siempre es una llamada de
+    texto puro."""
+    return _construir_prompt_redaccion(_formatear_campos_para_redaccion(campos_confirmados)), VERSION_PROMPT_REDACCION

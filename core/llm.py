@@ -468,10 +468,56 @@ class LLMEngine:
         `LLMLlamadaFallidaError` (ver docstring del modulo). Si falta la
         clave de API y hace falta llamar de verdad, se lanza
         `ApiKeyFaltanteError`.
+
+        `imagenes` vacio esta PROHIBIDO aqui a proposito (invariante viejo,
+        cubierto por `test_estimacion_rechaza_solicitud_sin_imagenes` y
+        equivalentes): quien quiera una llamada de puro TEXTO, SIN ninguna
+        imagen, debe usar `consultar_texto` — un metodo DISTINTO, sin
+        parametro `imagenes` en su firma, para que sea estructuralmente
+        imposible colar una foto en una llamada que se disenó para no
+        verla (ver `core/extract.py::redactar_desde_campos_confirmados`,
+        la garantia anti-marca-ajena de la redaccion de titulo/descripcion:
+        `truth-loop.md`/`product.md` SS7, `MENTIONS_OTHER_BRAND` oculta el
+        anuncio en Vinted).
         """
         if not imagenes:
-            raise ValueError("consultar() requiere al menos una imagen")
+            raise ValueError(
+                "consultar() requiere al menos una imagen -- usa consultar_texto() "
+                "para una llamada de puro texto, sin imagenes"
+            )
+        return self._consultar_interno(imagenes, prompt, json_schema, version_prompt, producto_id)
 
+    def consultar_texto(
+        self,
+        prompt: str,
+        json_schema: dict[str, Any],
+        version_prompt: str = VERSION_PROMPT_DEFECTO,
+        producto_id: str | None = None,
+    ) -> ResultadoLLM:
+        """Variante de `consultar` SIN imagenes -- para llamadas de puro
+        TEXTO (hoy, una sola: `core/extract.py::redactar_desde_campos_confirmados`,
+        que redacta titulo/descripcion a partir de los campos YA
+        CONFIRMADOS por Diego, nunca de una foto).
+
+        La garantia no es una convencion de llamada ("pasa `imagenes=[]`"):
+        es que este metodo NO TIENE parametro `imagenes` en absoluto. Quien
+        quiera colar una foto aqui no puede — no hay donde ponerla. Mismo
+        cache, mismo conteo de coste, mismos errores ruidosos que
+        `consultar`.
+        """
+        return self._consultar_interno((), prompt, json_schema, version_prompt, producto_id)
+
+    def _consultar_interno(
+        self,
+        imagenes: Sequence[Imagen],
+        prompt: str,
+        json_schema: dict[str, Any],
+        version_prompt: str,
+        producto_id: str | None,
+    ) -> ResultadoLLM:
+        """Cuerpo real compartido por `consultar` (>=1 imagen, exigido por
+        su guarda) y `consultar_texto` (0 imagenes, exigido por su firma).
+        Nadie mas debe llamar a esto directamente."""
         for imagen in imagenes:
             if len(imagen.bytes_) > UMBRAL_BYTES_AVISO_FOTO_COMPLETA:
                 logger.warning(
