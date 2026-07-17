@@ -193,6 +193,21 @@ def test_estimacion_rechaza_solicitud_sin_imagenes(tmp_path):
         motor.estimar_coste_lote([([], "prompt", "v1")])
 
 
+def test_estimar_coste_texto_lote_no_subestima_lo_medido_con_la_api_real(tmp_path):
+    """`[listing-audit] MEDIA, 2026-07-17` (FIX 4): la llamada REAL de
+    redacción (`core/extract.py::PROMPT_REDACCION_FICHA` + su
+    `json_schema`) mide **753 tokens de entrada / 98 de salida** contra la
+    API real -- el comentario viejo ("~450 típicos") era FALSO (ignoraba
+    los tokens del `json_schema`, facturados como tool). El estimador
+    nunca puede quedar por debajo de lo medido, o la costura del coste
+    (`CLAUDE.md`) subestima el gasto real por diseño, no por accidente."""
+    motor = LLMEngine(cache_dir=tmp_path / "cache")
+    estimacion = motor.estimar_coste_texto_lote([("prompt de prueba, texto puro", "v1")])
+    llamada = estimacion.llamadas[0]
+    assert llamada.tokens_entrada_estimados >= 753
+    assert llamada.tokens_salida_estimados >= 98
+
+
 # ---------------------------------------------------------------------------
 # Error de la API: se propaga, nunca se tragua ni se rellena con un valor
 # plausible.

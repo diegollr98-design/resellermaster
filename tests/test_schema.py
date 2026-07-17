@@ -479,6 +479,26 @@ class TestValidarTexto:
         violaciones = validar_texto(texto, "vinted", marca_seleccionada=None)
         assert "MENTIONS_OTHER_BRAND" not in _codigos(violaciones)
 
+    def test_sin_marca_seleccionada_SI_caza_marca_ajena(self):
+        """`[listing-audit] BLOQUEANTE, 2026-07-17`: `marca_seleccionada=None`
+        (o `""`) es EXACTAMENTE el caso donde ninguna marca esta exenta --
+        antes el `if marca_seleccionada:` que envolvia el chequeo lo
+        DESACTIVABA por completo ahi mismo. Reproducido antes del fix
+        (devolvia `[]`); ahora debe cazarlo."""
+        texto = "Mancha pequeña en el logo de Nike, resto en muy buen estado."
+        violaciones = validar_texto(texto, "vinted", marca_seleccionada=None, campo="description")
+        assert "MENTIONS_OTHER_BRAND" in _codigos(violaciones)
+
+    def test_marca_seleccionada_cadena_vacia_SI_caza_marca_ajena(self):
+        texto = "Mancha pequeña en el logo de Nike, resto en muy buen estado."
+        violaciones = validar_texto(texto, "vinted", marca_seleccionada="", campo="description")
+        assert "MENTIONS_OTHER_BRAND" in _codigos(violaciones)
+
+    def test_marca_seleccionada_sin_marca_SI_caza_marca_ajena(self):
+        texto = "Mancha pequeña en el logo de Nike, resto en muy buen estado."
+        violaciones = validar_texto(texto, "vinted", marca_seleccionada="Sin marca", campo="description")
+        assert "MENTIONS_OTHER_BRAND" in _codigos(violaciones)
+
     def test_plataforma_desconocida_lanza(self):
         with pytest.raises(ValueError):
             validar_texto("texto valido de sobra para pasar el minimo", "ebay", None)  # type: ignore[arg-type]

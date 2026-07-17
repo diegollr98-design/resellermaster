@@ -30,6 +30,12 @@ Bloqueos duros, sin flag de escape (`decision-making.md` §12):
    `New Age`) NO lo disparan. Un payload SIN violaciones no significa
    "sin marca ajena" -- por eso `construir_payload` añade SIEMPRE un aviso
    recordándolo (nunca confíes en el silencio de este filtro).
+   `[listing-audit] BLOQUEANTE, 2026-07-17` (FIX 1): `marca=None`/`""`
+   solía SALTARSE este chequeo entero (`schema.validar_texto` tenía un
+   `if marca_seleccionada:` que desactivaba `_detectar_otra_marca` cuando
+   NO había marca -- justo el caso donde ninguna marca está exenta).
+   Corregido en `schema._detectar_otra_marca`: `None`/`""` ya no eximen
+   nada, así que "Sin marca" mencionando "Nike" en la descripción BLOQUEA.
 4. La categoría (`campos["categoria"]["valor"]`) está ausente o no es una
    `CategoriaTipo` válida — sin ella no se puede elegir la tabla de
    literales de estado correcta (moda vs resto en Wallapop; electrónica vs
@@ -345,6 +351,34 @@ def _avisos_obligatorios_sin_cubrir(plataforma: str) -> list[str]:
 
 
 # ============================================================================
+# Rastro de procedencia: campos publicados que Diego NO revisó con el píxel
+# delante. `[listing-audit] BLOQUEANTE, 2026-07-17` (FIX 3): la confirmación
+# en bloque (`ui/ficha.py::_construir_confirmado`, `modo_bloque=True`)
+# preserva `fuente="inferido"` en los campos que Diego no tocó -- el rastro
+# existe en los datos, pero el export nunca lo miraba (`grep -c fuente
+# core/export.py` daba 0). Sin esto, la promesa de `truth-loop.md` §A.2
+# ("un 'confirmar todo' a ciegas tumbaría la premisa del giro null->mejor-
+# intento") era falsa: el export no dejaba ver qué se aceptó sin mirar.
+# No bloquea -- Diego ELIGIÓ poder confirmar en bloque -- pero tiene que
+# VERSE, o el rastro no sirve de nada.
+# ============================================================================
+
+
+def _avisos_procedencia_no_revisada(campos: dict[str, Any]) -> list[str]:
+    nombres = sorted(
+        nombre
+        for nombre, datos in campos.items()
+        if isinstance(datos, dict) and datos.get("fuente") == "inferido"
+    )
+    if not nombres:
+        return []
+    return [
+        f"{len(nombres)} campo(s) se publican sin que los hayas revisado tú "
+        f"(confirmados en bloque, fuente='inferido'): {', '.join(nombres)}."
+    ]
+
+
+# ============================================================================
 # Fotos: orden + límite de la plataforma (core/images.py, ya existe)
 # ============================================================================
 
@@ -432,6 +466,8 @@ def construir_payload(
         "el filtro de marca ajena en título/descripción es best-effort sobre "
         "~31 marcas conocidas (no una lista cerrada) -- repasa el texto tú mismo."
     )
+
+    avisos.extend(_avisos_procedencia_no_revisada(campos))
 
     campo_marca = _campo_marca(campos, plataforma, avisos)
     campo_talla = _campo_talla(campos, plataforma, avisos)

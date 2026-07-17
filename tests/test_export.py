@@ -129,6 +129,30 @@ def test_marca_ajena_en_descripcion_bloquea():
     assert any("descripci" in v.lower() for v in excinfo.value.violaciones)
 
 
+def test_marca_ausente_y_marca_ajena_en_descripcion_bloquea():
+    """`[listing-audit] BLOQUEANTE, 2026-07-17` (FIX 1): `marca=None` (nunca
+    se confirmó) + descripción con marca ajena tenía que BLOQUEAR y hoy
+    exportaba -- el sanitizador se saltaba el chequeo de marca ajena entero
+    cuando no había marca seleccionada (`schema._detectar_otra_marca`,
+    `if marca_seleccionada:`). Reproducido y confirmado antes del fix."""
+    producto = _producto(
+        marca=None,
+        descripcion="Mancha pequeña en el logo de Nike, resto en buen estado.",
+    )
+    with pytest.raises(ExportBloqueadoError) as excinfo:
+        construir_payload(producto, _FOTOS_POR_ID, "vinted")
+    assert any("descripci" in v.lower() for v in excinfo.value.violaciones)
+
+
+def test_marca_cadena_vacia_y_marca_ajena_en_descripcion_bloquea():
+    producto = _producto(
+        marca="",
+        descripcion="Mancha pequeña en el logo de Nike, resto en buen estado.",
+    )
+    with pytest.raises(ExportBloqueadoError):
+        construir_payload(producto, _FOTOS_POR_ID, "vinted")
+
+
 def test_email_en_descripcion_bloquea():
     producto = _producto(descripcion="Contacta conmigo en diego@ejemplo.com para más info.")
     with pytest.raises(ExportBloqueadoError) as excinfo:
@@ -339,6 +363,32 @@ def test_aviso_de_filtro_de_marca_best_effort_siempre_presente():
     producto = _producto(marca="Lufthous")  # marca real del golden set, no en la heurística
     payload = construir_payload(producto, _FOTOS_POR_ID, "vinted")
     assert any("best-effort" in a.lower() for a in payload.avisos)
+
+
+# ============================================================================
+# Rastro de procedencia (FIX 3, `[listing-audit] BLOQUEANTE, 2026-07-17`):
+# un campo confirmado EN BLOQUE que Diego no tocó preserva
+# `fuente="inferido"` (`ui/ficha.py::_construir_confirmado`,
+# `modo_bloque=True`). El export tiene que dejarlo VER en `payload.avisos`
+# -- si no, la promesa de `truth-loop.md` §A.2 sobre "confirmar todo" es
+# falsa (`grep -c fuente core/export.py` daba 0 antes de este fix).
+# ============================================================================
+
+
+def test_campo_inferido_en_ficha_confirmada_aparece_en_avisos():
+    producto = _producto(color="gris")
+    producto["campos"]["campos"]["color"] = {
+        **producto["campos"]["campos"]["color"],
+        "fuente": "inferido",
+    }
+    payload = construir_payload(producto, _FOTOS_POR_ID, "vinted")
+    assert any("color" in a and "inferido" in a for a in payload.avisos)
+
+
+def test_sin_campos_inferidos_no_anade_aviso_de_procedencia():
+    producto = _producto()  # todos con fuente="diego" (helper `_campo`)
+    payload = construir_payload(producto, _FOTOS_POR_ID, "vinted")
+    assert not any("fuente='inferido'" in a for a in payload.avisos)
 
 
 # ============================================================================

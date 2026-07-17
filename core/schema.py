@@ -750,9 +750,17 @@ def _palabra_demasiado_larga(texto: str) -> str | None:
     return None
 
 
-def _detectar_otra_marca(texto: str, marca_seleccionada: str) -> str | None:
+def _detectar_otra_marca(texto: str, marca_seleccionada: str | None) -> str | None:
+    """`marca_seleccionada=None`/`""` NO exime nada -- `[listing-audit]
+    BLOQUEANTE, 2026-07-17`: antes esta funcion (via el `if
+    marca_seleccionada:` que la envolvia en `validar_texto`) se saltaba
+    ENTERA el chequeo cuando no habia marca confirmada, que es EXACTAMENTE
+    el caso donde ninguna marca esta exenta -- "Sin marca"/`None` no
+    coincide con ningun nombre de `_MARCAS_COMUNES_HEURISTICA`, asi que
+    normalizar a cadena vacia hace que CUALQUIER marca detectada cuente
+    como ajena, sin necesitar un caso especial en el llamador."""
     texto_normalizado = f" {texto.lower()} "
-    marca_normalizada = marca_seleccionada.strip().lower()
+    marca_normalizada = (marca_seleccionada or "").strip().lower()
     for marca in _MARCAS_COMUNES_HEURISTICA:
         if marca == marca_normalizada:
             continue
@@ -833,16 +841,23 @@ def validar_texto(
             )
         )
 
-    if marca_seleccionada:
-        otra_marca = _detectar_otra_marca(texto, marca_seleccionada)
-        if otra_marca is not None:
-            violaciones.append(
-                Violacion(
-                    "MENTIONS_OTHER_BRAND",
-                    f"Menciona '{otra_marca}', distinta de la marca seleccionada "
-                    f"('{marca_seleccionada}').",
-                )
+    # `[listing-audit] BLOQUEANTE, 2026-07-17`: se llama SIEMPRE, tambien con
+    # `marca_seleccionada=None`/`""` -- ese es justo el caso donde NINGUNA
+    # marca esta exenta (un producto "Sin marca" que menciona "Nike" en la
+    # descripcion es la mentira mas barata de colar). El guard `if
+    # marca_seleccionada:` que habia aqui SALTABA el chequeo entero
+    # exactamente cuando mas falta hacia -- reproducido y confirmado antes
+    # de este fix.
+    otra_marca = _detectar_otra_marca(texto, marca_seleccionada)
+    if otra_marca is not None:
+        marca_mostrar = marca_seleccionada if marca_seleccionada else "(ninguna confirmada)"
+        violaciones.append(
+            Violacion(
+                "MENTIONS_OTHER_BRAND",
+                f"Menciona '{otra_marca}', distinta de la marca seleccionada "
+                f"('{marca_mostrar}').",
             )
+        )
 
     return violaciones
 

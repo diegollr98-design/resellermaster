@@ -3032,6 +3032,10 @@ REGLAS DURAS -- son invariantes, no sugerencias:
      CLARAMENTE en la descripcion, con esas mismas palabras o muy
      parecidas -- es la informacion que evita una devolucion. Prohibido
      omitirlo, minimizarlo o redactarlo de forma que quede irreconocible.
+     Si el texto del desperfecto nombra una marca ajena (p.ej. "mancha en
+     el logo de Nike"), la regla 1 GANA: reformula el defecto SIN esa
+     marca ("mancha en el logo delantero") -- el defecto se describe
+     igual de claro, sin la marca.
   4. Nada de emails, enlaces, MAYUSCULAS excesivas, ristras de simbolos o
      emojis repetidos. Español, tono honesto de segunda mano (ni de venta
      agresiva ni alarmista).
@@ -3051,6 +3055,80 @@ def _construir_prompt_redaccion(texto_campos: str) -> str:
     estime coste y quien llame de verdad deben construir el prompt
     IDENTICO para compartir clave de cache."""
     return PROMPT_REDACCION_FICHA.format(campos_texto=texto_campos)
+
+
+# ----------------------------------------------------------------------------
+# `[listing-audit] ALTA, 2026-07-17` (`[INC-010]`, "pedir no es verificar"):
+# la regla 3 del prompt EXIGE mencionar el desperfecto, pero nada comprobaba
+# que el modelo obedeciera -- una descripcion que lo omitiera se confirmaba y
+# persistia sin aviso. Es el bug original de Diego ("la descripcion no
+# menciona la CREMALLERA ROTA") reintroducido por otra puerta.
+#
+# La comprobacion es DETERMINISTA (solapamiento de palabras significativas),
+# nunca otra llamada al LLM -- verificar con el mismo tipo de sospechoso que
+# genero el texto es el fallo de `[INC-010]` repetido. Si no hay solapamiento
+# suficiente, se ANEXA el literal tal cual: es la reparacion mas simple que
+# es SIEMPRE correcta (el texto del desperfecto es justo lo que Diego
+# confirmo a mano), preferida a bloquear el confirmado porque no depende de
+# reintentar la llamada al modelo.
+# ----------------------------------------------------------------------------
+
+_STOPWORDS_DESPERFECTOS: frozenset[str] = frozenset(
+    {
+        "de", "la", "el", "en", "con", "un", "una", "unos", "unas", "los",
+        "las", "y", "a", "por", "que", "se", "del", "al", "lo", "su", "sus",
+        "es", "muy", "esta", "este", "sin", "hay", "tiene", "the",
+    }
+)
+
+
+def _palabras_significativas(texto: str) -> set[str]:
+    """Palabras de >=3 letras en minuscula, sin puntuacion ni stopwords
+    triviales -- SOLO para medir solapamiento, nunca para decidir contenido
+    (la unica fuente de verdad del defecto sigue siendo el texto tal cual que
+    Diego confirmo en el campo `desperfectos`)."""
+    palabras = re.findall(r"[a-záéíóúñü]+", texto.lower())
+    return {p for p in palabras if len(p) >= 3 and p not in _STOPWORDS_DESPERFECTOS}
+
+
+def _descripcion_menciona_desperfecto(descripcion: str, desperfecto: str) -> bool:
+    """`True` si `descripcion` recoge al menos la MITAD de las palabras
+    significativas de `desperfecto` (umbral bajo a proposito: una redaccion
+    honesta puede reformular -- "cremallera rota" -> "la cremallera no
+    cierra bien" -- lo que importa es que el defecto SIGA PRESENTE, no que
+    sea una cita literal). Si el desperfecto no tiene ninguna palabra
+    significativa (texto trivial/vacio de contenido), no hay nada que
+    verificar."""
+    significativas = _palabras_significativas(desperfecto)
+    if not significativas:
+        return True
+    presentes = _palabras_significativas(descripcion)
+    coincidencias = significativas & presentes
+    return len(coincidencias) >= max(1, (len(significativas) + 1) // 2)
+
+
+def _asegurar_desperfecto_en_descripcion(
+    descripcion: str, campos_confirmados: Mapping[str, Any], producto_id: str | None
+) -> str:
+    """Si `campos_confirmados["desperfectos"]` tiene valor y `descripcion`
+    NO lo menciona (heuristica determinista de arriba), anexa el literal.
+    Nunca se persiste una descripcion que omite un desperfecto que Diego
+    confirmo -- es el campo que evita la devolucion."""
+    desperfecto = campos_confirmados.get("desperfectos")
+    if desperfecto is None:
+        return descripcion
+    texto_desperfecto = str(desperfecto).strip()
+    if not texto_desperfecto:
+        return descripcion
+    if _descripcion_menciona_desperfecto(descripcion, texto_desperfecto):
+        return descripcion
+    logger.warning(
+        "redactar_desde_campos_confirmados (producto=%s): la descripcion "
+        "generada NO mencionaba el desperfecto confirmado (%r) -- se anexo "
+        "el literal ([INC-010], 'pedir no es verificar').",
+        producto_id, texto_desperfecto,
+    )
+    return f"{descripcion}\n\nDESPERFECTOS: {texto_desperfecto}"
 
 
 ESQUEMA_REDACCION_FICHA: dict = {
@@ -3131,6 +3209,7 @@ def redactar_desde_campos_confirmados(
         raise RespuestaVLMInvalidaError(
             f"redaccion: titulo o descripcion vacios (titulo={titulo!r}, descripcion={descripcion!r})"
         )
+    descripcion = _asegurar_desperfecto_en_descripcion(descripcion, campos_confirmados, producto_id)
     return titulo, descripcion
 
 

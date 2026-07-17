@@ -38,6 +38,7 @@ Estructura:
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 import pytest
@@ -2133,6 +2134,47 @@ class TestRedactarDesdeCamposConfirmados:
         motor.respuesta_cruda = {"titulo": "   ", "descripcion": "algo"}
         with pytest.raises(RespuestaVLMInvalidaError):
             redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+
+    # ------------------------------------------------------------------
+    # `[listing-audit] ALTA, 2026-07-17` (`[INC-010]`, "pedir no es
+    # verificar"): la regla 3 del prompt EXIGE mencionar el desperfecto,
+    # pero nada comprobaba que el modelo obedeciera. Verificacion
+    # DETERMINISTA (solapamiento de palabras), nunca otra llamada al LLM.
+    # ------------------------------------------------------------------
+
+    def test_desperfecto_no_mencionado_se_anexa_y_avisa_ruidoso(self, caplog):
+        motor = _MotorTextoFake(
+            titulo="Sudadera Reebok",
+            descripcion="Sudadera en buen estado general, apenas usada.",
+        )
+        with caplog.at_level(logging.WARNING):
+            _, descripcion = redactar_desde_campos_confirmados(
+                {"marca": "Reebok", "desperfectos": "CREMALLERA ROTA en la zona delantera"},
+                motor,
+            )
+        # Nunca se persiste una descripcion que omite el desperfecto confirmado.
+        assert "CREMALLERA ROTA" in descripcion
+        assert any("no mencionaba el desperfecto" in r.message.lower() for r in caplog.records)
+
+    def test_desperfecto_SI_mencionado_pasa_limpio_sin_ruido(self, caplog):
+        motor = _MotorTextoFake(
+            titulo="Sudadera Reebok",
+            descripcion="Sudadera con la cremallera rota en la zona delantera, resto en buen estado.",
+        )
+        with caplog.at_level(logging.WARNING):
+            _, descripcion = redactar_desde_campos_confirmados(
+                {"marca": "Reebok", "desperfectos": "CREMALLERA ROTA en la zona delantera"},
+                motor,
+            )
+        assert descripcion == (
+            "Sudadera con la cremallera rota en la zona delantera, resto en buen estado."
+        )
+        assert not any("no mencionaba el desperfecto" in r.message for r in caplog.records)
+
+    def test_sin_desperfecto_confirmado_no_anade_nada(self):
+        motor = _MotorTextoFake(titulo="T", descripcion="Descripcion normal sin defectos.")
+        _, descripcion = redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+        assert descripcion == "Descripcion normal sin defectos."
 
 
 def test_construir_solicitud_redaccion_no_llama_a_nadie():

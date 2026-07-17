@@ -119,12 +119,20 @@ TOKENS_ENTRADA_ESTIMADOS_POR_IMAGEN = 1600
 TOKENS_SALIDA_ESTIMADOS_DEFECTO = 300
 
 # Estimacion para llamadas de puro TEXTO (la redaccion de titulo/descripcion,
-# ver `estimar_coste_texto_lote`). Medido: el prompt real de
-# `core/extract.py::_construir_prompt_redaccion` con una ficha tipica ronda
-# ~450 tokens (~1800 caracteres, aprox. 4 caracteres/token) -- 600 es un
-# techo conservador, igual que el criterio de
-# `TOKENS_ENTRADA_ESTIMADOS_POR_IMAGEN`: nunca subestima el gasto real.
-TOKENS_ENTRADA_ESTIMADOS_POR_LLAMADA_TEXTO = 600
+# ver `estimar_coste_texto_lote`). MEDIDO CON LA API REAL, no a ojo
+# (`[listing-audit] MEDIA, 2026-07-17`): el prompt real de
+# `core/extract.py::_construir_prompt_redaccion` consume **753 tokens de
+# entrada** -- el "~450 tokens tipicos" que decia este comentario antes era
+# FALSO, porque ignoraba los tokens del `json_schema` de
+# `ESQUEMA_REDACCION_FICHA`, que Anthropic factura como definicion de tool y
+# no aparecen en el texto del prompt. La salida real medida son 98 tokens
+# (vs `TOKENS_SALIDA_ESTIMADOS_DEFECTO=300`), asi que el estimador de HOY
+# sobreestima el total 1.69x -- en la direccion correcta (nunca subestima),
+# pero POR ACCIDENTE: la entrada sola SI subestimaba (600 < 753). Subido a
+# 800 (techo conservador de verdad sobre el dato medido, no una redondez a
+# ojo) para que la costura del coste no dependa de que la salida siga
+# compensando el error de la entrada.
+TOKENS_ENTRADA_ESTIMADOS_POR_LLAMADA_TEXTO = 800
 
 VERSION_PROMPT_DEFECTO = "v1"
 
