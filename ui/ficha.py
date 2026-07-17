@@ -448,6 +448,47 @@ def _accion_extraer_lote(
     return ok, fallos
 
 
+def _render_puerta_coste_extraccion(
+    store: LoteStore,
+    lote_id: str,
+    productos: list[dict],
+    fotos_por_id: dict[str, dict],
+    motor: LLMEngine,
+    crear_extractor: Callable[[LLMEngine, Path], ExtractorEngine],
+) -> Any | None:
+    """El CUERPO de la puerta de coste (§15): planifica en local (OCR,
+    gratis), llama a `LLMEngine.estimar_coste_lote` (sólo caché en disco, 0
+    red, 0 €) y PINTA el resumen. Devuelve la `EstimacionLote`, o `None` si
+    falló (ya pintó el `st.error`). Compartido por `_dialog_extraer_lote` y
+    `_dialog_reextraer_seleccionados` -- MISMO predicado, no dos que puedan
+    divergir (`change-loop.md` §C3)."""
+    n = len(productos)
+    carpeta_crops = store.lotes_dir / lote_id / "crops"
+    extractor = crear_extractor(motor, carpeta_crops)
+    try:
+        with st.spinner(f"Planificando (OCR local) los {n} producto(s)…"):
+            solicitudes_totales: list = []
+            for producto in productos:
+                fotos = _paths_producto(producto, fotos_por_id)
+                solicitudes_totales.extend(extractor.construir_solicitudes(fotos))
+            estimacion = motor.estimar_coste_lote(solicitudes_totales)
+    except Exception as exc:  # noqa: BLE001 — la planificación (OCR) no puede tumbar la pantalla.
+        logger.exception("No se pudo estimar el coste de %s producto(s) del lote %s", n, lote_id)
+        st.error(f"No se pudo preparar la extracción: {exc}")
+        return None
+
+    coste_cts = estimacion.coste_usd_estimado * 100
+    st.write(
+        f"**{n} producto(s)** · **{estimacion.n_llamadas_total} llamada(s) al VLM en total** · "
+        f"{estimacion.n_en_cache} ya en caché (0 €) · {estimacion.n_a_pagar} a pagar."
+    )
+    if estimacion.n_a_pagar == 0:
+        st.success("Coste estimado: **0 €** — todo estaba en caché (ya se extrajo antes).")
+    else:
+        st.info(f"Coste estimado: **~{coste_cts:.2f} cts USD** (Haiku 4.5) para los {n} producto(s).")
+    return estimacion
+
+
 @st.dialog("Extraer TODO el lote — coste antes de gastar", width="large")
 def _dialog_extraer_lote(
     store: LoteStore,
@@ -459,7 +500,11 @@ def _dialog_extraer_lote(
 ) -> None:
     """UNA sola puerta de coste para todo el lote: suma la estimación
     (`LLMEngine.estimar_coste_lote`, sólo caché en disco, 0 red, 0 €) de
-    CADA producto sin extraer antes de mostrar el botón de gasto real."""
+    CADA producto sin extraer antes de mostrar el botón de gasto real.
+    `productos` viene ya filtrado a "sin extraer" (`render()`), así que
+    nunca hay una ficha confirmada aquí dentro -- un producto no puede estar
+    confirmado sin haberse extraído antes -- por eso este camino no lleva el
+    gate de `_dialog_reextraer_seleccionados`."""
     n = len(productos)
     st.caption(
         f"{n} producto(s) sin extraer todavía. Se localiza el texto en local "
@@ -467,29 +512,11 @@ def _dialog_extraer_lote(
         "extracción de un producto suelto, pero de una vez."
     )
 
-    carpeta_crops = store.lotes_dir / lote_id / "crops"
-    extractor = crear_extractor(motor, carpeta_crops)
-    try:
-        with st.spinner(f"Planificando (OCR local) los {n} productos…"):
-            solicitudes_totales: list = []
-            for producto in productos:
-                fotos = _paths_producto(producto, fotos_por_id)
-                solicitudes_totales.extend(extractor.construir_solicitudes(fotos))
-            estimacion = motor.estimar_coste_lote(solicitudes_totales)
-    except Exception as exc:  # noqa: BLE001 — la planificación (OCR) no puede tumbar la pantalla.
-        logger.exception("No se pudo estimar el coste del lote %s", lote_id)
-        st.error(f"No se pudo preparar la extracción del lote: {exc}")
-        return
-
-    coste_cts = estimacion.coste_usd_estimado * 100
-    st.write(
-        f"**{n} producto(s)** · **{estimacion.n_llamadas_total} llamada(s) al VLM en total** · "
-        f"{estimacion.n_en_cache} ya en caché (0 €) · {estimacion.n_a_pagar} a pagar."
+    estimacion = _render_puerta_coste_extraccion(
+        store, lote_id, productos, fotos_por_id, motor, crear_extractor
     )
-    if estimacion.n_a_pagar == 0:
-        st.success("Coste estimado: **0 €** — todo estaba en caché (ya se extrajo antes).")
-    else:
-        st.info(f"Coste estimado: **~{coste_cts:.2f} cts USD** (Haiku 4.5) para los {n} productos.")
+    if estimacion is None:
+        return
 
     if st.button(f"💸 Extraer los {n} productos ahora", type="primary", use_container_width=True):
         progreso = st.progress(0.0, text=f"Extrayendo 0/{n}…")
@@ -507,6 +534,112 @@ def _dialog_extraer_lote(
             )
         if ok:
             st.success(f"{len(ok)} producto(s) extraído(s) y guardado(s).")
+        if not fallos:
+            st.rerun()
+
+
+# --------------------------------------------------------------------------
+# RE-EXTRAER LOS SELECCIONADOS (pedido de Diego, 2026-07-17: "un botón para
+# poder reextraer las que quiera a la vez, como con un selector... por si un
+# día hay alguno que quiere hacerse a mano o hay que reextraer X"). Reusa el
+# MISMO camino de mutación que "Extraer TODO" (`_accion_extraer_lote`, sin
+# cambios: ya era genérica sobre `productos`) y la MISMA puerta de coste
+# (`_render_puerta_coste_extraccion`) -- lo único nuevo es que aquí la
+# selección PUEDE incluir fichas que Diego ya CONFIRMÓ, y re-extraer
+# descarta esos valores confirmados (`_dialog_extraer` ya avisa de esto por
+# producto suelto). En bloque, ese aviso podría perder HORAS de curado de un
+# solo clic (`CLAUDE.md` LO QUE NUNCA: "perder el trabajo de curado de un
+# lote") -- así que el botón de gasto real queda DESHABILITADO hasta que
+# Diego marca una casilla explícita ("descarta mis valores confirmados") que
+# NOMBRA cada ficha afectada (`decision-making.md` §12: una defensa que
+# sólo avisa no es defensa). Si NINGUNA de las seleccionadas está
+# confirmada, no hay fricción extra: el botón sale habilitado directo.
+# --------------------------------------------------------------------------
+def _confirmadas_entre(productos: list[dict]) -> list[str]:
+    """ids de los `productos` cuya ficha YA está confirmada -- lo que
+    dispara el gate de arriba. Función PURA (no llama a `st.*`), así se
+    puede probar sin runtime de Streamlit."""
+    return [p["id"] for p in productos if _ficha_confirmada(p)]
+
+
+def _etiqueta_producto_selector(producto: dict) -> str:
+    """Etiqueta IDENTIFICABLE para el `st.multiselect` -- los productos no
+    tienen nombre, sólo id: `id[:8]` + título/marca (o "sin extraer") + nº
+    de fotos + un aviso si ya está confirmada. Diego tiene que saber cuál es
+    cuál sin adivinar."""
+    pid = producto["id"]
+    fotos = producto.get("fotos", [])
+    n_fotos = len(fotos)
+    plural = "foto" if n_fotos == 1 else "fotos"
+    if not _esta_extraido(producto):
+        detalle = "sin extraer"
+    else:
+        campos = (producto.get("campos") or {}).get("campos", {})
+        titulo = (campos.get("titulo") or {}).get("valor")
+        marca = (campos.get("marca") or {}).get("valor")
+        detalle = titulo or marca or "sin título/marca"
+    sufijo = " · ✅ confirmada" if _ficha_confirmada(producto) else ""
+    return f"{pid[:8]} — {detalle} ({n_fotos} {plural}){sufijo}"
+
+
+@st.dialog("Re-extraer los seleccionados — coste antes de gastar", width="large")
+def _dialog_reextraer_seleccionados(
+    store: LoteStore,
+    lote_id: str,
+    productos: list[dict],
+    fotos_por_id: dict[str, dict],
+    motor: LLMEngine,
+    crear_extractor: Callable[[LLMEngine, Path], ExtractorEngine],
+) -> None:
+    n = len(productos)
+    confirmadas = _confirmadas_entre(productos)
+
+    st.caption(
+        f"{n} producto(s) seleccionado(s) para re-extraer. Se localiza el texto en "
+        "local (gratis) y sólo los recortes con texto van al VLM."
+    )
+
+    acepto_descartar = True
+    if confirmadas:
+        st.warning(
+            f"⚠️ {len(confirmadas)} de {n} ficha(s) seleccionada(s) YA están "
+            "CONFIRMADAS y van a PERDER sus valores confirmados, sustituidos por "
+            "las propuestas crudas del modelo: "
+            + ", ".join(f"`{pid[:8]}`" for pid in confirmadas)
+        )
+        acepto_descartar = st.checkbox(
+            f"sí, descarta mis valores confirmados de estas {len(confirmadas)} ficha(s)",
+            key="ficha_reextraer_bloque_acepto_descartar",
+        )
+
+    estimacion = _render_puerta_coste_extraccion(
+        store, lote_id, productos, fotos_por_id, motor, crear_extractor
+    )
+    if estimacion is None:
+        return
+
+    if st.button(
+        f"💸 Re-extraer los {n} producto(s) ahora",
+        key="btn_reextraer_gasto",
+        type="primary",
+        use_container_width=True,
+        disabled=not acepto_descartar,
+    ):
+        progreso = st.progress(0.0, text=f"Extrayendo 0/{n}…")
+
+        def _avisar(i: int, total: int, pid: str) -> None:
+            progreso.progress(i / total, text=f"Producto {i}/{total} (`{pid[:8]}`)…")
+
+        ok, fallos = _accion_extraer_lote(
+            store, lote_id, productos, fotos_por_id, motor, crear_extractor, on_progreso=_avisar
+        )
+        if fallos:
+            st.error(
+                f"Fallaron {len(fallos)} de {n} (los demás SÍ quedaron guardados en disco):\n\n"
+                + "\n".join(f"- producto `{pid[:8]}`: {motivo}" for pid, motivo in fallos)
+            )
+        if ok:
+            st.success(f"{len(ok)} producto(s) re-extraído(s) y guardado(s).")
         if not fallos:
             st.rerun()
 
@@ -1418,6 +1551,40 @@ def render(
                 use_container_width=True,
             ):
                 _dialog_extraer_lote(store, lote_id, sin_extraer, fotos_por_id, motor, crear_extractor)
+            st.divider()
+
+    # SELECTOR "RE-EXTRAER LOS SELECCIONADOS" (pedido de Diego, 2026-07-17):
+    # "un botón para elegir cuáles extraer... por si un día hay alguno que
+    # quiere hacerse a mano o hay que reextraer X". Vacío por defecto --
+    # re-extraer es DESTRUCTIVO (descarta lecturas/propuestas previas y,
+    # si la ficha está confirmada, también los valores de Diego -- ver el
+    # gate dentro de `_dialog_reextraer_seleccionados`) -- nunca se
+    # pre-selecciona nada. MISMO motivo de arriba para el `st.container()`.
+    with st.container():
+        if confirmados_agrupacion:
+            productos_por_id = {p["id"]: p for p in confirmados_agrupacion}
+            seleccionados_pids = st.multiselect(
+                "Elegir productos concretos a (re)extraer",
+                options=list(productos_por_id.keys()),
+                default=[],
+                format_func=lambda pid: _etiqueta_producto_selector(productos_por_id[pid]),
+                key="ficha_multiselect_reextraer",
+                help=(
+                    "Re-extraer DESCARTA las propuestas previas de esa ficha (y, si ya "
+                    "la confirmaste, tus valores confirmados también -- se avisa antes "
+                    "de gastar)."
+                ),
+            )
+            if st.button(
+                f"🔁 Re-extraer los seleccionados ({len(seleccionados_pids)})",
+                key="btn_reextraer_seleccionados",
+                use_container_width=True,
+                disabled=not seleccionados_pids,
+            ):
+                seleccionados = [productos_por_id[pid] for pid in seleccionados_pids]
+                _dialog_reextraer_seleccionados(
+                    store, lote_id, seleccionados, fotos_por_id, motor, crear_extractor
+                )
             st.divider()
 
     # BOTÓN "CONFIRMAR TODAS DE GOLPE" — junto al de arriba, pedido de

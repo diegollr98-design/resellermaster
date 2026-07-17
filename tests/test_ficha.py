@@ -1518,6 +1518,258 @@ def test_boton_confirmar_lote_no_aparece_sin_nada_extraido(tmp_path):
     assert not any("Confirmar todas las fichas listas" in lbl for lbl in labels)
 
 
+def _multiselect(at: AppTest, key: str):
+    return next(m for m in at.multiselect if m.key == key)
+
+
+def _script_reextraer(data_dir: str, lote_id: str, *, falla_en: tuple[str, ...] = ()) -> None:
+    """Variante de `_script` para abrir `_dialog_reextraer_seleccionados` de
+    verdad: usa un `LLMEngine` REAL (`estimar_coste_lote` no llama a la red
+    ni necesita API key -- sólo mira la caché en disco, ver
+    `test_solicitudes_redaccion_pendientes_cuenta_lo_que_hace_falta`) junto a
+    un `ExtractorEngine` fake (`construir_solicitudes` -> `[]`, cero OCR
+    real). `_MotorTextoFake` (usado por `_script`) NO implementa
+    `estimar_coste_lote` -- por eso este script existe aparte: la puerta de
+    coste de la extracción en bloque necesita ese método de verdad. Mismo
+    motivo que `_script` para definir todo DENTRO de la función
+    (`AppTest.from_function` ejecuta el CÓDIGO FUENTE en un módulo aislado,
+    no puede cerrar sobre nombres externos)."""
+    from pathlib import Path as _Path
+
+    from core.extract import Propuesta as _Propuesta
+    from core.extract import ResultadoExtraccion as _ResultadoExtraccion
+    from core.llm import LLMEngine as _LLMEngine
+    from core.schema import Campo as _Campo
+    from core.store import LoteStore as _LoteStore
+    from ui import ficha as _ficha
+
+    class _ExtractorFakeLocal:
+        def __init__(self, motor, carpeta_crops):
+            self.carpeta_crops = carpeta_crops
+
+        def construir_solicitudes(self, fotos):
+            return []
+
+        def extraer_producto(self, fotos, categoria="moda", producto_id=None, carpeta_crops=None):
+            if producto_id in falla_en:
+                raise RuntimeError(f"fallo simulado en {producto_id}")
+            valor = f"Re-{(producto_id or '')[:6]}"
+            campos = {"marca": _Campo(valor=valor, fuente="inferido", confianza="baja")}
+            propuestas = {
+                "marca": _Propuesta(
+                    campo="marca", valor=valor, recorte=None, evidencia=None, motivo="reextraido"
+                ),
+            }
+            return _ResultadoExtraccion(campos=campos, propuestas=propuestas, fallos=(), coste_usd=0.0)
+
+    motor = _LLMEngine(cache_dir=_Path(data_dir) / "cache_reextraer")
+    _ficha.render(
+        _LoteStore(data_dir=_Path(data_dir)),
+        lote_id,
+        crear_motor=lambda: motor,
+        crear_extractor=lambda m, crops: _ExtractorFakeLocal(m, crops),
+    )
+
+
+# ============================================================================
+# RE-EXTRAER LOS SELECCIONADOS (Fase 3, 2026-07-17) -- pedido explícito de
+# Diego: "un botón para poder reextraer las que quiera a la vez... por si un
+# día hay alguno que quiere hacerse a mano o hay que reextraer X". Reusa
+# `_accion_extraer_lote` (sin cambios: ya era genérica) y la puerta de coste
+# compartida con "Extraer TODO el lote". LO ÚNICO NUEVO: EL AVISO CON
+# DIENTES cuando la selección incluye una ficha YA CONFIRMADA (perder horas
+# de curado de un clic, `CLAUDE.md` LO QUE NUNCA).
+# ============================================================================
+def test_multiselect_reextraer_aparece_con_etiquetas_identificables(tmp_path):
+    """Mezcla: 1 sin extraer, 1 extraída, 1 confirmada -- las tres deben
+    poder identificarse SIN adivinar (id + detalle + nº fotos + confirmada)."""
+    fixtures = [_ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    # un tercer producto SIN extraer, mismo lote
+    carpeta = store.lotes_dir / lote_id
+    ruta = carpeta / "IMG_sin_extraer.jpg"
+    _crear_img(ruta, (5, 5, 5))
+    (foto_id,) = store.añadir_fotos(lote_id, [Foto(ruta=str(ruta), hash="hash_sin_extraer")])
+    (pid_sin_extraer,) = store.guardar_agrupacion(lote_id, [[foto_id]])
+    store.confirmar_producto(pid_sin_extraer)
+
+    pid_confirmado = pids[0]
+    producto_confirmado = _producto(tmp_path, lote_id, pid_confirmado)
+    confirmado = dict(producto_confirmado["campos"])
+    confirmado["confirmada"] = True
+    store.confirmar_ficha(pid_confirmado, confirmado)
+
+    at = AppTest.from_function(_script_reextraer, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    ms = _multiselect(at, "ficha_multiselect_reextraer")
+    assert ms.value == []  # vacío por defecto -- nunca pre-seleccionado
+
+    etiquetas = " ".join(ms.options)
+    assert pid_sin_extraer[:8] in etiquetas and "sin extraer" in etiquetas
+    assert pid_confirmado[:8] in etiquetas and "confirmada" in etiquetas
+    assert pids[1][:8] in etiquetas and "lufthous" in etiquetas  # marca del fixture
+
+
+def test_reextraer_seleccionados_solo_toca_los_elegidos(tmp_path):
+    """Seleccionar 2 de 3 -> `_accion_extraer_lote` (la MISMA función que
+    invoca el botón "💸 Re-extraer... ahora") sólo toca esos 2; el tercero
+    conserva sus campos VIEJOS intactos en el store."""
+    fixtures = [_ficha_completa, _ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    todos = _productos_de(tmp_path, lote_id)
+    seleccionados = [p for p in todos if p["id"] in (pids[0], pids[2])]
+    valor_viejo_no_tocado = _producto(tmp_path, lote_id, pids[1])["campos"]["campos"]["marca"]["valor"]
+
+    ok, fallos = ficha._accion_extraer_lote(
+        store, lote_id, seleccionados, _fotos_por_id(tmp_path, lote_id), None,
+        lambda motor, crops: _ExtractorFake(motor, crops),
+    )
+    assert fallos == []
+    assert set(ok) == {pids[0], pids[2]}
+
+    assert _producto(tmp_path, lote_id, pids[0])["campos"]["campos"]["marca"]["valor"].startswith("Marca-")
+    assert _producto(tmp_path, lote_id, pids[2])["campos"]["campos"]["marca"]["valor"].startswith("Marca-")
+    # EL NO SELECCIONADO NO SE TOCA: mismo valor de antes, tal cual.
+    assert _producto(tmp_path, lote_id, pids[1])["campos"]["campos"]["marca"]["valor"] == valor_viejo_no_tocado
+
+
+def test_confirmadas_entre_detecta_las_confirmadas(tmp_path):
+    fixtures = [_ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    producto_confirmado = _producto(tmp_path, lote_id, pids[0])
+    confirmado = dict(producto_confirmado["campos"])
+    confirmado["confirmada"] = True
+    store.confirmar_ficha(pids[0], confirmado)
+
+    productos = _productos_de(tmp_path, lote_id)
+    assert ficha._confirmadas_entre(productos) == [pids[0]]
+
+    # ninguna confirmada -> lista vacía, sin fricción
+    lote_id2, pids2 = _preparar_multi(tmp_path, [_ficha_completa])
+    assert ficha._confirmadas_entre(_productos_de(tmp_path, lote_id2)) == []
+
+
+def test_boton_reextraer_seleccionados_deshabilitado_sin_seleccion(tmp_path):
+    fixtures = [_ficha_completa, _ficha_completa]
+    lote_id, _pids = _preparar_multi(tmp_path, fixtures)
+    at = AppTest.from_function(_script_reextraer, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    boton = next(b for b in at.button if b.key == "btn_reextraer_seleccionados")
+    assert boton.proto.disabled is True
+    assert "(0)" in boton.label
+
+
+def test_dialog_reextraer_con_confirmada_nombra_y_no_habilita_boton_sin_checkbox(tmp_path):
+    """EL TEST QUE IMPORTA: la selección incluye una ficha YA CONFIRMADA ->
+    el diálogo la NOMBRA en el aviso y el botón de gasto real NO se habilita
+    hasta marcar la casilla -- sin marcarla, la puerta bloquea (§12: una
+    defensa que sólo avisa no es defensa)."""
+    fixtures = [_ficha_completa, _ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    pid_confirmado = pids[1]
+    producto = _producto(tmp_path, lote_id, pid_confirmado)
+    confirmado = dict(producto["campos"])
+    confirmado["confirmada"] = True
+    store.confirmar_ficha(pid_confirmado, confirmado)
+
+    at = AppTest.from_function(_script_reextraer, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    ms = _multiselect(at, "ficha_multiselect_reextraer")
+    at = ms.select(pid_confirmado).run()
+    assert not at.exception
+
+    boton_abrir = next(b for b in at.button if b.key == "btn_reextraer_seleccionados")
+    at = boton_abrir.click().run()
+    assert not at.exception, f"abrir el diálogo de re-extraer lanzó: {at.exception}"
+
+    textos_aviso = " ".join(w.value for w in at.warning)
+    assert pid_confirmado[:8] in textos_aviso
+    assert "CONFIRMADAS" in textos_aviso
+
+    checkbox = next(c for c in at.checkbox if "descarta mis valores confirmados" in c.label)
+    assert checkbox.value is False  # sin marcar por defecto -- nunca pre-aceptado
+
+    boton_gasto = next(b for b in at.button if b.key == "btn_reextraer_gasto")
+    assert boton_gasto.proto.disabled is True  # NO habilitado sin la casilla
+
+
+def test_dialog_reextraer_sin_confirmadas_sin_friccion(tmp_path):
+    """Ninguna de las seleccionadas está confirmada -> sin aviso, sin
+    casilla, el botón de gasto sale habilitado directo."""
+    fixtures = [_ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+
+    at = AppTest.from_function(_script_reextraer, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    ms = _multiselect(at, "ficha_multiselect_reextraer")
+    at = ms.select(pids[0]).run()
+    boton_abrir = next(b for b in at.button if b.key == "btn_reextraer_seleccionados")
+    at = boton_abrir.click().run()
+    assert not at.exception
+
+    assert len(at.warning) == 0
+    assert not any("descarta mis valores confirmados" in c.label for c in at.checkbox)
+
+    boton_gasto = next(b for b in at.button if b.key == "btn_reextraer_gasto")
+    assert boton_gasto.proto.disabled is False
+
+
+def test_accion_extraer_lote_seleccionados_un_producto_revienta_los_demas_se_persisten(tmp_path):
+    """MISMO caso de fallo que la extracción masiva (§16), pero sobre una
+    selección PARCIAL: el que revienta no se guarda, los demás SELECCIONADOS
+    sí, y el que NO se seleccionó ni se toca ni se reporta."""
+    fixtures = [_ficha_completa, _ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    todos = _productos_de(tmp_path, lote_id)
+    seleccionados = [p for p in todos if p["id"] in (pids[0], pids[1])]
+    pid_que_revienta = pids[0]
+
+    ok, fallos = ficha._accion_extraer_lote(
+        store, lote_id, seleccionados, _fotos_por_id(tmp_path, lote_id), None,
+        lambda motor, crops: _ExtractorFake(motor, crops, falla_en=frozenset({pid_que_revienta})),
+    )
+    assert ok == [pids[1]]
+    assert len(fallos) == 1
+    assert fallos[0][0] == pid_que_revienta
+    assert "fallo simulado" in fallos[0][1]
+
+    # el que NUNCA se seleccionó conserva su marca original ("lufthous", de
+    # `_ficha_completa`), sin tocar.
+    assert _producto(tmp_path, lote_id, pids[2])["campos"]["campos"]["marca"]["valor"] == "lufthous"
+
+
+def test_valores_nuevos_tras_reextraccion_seleccionada_se_pintan(tmp_path):
+    """`[INC-014]` sobre el camino de "seleccionados": tras re-extraer sólo
+    ESE producto, la pantalla pinta el valor NUEVO -- no uno viejo pegado en
+    `session_state`. Verificado EJECUTANDO, no leído de un docstring."""
+    fixtures = [_ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    producto = _producto(tmp_path, lote_id, pids[0])
+
+    ok, fallos = ficha._accion_extraer_lote(
+        store, lote_id, [producto], _fotos_por_id(tmp_path, lote_id), None,
+        lambda motor, crops: _ExtractorFake(motor, crops),
+    )
+    assert fallos == []
+    assert ok == [pids[0]]
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id))
+    at.session_state[f"ficha_{pids[0]}_marca_valor"] = "valor viejo pegado"
+    at.run()
+    assert not at.exception
+    assert _texto_input(at, f"ficha_{pids[0]}_marca_valor").value.startswith("Marca-")
+
+
 def test_boton_confirmar_lote_no_aparece_si_ya_todo_confirmado(tmp_path):
     """Producto YA confirmado (persistido directo en el store, SIN pasar
     por un click dentro de `AppTest`): `AppTest` no limpia su cola de
