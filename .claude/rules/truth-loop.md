@@ -32,6 +32,7 @@
 
 3. **`inferido` SÍ puede pre-rellenar un campo estructurado, pero JAMÁS sin marcar.** *(Relajado el 2026-07-16. Antes: "nunca se pega tal cual en un campo estructurado".)* Un valor inferido se pre-rellena con badge 🧠 y `confianza="baja"` para que Diego lo corrija o lo confirme de un vistazo. Lo que sigue **PROHIBIDO**: que un `inferido` salga **sin badge**, con **confianza alta** (imposible por construcción: el `json_schema` de la síntesis sólo admite `media`/`baja`), o **sin que Diego lo vea** antes de publicar.
 4. Los campos de **estado** (nuevo / muy bueno / bueno / aceptable) son SIEMPRE `inferido` y **siempre los confirma Diego**. Es el campo que más devoluciones causa y ningún modelo lo puede afirmar por una foto.
+5. **Excepción MEDIDA al MEJOR INTENTO — campos de juicio imposible** `[INC-023][INC-025]`. Un campo que exige un juicio que el modelo no puede dar (*¿es esto un defecto? ¿es una dimensión del producto o del embalaje?*) **NO usa mejor intento**: el mejor intento produce ruido plausible (el nombre impreso del masajeador publicado como desperfecto; `medidas="SYSTEM"` desde `MEDICAL` en un logo). Se **transcribe una señal que Diego controla** — un marcador que él escribe en su nota (`DESPERFECTOS: cremallera rota`) → `if` determinista, `fuente="foto"` sólo si el valor está en el píxel citado, sin marcador → `null` (cae del lado barato: lo teclea). `medidas` se **quitó entero** del marcador: colisiona estructuralmente con packaging (palabra corta, sin señal que distinga caja de producto) y la ropa —el grueso del catálogo— ni las pide. Ver `decision-making.md` §18.
 
 ## §B — Superficies sensibles (calibrado de ceremonia)
 
@@ -73,6 +74,8 @@ Subagente Opus, autocontenido, cuyo trabajo es **intentar pillar al pipeline min
 Diego revisa el lote antes de publicar. La UI debe hacer que ese repaso cueste **segundos, no minutos**: los campos `confianza=baja` y `null` **saltan a la vista** (destacados, agrupados arriba); los de `confianza=alta` con evidencia se pueden pasar en bloque.
 
 **Límite honesto:** las capas 1 y 2 verifican **legibilidad y procedencia**, no verdad. Que la etiqueta ponga "100% algodón" y la prenda sea sintética, eso no lo caza ningún agente. La capa 3 **no es opcional ni sustituible**.
+
+**Segundo límite: LEGIBILIDAD ≠ PERTENENCIA** `[INC-011]`. Un gate que verifica que un dato es legible en un píxel **no verifica que ese dato pertenezca al producto**. La ficha Frankenstein (marca de una prenda + talla de otra, tras una fusión que Diego no cazó al curar) tiene los dos campos con evidencia **real y legible** → las Capas 1 y 2 la declaran LIMPIA; sólo la caza el ojo de Diego, que es justo lo que la app existe para no usar. Todo módulo que agregue datos de **VARIAS fotos** emite un **aviso de coherencia con DIENTES** (techo de confianza, no pie de foto — `decision-making.md` §12) cuando los campos provienen de fotos disjuntas, y el export lo propaga (no lo descarta: `[INC-017]`).
 
 ## §D — Precio: nunca desde el LLM
 
