@@ -164,6 +164,27 @@ def _render_recorte(recorte: Path | None, *, width: int = 260) -> None:
         st.caption(f"⚠️ no se pudo abrir el recorte {ruta.name}: {exc}")
 
 
+def _render_recorte_miniatura(recorte: Path | None, *, pid: str, campo: str, sufijo: str = "") -> None:
+    """El PÍXEL sigue AL LADO del campo -- LÍMITE DURO, nunca se quita
+    (`truth-loop.md` §A: el recorte a la vista es lo que sostiene el
+    default de "mejor intento"; sin él, confirmar sería afirmar a ciegas).
+    Pedido de Diego (2026-07-17, "mínimo scroll posible"): deja de ocupar
+    media pantalla -- se pinta como MINIATURA (~90px) y un click
+    (`st.popover`, más simple que un `@st.dialog` para esto) lo enseña
+    grande. `sufijo` desambigua la key del popover cuando hay varias
+    candidatas del mismo campo (`_alt0`, `_alt1`, ...)."""
+    if recorte is None:
+        st.caption("— sin recorte —")
+        return
+    ruta = Path(recorte)
+    if not ruta.exists():
+        st.caption(f"⚠️ recorte no encontrado: {ruta.name}")
+        return
+    _render_recorte(ruta, width=90)
+    with st.popover("🔍 ampliar", key=f"popover_{pid}_{campo}{sufijo}"):
+        _render_recorte(ruta, width=420)
+
+
 def _badge_confianza(confianza: str | None) -> str:
     return {"alta": "🟢 alta", "media": "🟡 media", "baja": "🔴 baja"}.get(
         confianza or "baja", "🔴 baja"
@@ -574,45 +595,70 @@ def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
     st.session_state[marcador] = firma
 
 
-def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
+def _render_campo(pid: str, campo: str, datos_campo: dict, *, confirmada: bool = False) -> None:
     propuesta = datos_campo.get("propuesta") or {}
     alternativas = propuesta.get("alternativas") or []
     key_valor = f"ficha_{pid}_{campo}_valor"
+    badge_obligatorio = _badge_obligatorio(campo, pid)
 
-    # Título y descripción: borradores del modelo, sin recorte, a ancho
-    # completo y en caja multilínea editable.
+    # Título y descripción -- pedido de Diego (2026-07-17): "quita la
+    # trampa". Editarlos ANTES de confirmar desactivaba la regeneración que
+    # los corrige con los campos que Diego acaba de dejar
+    # (`_diego_edito_texto` los trataría como "ya tocados por Diego" y
+    # `_regenerar_titulo_descripcion` nunca los tocaría) -- exactamente el
+    # bug que describía una descripción vieja ("sin daños importantes")
+    # sobre un `desperfectos` corregido. ANTES de confirmar: SÓLO LECTURA,
+    # con el aviso de que se generan al confirmar (no hay `text_area` --
+    # nada que "tocar" por accidente). DESPUÉS de confirmar
+    # (`_ficha_confirmada`=True): editables, como antes -- si Diego los
+    # retoca AHÍ, queda `fuente="diego"` al volver a confirmar (mismo
+    # camino de siempre, `_diego_edito_texto`/`_regenerar_titulo_
+    # descripcion` no se tocan).
     if campo in ("titulo", "descripcion"):
-        st.markdown(f"**{campo}** *(obligatorio)* · borrador del modelo, edítalo")
-        st.text_area(  # sin value=: ya sembrado en session_state
-            campo,
-            key=key_valor,
-            label_visibility="collapsed",
-            height=70 if campo == "titulo" else 150,
-        )
+        if confirmada:
+            st.markdown(
+                f"**{campo}**{badge_obligatorio} · editable — se guarda tal cual al confirmar de nuevo"
+            )
+            st.text_area(  # sin value=: ya sembrado en session_state
+                campo,
+                key=key_valor,
+                label_visibility="collapsed",
+                height=70 if campo == "titulo" else 150,
+            )
+        else:
+            st.markdown(f"**{campo}**{badge_obligatorio} · se genera al confirmar, a partir de tus campos")
+            valor_actual = st.session_state.get(key_valor, "")
+            if valor_actual:
+                st.info(valor_actual)
+            else:
+                st.caption("— sin borrador todavía —")
         return
 
     col_pixel, col_dato = st.columns([1, 2])
 
     with col_pixel:
-        _render_recorte(propuesta.get("recorte"))
+        _render_recorte_miniatura(propuesta.get("recorte"), pid=pid, campo=campo)
         # Conflicto: la síntesis eligió un valor; las OTRAS candidatas quedan
-        # aquí, cada una con su recorte, para cambiar con un click. Nunca se
-        # pierde ninguna (`truth-loop.md`: el pipeline no elige a ciegas).
-        for i, cand in enumerate(alternativas):
-            st.caption(f"otra: **{cand.get('valor')}**")
-            _render_recorte(cand.get("recorte"), width=180)
-            st.button(
-                f"usar «{cand.get('valor')}»",
-                key=f"use_{pid}_{campo}_alt{i}",
-                on_click=_rellenar_valor,
-                args=(key_valor, str(cand.get("valor") or "")),
-                use_container_width=True,
-            )
+        # dentro de un expander CERRADO por defecto (pedido de Diego,
+        # "mínimo scroll posible") -- nunca se pierde ninguna
+        # (`truth-loop.md`: el pipeline no elige a ciegas), sólo dejan de
+        # estar siempre desplegadas.
+        if alternativas:
+            with st.expander(f"Otras {len(alternativas)} candidata(s)"):
+                for i, cand in enumerate(alternativas):
+                    st.caption(f"otra: **{cand.get('valor')}**")
+                    _render_recorte_miniatura(cand.get("recorte"), pid=pid, campo=campo, sufijo=f"_alt{i}")
+                    st.button(
+                        f"usar «{cand.get('valor')}»",
+                        key=f"use_{pid}_{campo}_alt{i}",
+                        on_click=_rellenar_valor,
+                        args=(key_valor, str(cand.get("valor") or "")),
+                        use_container_width=True,
+                    )
 
     with col_dato:
-        marca_obligatorio = " *(obligatorio)*" if campo in _CAMPOS_OBLIGATORIOS else ""
         st.markdown(
-            f"**{campo}**{marca_obligatorio} · {_badge_fuente(datos_campo.get('fuente'))} · "
+            f"**{campo}**{badge_obligatorio} · {_badge_fuente(datos_campo.get('fuente'))} · "
             f"confianza {_badge_confianza(datos_campo.get('confianza'))}"
         )
         motivo = propuesta.get("motivo")
@@ -876,6 +922,25 @@ def _obligatorios_faltantes_en_confirmado(confirmado: dict) -> list[str]:
     ]
 
 
+def _campo_esta_vacio_en_pantalla(pid: str, campo: str) -> bool:
+    """UN sitio (`change-loop.md` §C3) que decide si un campo obligatorio
+    está vacío AHORA MISMO en pantalla (valor LIVE de `session_state`, no
+    el de la extracción). Lo usan `_obligatorios_faltantes_en_pantalla`
+    (agrega sobre los 4 obligatorios) Y el badge que se pinta junto a cada
+    campo (`_badge_obligatorio`, más abajo) -- el mismo predicado que
+    decide el rojo del badge decide el botón deshabilitado; si divergieran,
+    el badge mentiría (`decision-making.md` §12: mostrar ≠ defender)."""
+    if campo == "estado":
+        return st.session_state.get(f"ficha_{pid}_estado_estado", _OPCIONES_ESTADO[0]) == _OPCIONES_ESTADO[0]
+    if campo == "categoria":
+        return (
+            st.session_state.get(f"ficha_{pid}_categoria_categoria", _OPCIONES_CATEGORIA[0])
+            == _OPCIONES_CATEGORIA[0]
+        )
+    valor = st.session_state.get(f"ficha_{pid}_{campo}_valor", "")
+    return not valor.strip()
+
+
 def _obligatorios_faltantes_en_pantalla(pid: str) -> list[str]:
     """Mismo chequeo que `_obligatorios_faltantes_en_confirmado` pero
     leyendo DIRECTO de `session_state` -- para pintar "falta X" y
@@ -886,18 +951,29 @@ def _obligatorios_faltantes_en_pantalla(pid: str) -> list[str]:
     `titulo`/`descripcion` casi nunca aparecen aquí como "faltantes" en la
     práctica (la síntesis los rellena con su mejor intento), así que esta
     vista previa no necesita anticipar la regeneración al confirmar."""
-    faltan: list[str] = []
-    sugerido_estado = st.session_state.get(f"ficha_{pid}_estado_estado", _OPCIONES_ESTADO[0])
-    if sugerido_estado == _OPCIONES_ESTADO[0]:
-        faltan.append(_ETIQUETA_OBLIGATORIO["estado"])
-    sugerido_categoria = st.session_state.get(f"ficha_{pid}_categoria_categoria", _OPCIONES_CATEGORIA[0])
-    if sugerido_categoria == _OPCIONES_CATEGORIA[0]:
-        faltan.append(_ETIQUETA_OBLIGATORIO["categoria"])
-    for campo in ("titulo", "descripcion"):
-        valor = st.session_state.get(f"ficha_{pid}_{campo}_valor", "")
-        if not valor.strip():
-            faltan.append(_ETIQUETA_OBLIGATORIO[campo])
-    return faltan
+    return [
+        _ETIQUETA_OBLIGATORIO[campo]
+        for campo in _CAMPOS_OBLIGATORIOS
+        if _campo_esta_vacio_en_pantalla(pid, campo)
+    ]
+
+
+# --------------------------------------------------------------------------
+# BADGE DE OBLIGATORIO -- pedido de Diego, 2026-07-17: "los que sean
+# obligatorios que se distingan bien del resto" -- el `*(obligatorio)*` en
+# cursiva se perdía dentro de la línea. Badge de color de Streamlit
+# (`:color-badge[texto]`, funciona dentro de cualquier `st.markdown` y es
+# visible para `AppTest` como texto plano dentro de `at.markdown`): NARANJA
+# si ya tiene un valor, ROJO si está vacío -- el vacío es justo el que
+# bloquea confirmar, así que tiene que cantar más (`decision-making.md`
+# §16: la señal más peligrosa no puede verse igual que la inocua).
+# --------------------------------------------------------------------------
+def _badge_obligatorio(campo: str, pid: str) -> str:
+    if campo not in _CAMPOS_OBLIGATORIOS:
+        return ""
+    if _campo_esta_vacio_en_pantalla(pid, campo):
+        return " :red-badge[⚠️ OBLIGATORIO — falta]"
+    return " :orange-badge[obligatorio]"
 
 
 def _confirmar_uno(
@@ -1191,7 +1267,7 @@ def _render_producto(
         ]
         for campo in orden:
             st.divider()
-            _render_campo(pid, campo, campos[campo])
+            _render_campo(pid, campo, campos[campo], confirmada=confirmada)
 
         st.divider()
         _render_comparables(datos)

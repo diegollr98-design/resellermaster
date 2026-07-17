@@ -353,13 +353,36 @@ def test_marca_inferida_se_prerellena(tmp_path):
     assert _texto_input(at, f"ficha_{pid}_marca_valor").value == "lufthous"
 
 
-def test_titulo_y_descripcion_son_cajas_editables(tmp_path):
+# ============================================================================
+# LA TRAMPA DE titulo/descripcion (Diego, 2026-07-17): editarlos ANTES de
+# confirmar desactivaba `_diego_edito_texto` -> la regeneración con los
+# campos corregidos nunca se disparaba. Fix: ANTES de confirmar son SÓLO
+# LECTURA (sin `text_area` que tocar por accidente); DESPUÉS de la primera
+# confirmación (`_ficha_confirmada`=True) se vuelven editables, para que
+# Diego pueda retocar el texto YA regenerado.
+# ============================================================================
+def test_titulo_descripcion_son_solo_lectura_antes_de_confirmar(tmp_path):
     lote_id, pid = _preparar(tmp_path, _ficha_completa)
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     assert not at.exception
-    areas = {a.key: a.value for a in at.text_area}
-    assert areas.get(f"ficha_{pid}_titulo_valor", "").startswith("Masajeador")
-    assert "rodilla" in areas.get(f"ficha_{pid}_descripcion_valor", "")
+    # NO hay text_area para titulo/descripcion antes de confirmar.
+    assert not any(a.key == f"ficha_{pid}_titulo_valor" for a in at.text_area)
+    assert not any(a.key == f"ficha_{pid}_descripcion_valor" for a in at.text_area)
+    # PERO el texto (el mejor intento de la extracción) SÍ se ve.
+    textos = " ".join(m.value for m in at.info) + " " + " ".join(c.value for c in at.caption)
+    assert "Masajeador lufthous" in textos
+    assert "rodilla" in textos
+
+
+def test_titulo_descripcion_son_editables_despues_de_confirmar(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    assert _ficha_confirmada(_producto(tmp_path, lote_id, pid)) is True
+
+    assert any(a.key == f"ficha_{pid}_titulo_valor" for a in at.text_area)
+    assert any(a.key == f"ficha_{pid}_descripcion_valor" for a in at.text_area)
 
 
 def test_estado_se_preselecciona_del_mejor_intento(tmp_path):
@@ -560,15 +583,24 @@ def test_confirmar_sin_tocar_texto_regenera_con_campos_confirmados(tmp_path):
 
 
 def test_confirmar_respeta_descripcion_editada_a_mano(tmp_path):
+    """Editar a mano SÓLO es posible DESPUÉS de la primera confirmación
+    (la trampa ya no existe: no hay `text_area` antes). Flujo real: (1)
+    Diego confirma sin tocar nada -> se regenera con el motor; (2) la ficha
+    queda confirmada y el texto se vuelve editable; (3) lo retoca y vuelve
+    a confirmar -> su texto manda, `fuente="diego"`."""
     lote_id, pid = _preparar(tmp_path, _ficha_con_desperfecto)
     at = AppTest.from_function(
         _script,
         args=(str(tmp_path), lote_id),
         kwargs={
-            "titulo_generado": "no deberia usarse este titulo",
-            "descripcion_generada": "no deberia usarse esta descripcion",
+            "titulo_generado": "titulo generado automaticamente",
+            "descripcion_generada": "descripcion generada automaticamente",
         },
     ).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    assert _ficha_confirmada(_producto(tmp_path, lote_id, pid)) is True
+
     texto_propio = "Mi propia descripción: tiene la cremallera rota, la vendo tal cual."
     key_desc = f"ficha_{pid}_descripcion_valor"
     next(a for a in at.text_area if a.key == key_desc).set_value(texto_propio).run()
@@ -805,9 +837,15 @@ def test_sin_agrupacion_confirmada_no_se_muestra_ficha(tmp_path):
 def test_confirmar_bloquea_marca_ajena_en_la_descripcion(tmp_path):
     """Sanitizador con dientes (product.md §7, §12): una descripción que
     menciona OTRA marca (Nike, sobre un producto lufthous) NO se puede
-    confirmar — en Vinted `MENTIONS_OTHER_BRAND` oculta el anuncio."""
+    confirmar — en Vinted `MENTIONS_OTHER_BRAND` oculta el anuncio. Ahora
+    que titulo/descripcion sólo son editables DESPUÉS de confirmar, el
+    ataque se prueba en la segunda vuelta ("Volver a confirmar")."""
     lote_id, pid = _preparar(tmp_path, _ficha_completa)  # marca = lufthous
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    assert _ficha_confirmada(_producto(tmp_path, lote_id, pid)) is True
+
     key_desc = f"ficha_{pid}_descripcion_valor"
     next(a for a in at.text_area if a.key == key_desc).set_value(
         "Masajeador Nike de rodilla, como nuevo."
@@ -817,7 +855,7 @@ def test_confirmar_bloquea_marca_ajena_en_la_descripcion(tmp_path):
 
     estado = LoteStore(data_dir=tmp_path).cargar_lote(lote_id)
     fichas = [c for c in estado["confirmaciones"] if c["tipo"] == "ficha" and c["producto_id"] == pid]
-    assert not fichas, "no debió confirmarse con una marca ajena en el texto"
+    assert len(fichas) == 1, "sólo la PRIMERA confirmación (texto limpio) debió persistirse"
     assert len(at.error) >= 1
 
 
@@ -911,6 +949,98 @@ def test_galeria_foto_principal_visible_resto_en_expander_cerrado(tmp_path):
     imagenes_dentro = len(expanders[0].get("imgs"))
     imagenes_totales = len(at.get("imgs"))
     assert imagenes_totales > imagenes_dentro  # al menos la principal, fuera
+
+
+# ============================================================================
+# RECORTES COMO MINIATURA + CANDIDATAS EN EXPANDER CERRADO (Diego,
+# 2026-07-17: "mínimo scroll posible" -- el recorte junto a CADA campo, y
+# sobre todo las hasta 9 candidatas de un conflicto, ocupaban media pantalla
+# apiladas siempre desplegadas). LÍMITE DURO que se comprueba aquí: el
+# recorte principal SIGUE PINTÁNDOSE (nunca desaparece, `truth-loop.md`
+# §A), y ninguna candidata se pierde -- sólo dejan de estorbar.
+# ============================================================================
+def test_recorte_principal_de_un_campo_se_sigue_pintando(tmp_path):
+    """`_marca_leida_no_publicada` trae recortes REALES para marca/talla
+    (sin candidatas) -- deben seguir pintándose como miniatura, no
+    desaparecer."""
+    lote_id, _pid = _preparar(tmp_path, _marca_leida_no_publicada)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    # al menos: la foto principal de la galería + los 2 recortes (marca, talla)
+    assert len(at.get("imgs")) >= 3
+
+
+def test_candidatas_alternativas_en_expander_cerrado(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _conflicto_dos_marcas)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    expanders = [e for e in at.expander if "candidata" in e.label.lower()]
+    assert len(expanders) == 1
+    assert "2" in expanders[0].label
+    assert expanders[0].proto.expanded is False
+
+    # ninguna candidata se pierde: los dos botones siguen ahí (aunque el
+    # expander esté cerrado, AppTest ve el árbol completo del script).
+    labels = " ".join(b.label for b in at.button)
+    assert "UMBRO" in labels and "RAMI JALAB" in labels
+    # y sus recortes (2 candidatas) siguen pintándose dentro del expander.
+    assert len(expanders[0].get("imgs")) >= 2
+
+    # el campo sigue sin pre-elegir ninguna.
+    assert _texto_input(at, f"ficha_{pid}_marca_valor").value == ""
+
+
+# ============================================================================
+# BADGE DE OBLIGATORIO (Diego, 2026-07-17: "que se distingan bien del
+# resto, no solo con (obligatorio) delante"). Rojo cuando está vacío (el que
+# BLOQUEA confirmar), naranja cuando ya tiene valor -- mismo predicado que
+# deshabilita el botón (`_campo_esta_vacio_en_pantalla`, un solo sitio).
+# ============================================================================
+def test_badge_obligatorio_rojo_cuando_esta_vacio(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada)  # sin categoria/titulo/descripcion
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    textos = " ".join(m.value for m in at.markdown)
+    assert "OBLIGATORIO" in textos  # el rojo, para "estado" (vacío)
+
+
+def test_badge_obligatorio_naranja_cuando_tiene_valor(tmp_path):
+    lote_id, _pid = _preparar(tmp_path, _ficha_completa)  # categoria/estado/titulo/descripcion ya propuestos
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    textos = " ".join(m.value for m in at.markdown)
+    assert ":orange-badge[obligatorio]" in textos
+    assert "OBLIGATORIO — falta" not in textos  # nada obligatorio vacío en esta ficha
+
+
+def test_badge_obligatorio_no_se_pinta_en_campo_no_obligatorio(tmp_path):
+    """`marca` NO es obligatoria (`_CAMPOS_OBLIGATORIOS` la excluye a
+    propósito) -- su línea no debe llevar el badge."""
+    lote_id, _pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    linea_marca = next(m.value for m in at.markdown if m.value.startswith("**marca**"))
+    assert "obligatorio" not in linea_marca.lower()
+
+
+def test_obligatorio_vacio_sigue_bloqueando_confirmar(tmp_path):
+    """El bloqueo REAL (con dientes) no cambia con el rediseño visual: un
+    obligatorio vacío sigue impidiendo confirmar, botón deshabilitado Y
+    `_accion_confirmar_ficha` bloquea si se pulsa igual."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    next(
+        s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria"
+    ).set_value("(sin elegir)").run()
+    assert at.button(key=f"confirmar_{pid}").proto.disabled is True
+
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    assert len(at.error) >= 1
+    estado = LoteStore(data_dir=tmp_path).cargar_lote(lote_id)
+    fichas = [c for c in estado["confirmaciones"] if c["tipo"] == "ficha" and c["producto_id"] == pid]
+    assert not fichas
 
 
 def test_valor_pegado_de_extraccion_vieja_se_refresca(tmp_path):
