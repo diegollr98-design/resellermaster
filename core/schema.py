@@ -377,10 +377,43 @@ def fidelidad_estado(
     en `desperfectos`) porque el estado solo no lo va a comunicar.
     """
     tabla = _tabla_efectiva(categoria, plataforma)
+    literal = tabla[estado]
+
+    # -- Red de seguridad ORDINAL, independiente del eje funcional. ----------
+    # El criterio funcional de abajo caza el unico fallo MEDIDO hoy
+    # (`PARA_REPARAR` compartiendo literal con un nivel funcional), pero por
+    # si solo no es mas que un `if PARA_REPARAR` con mejor vocabulario: no
+    # cazaria una edicion futura de las tablas que mapeara, p.ej.,
+    # ACEPTABLE -> "Como nuevo" (dos niveles FUNCIONALES, ningun cruce de la
+    # frontera, y aun asi el comprador recibe algo bastante peor de lo que
+    # leyo). Y `product.md` marca el enum de estado de Wallapop como
+    # "[NO VERIFICADO] observado, no garantizado": estas tablas VAN a cambiar
+    # cuando alguien lo verifique -- no es un futuro hipotetico, es un TODO
+    # escrito en el repo.
+    #
+    # Umbral en 2 peldanos, y esta MEDIDO, no elegido a ojo: sobre las tablas
+    # vigentes genera CERO avisos nuevos (el salto maximo entre niveles
+    # funcionales es de 1). Un salto de 1 es redondeo de vocabulario
+    # ("Buen estado" cubre MUY_BUENO y BUENO; "Nuevo" cubre PRECINTADO y
+    # NUEVO) y marcarlo convertiria el aviso en ruido, que es como se muere
+    # una defensa (`decision-making.md` SS12). Un salto de >=2 es otra cosa.
+    #
+    # Las dos reglas son COMPLEMENTARIAS, no redundantes: el fallo real
+    # (PARA_REPARAR -> ACEPTABLE) salta UN peldano, asi que la ordinal sola
+    # no lo cazaria; y la funcional sola no cazaria el ACEPTABLE ->
+    # "Como nuevo" de arriba. Hacen falta las dos.
+    comunica = min(otro for otro in tabla if tabla[otro] == literal)
+    if int(estado) - int(comunica) >= 2:
+        return (
+            f'el literal que se publica ("{literal}") comunica "{comunica.name}", '
+            f'pero el nivel real es "{estado.name}" -- {int(estado) - int(comunica)} '
+            f"peldanos peor. La tabla de mapeo de {plataforma}/'{categoria}' presenta "
+            "el producto MEJOR de lo que es: revisala antes de publicar."
+        )
+
     if estado not in _ES_NO_FUNCIONAL:
         return None
 
-    literal = tabla[estado]
     comparte_con_funcional = any(
         otro != estado and tabla[otro] == literal
         for otro in tabla

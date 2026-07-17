@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import pytest
 
+from core import schema
 from core.schema import (
     VINTED_CAMPOS,
     WALLAPOP_CAMPOS,
@@ -279,6 +280,50 @@ class TestFidelidadEstado:
     def test_plataforma_desconocida_lanza(self):
         with pytest.raises(ValueError):
             fidelidad_estado(EstadoCanonico.PARA_REPARAR, "moda", "ebay")  # type: ignore[arg-type]
+
+    # -- La red de seguridad ORDINAL, que es lo que hace que esto no sea un
+    #    `if PARA_REPARAR` con mejor vocabulario. `product.md` marca el enum
+    #    de estado de Wallapop como "[NO VERIFICADO], observado": estas
+    #    tablas van a cambiar, y una edicion que presente el producto MEJOR
+    #    de lo que es tiene que cazarse SOLA, sin que nadie recuerde
+    #    `[INC-017]`.
+    def test_una_edicion_futura_que_presenta_el_producto_mejor_se_caza_sola(
+        self, monkeypatch
+    ):
+        # Simula un cambio de tabla plausible y silencioso: alguien "verifica"
+        # el enum de Wallapop y mapea ACEPTABLE al literal de COMO_NUEVO. Los
+        # dos niveles son FUNCIONALES, asi que NO cruzan la frontera
+        # funciona/no-funciona: el criterio funcional por si solo lo dejaria
+        # pasar. Tres peldanos de diferencia en el anuncio real.
+        tabla_envenenada = dict(schema._WALLAPOP_MODA)
+        tabla_envenenada[EstadoCanonico.ACEPTABLE] = "Como nuevo"
+        monkeypatch.setattr(schema, "_WALLAPOP_MODA", tabla_envenenada)
+
+        nota = fidelidad_estado(EstadoCanonico.ACEPTABLE, "moda", "wallapop")
+        assert nota is not None, (
+            "una tabla que publica un ACEPTABLE como 'Como nuevo' presenta el "
+            "producto 3 peldanos mejor de lo que es y no la caza nadie"
+        )
+        assert "MEJOR de lo que es" in nota
+
+    def test_la_red_ordinal_no_anade_ruido_sobre_las_tablas_vigentes(self):
+        # Medido, no supuesto: sobre las tablas REALES el salto maximo entre
+        # niveles funcionales es de 1 peldano (redondeo de vocabulario), asi
+        # que el umbral de 2 no dispara ni un aviso extra hoy. Si este test se
+        # pone rojo, alguien cambio una tabla de mapeo: eso es exactamente lo
+        # que tiene que doler.
+        for plataforma in ("wallapop", "vinted"):
+            for categoria in ("moda", "electronica", "hogar", "libros", "otros"):
+                tabla = schema._tabla_efectiva(categoria, plataforma)
+                for estado in EstadoCanonico:
+                    if estado in schema._ES_NO_FUNCIONAL:
+                        continue
+                    literal = tabla[estado]
+                    comunica = min(otro for otro in tabla if tabla[otro] == literal)
+                    assert int(estado) - int(comunica) <= 1, (
+                        f"{plataforma}/{categoria}: {estado.name} -> '{literal}' "
+                        f"comunica {comunica.name}"
+                    )
 
 
 class TestTallaNoImplementada:
