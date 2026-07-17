@@ -25,6 +25,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Callable
 
+import streamlit as st
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
@@ -35,7 +36,7 @@ from core.extract import (
     ResultadoExtraccion,
     serializar_extraccion,
 )
-from core.llm import LLMLlamadaFallidaError, ResultadoLLM
+from core.llm import LLMEngine, LLMLlamadaFallidaError, ResultadoLLM
 from core.schema import Campo, Evidencia
 from core.store import Foto, LoteStore
 from ui import ficha
@@ -1082,3 +1083,257 @@ def test_valores_nuevos_se_pintan_tras_extraccion_masiva(tmp_path):
     at.run()
     assert not at.exception
     assert _texto_input(at, f"ficha_{pid}_marca_valor").value.startswith("Marca-")
+
+
+# ============================================================================
+# CONFIRMAR TODAS LAS FICHAS LISTAS DE GOLPE (Fase 3, pedido de Diego:
+# "menos clics"). CONTRATO EXACTO (decidido por él cuando se le preguntó):
+# SIN MENTIR SOBRE LA PROCEDENCIA -- un campo que Diego NO tocó mantiene su
+# `fuente`/`confianza` ORIGINALES (`foto`/`inferido`); sólo lo que sí tocó
+# pasa a `fuente="diego"`. `_accion_confirmar_lote`/`_productos_listos_y_
+# saltados`/`_solicitudes_redaccion_pendientes` son PURAS (nunca llaman a
+# `st.*` salvo leer `st.session_state`, que funciona en modo bare -- ver
+# docstring de `_construir_confirmado`) -- se prueban DIRECTAS, sin
+# `AppTest`, mismo límite que `_accion_extraer_lote` (un botón dentro de un
+# `@st.dialog` ya abierto no es alcanzable por `AppTest`).
+# ============================================================================
+def _preparar_multi(
+    tmp_path: Path, fixtures: list[Callable[[Path], ResultadoExtraccion]]
+) -> tuple[str, list[str]]:
+    """`len(fixtures)` productos en el MISMO lote, cada uno con 1 foto,
+    agrupación confirmada (Fase 1) y su propia extracción ya guardada."""
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote multi", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+    pids: list[str] = []
+    for i, fixture in enumerate(fixtures):
+        ruta = carpeta / f"IMG_multi_{i}.jpg"
+        _crear_img(ruta, (10 * i % 255, 50, 80))
+        (foto_id,) = store.añadir_fotos(lote_id, [Foto(ruta=str(ruta), hash=f"hash_multi_{i}")])
+        (producto_id,) = store.guardar_agrupacion(lote_id, [[foto_id]])
+        store.confirmar_producto(producto_id)
+        resultado = fixture(tmp_path / f"crops_multi_{i}")
+        store.guardar_extraccion(producto_id, serializar_extraccion(resultado))
+        pids.append(producto_id)
+    return lote_id, pids
+
+
+class _MotorTextoFakeConFallos:
+    """Como `_MotorTextoFake`, pero puede fallar SÓLO para los
+    `producto_id` en `falla_en` -- el caso de fallo que
+    `decision-making.md` §16 exige EJECUTAR, no sólo leer."""
+
+    def __init__(self, falla_en: frozenset[str] = frozenset()) -> None:
+        self.falla_en = falla_en
+        self.prompts: list[str] = []
+
+    def consultar_texto(self, prompt, json_schema, version_prompt="v1", producto_id=None):
+        self.prompts.append(prompt)
+        if producto_id in self.falla_en:
+            raise LLMLlamadaFallidaError(f"fallo simulado de redacción en {producto_id}")
+        return ResultadoLLM(
+            datos={"titulo": "Título IA", "descripcion": "Descripción IA"},
+            fuente="api", coste_usd=0.00005, tokens_entrada=120, tokens_salida=60,
+        )
+
+
+def test_bulk_campo_no_tocado_mantiene_fuente_original(tmp_path):
+    """EL TEST QUE IMPORTA: `marca` es `fuente="inferido"`, `modelo`/`ean`
+    son `fuente="foto"` -- Diego NUNCA abrió esta ficha (no hay nada en
+    `session_state` para este `pid`). Tras confirmar en bloque, NINGUNO de
+    los tres debe pasar a `fuente="diego"` -- se lee del STORE EN DISCO,
+    no de `session_state`."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    store = LoteStore(data_dir=tmp_path)
+    producto = _producto(tmp_path, lote_id, pid)
+
+    ok, fallos = ficha._accion_confirmar_lote(store, [producto], _MotorTextoFake())
+    assert fallos == []
+    assert ok == [pid]
+
+    campos = _producto(tmp_path, lote_id, pid)["campos"]["campos"]
+    assert campos["marca"]["valor"] == "lufthous"
+    assert campos["marca"]["fuente"] == "inferido"  # NUNCA "diego": no lo tocó
+    assert campos["modelo"]["fuente"] == "foto"
+    assert campos["ean"]["fuente"] == "foto"
+    assert campos["estado"]["fuente"] == "inferido"
+    assert campos["categoria"]["fuente"] == "inferido"
+    # la ficha SÍ queda confirmada -- Diego aceptó los valores, aunque no
+    # haya revisado cada píxel uno a uno.
+    assert _producto(tmp_path, lote_id, pid)["campos"]["confirmada"] is True
+
+
+def test_bulk_campo_tocado_por_diego_queda_fuente_diego(tmp_path):
+    """Si Diego SÍ editó un campo (a mano, o con un botón "usar «X»") antes
+    de pulsar "confirmar todas", ESE campo sí pasa a `fuente="diego"` --
+    aunque el confirm sea en bloque."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    store = LoteStore(data_dir=tmp_path)
+    st.session_state[f"ficha_{pid}_marca_valor"] = "Lufthous Pro"  # Diego lo tecleó
+    producto = _producto(tmp_path, lote_id, pid)
+
+    ok, fallos = ficha._accion_confirmar_lote(store, [producto], _MotorTextoFake())
+    assert fallos == []
+    assert ok == [pid]
+
+    campos = _producto(tmp_path, lote_id, pid)["campos"]["campos"]
+    assert campos["marca"]["valor"] == "Lufthous Pro"
+    assert campos["marca"]["fuente"] == "diego"
+    # lo que NO tocó sigue sin ser suyo:
+    assert campos["modelo"]["fuente"] == "foto"
+
+
+def test_productos_listos_y_saltados_separa_lo_incompleto(tmp_path):
+    """`_marca_leida_no_publicada_lista_para_confirmar` deja "estado" sin
+    elegir a propósito -- falta un obligatorio, así que se SALTA y se
+    nombra qué le falta."""
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    producto = _producto(tmp_path, lote_id, pid)
+
+    listos, saltados = ficha._productos_listos_y_saltados([producto])
+    assert listos == []
+    assert len(saltados) == 1
+    saltado_pid, faltan = saltados[0]
+    assert saltado_pid == pid
+    assert any("estado" in f for f in faltan)
+
+
+def test_bulk_confirma_listos_salta_incompletos_y_los_nombra(tmp_path):
+    """3 fichas listas + 1 incompleta -> se confirman 3, se salta 1
+    NOMBRADA (nunca en silencio, `decision-making.md` §13)."""
+    fixtures = [
+        _ficha_completa, _ficha_completa, _ficha_completa,
+        _marca_leida_no_publicada_lista_para_confirmar,
+    ]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    productos = _productos_de(tmp_path, lote_id)
+
+    listos, saltados = ficha._productos_listos_y_saltados(productos)
+    assert {p["id"] for p in listos} == set(pids[:3])
+    assert len(saltados) == 1
+    assert saltados[0][0] == pids[3]
+
+    ok, fallos = ficha._accion_confirmar_lote(store, listos, _MotorTextoFake())
+    assert set(ok) == set(pids[:3])
+    assert fallos == []
+
+    confirmadas = {p["id"] for p in _productos_de(tmp_path, lote_id) if ficha._ficha_confirmada(p)}
+    assert confirmadas == set(pids[:3])
+    assert pids[3] not in confirmadas
+
+
+def test_bulk_una_redaccion_falla_las_demas_se_confirman_igual(tmp_path):
+    """EL TEST QUE IMPORTA (§16): la redacción de UNA ficha revienta a
+    mitad del lote -> las otras SE CONFIRMAN igual (dinero ya gastado no se
+    pierde), y el fallo sale NOMBRADO con su `producto_id` y el motivo
+    real -- nunca un `except: pass`."""
+    fixtures = [_ficha_completa, _ficha_completa, _ficha_completa]
+    lote_id, pids = _preparar_multi(tmp_path, fixtures)
+    store = LoteStore(data_dir=tmp_path)
+    productos = _productos_de(tmp_path, lote_id)
+    listos, saltados = ficha._productos_listos_y_saltados(productos)
+    assert saltados == []
+
+    pid_que_falla = pids[1]
+    motor = _MotorTextoFakeConFallos(falla_en=frozenset({pid_que_falla}))
+    ok, fallos = ficha._accion_confirmar_lote(store, listos, motor)
+
+    assert set(ok) == set(pids) - {pid_que_falla}
+    assert len(fallos) == 1
+    fallo_pid, motivo = fallos[0]
+    assert fallo_pid == pid_que_falla
+    assert "fallo simulado" in motivo
+
+    confirmadas = {p["id"] for p in _productos_de(tmp_path, lote_id) if ficha._ficha_confirmada(p)}
+    assert pid_que_falla not in confirmadas
+    assert len(confirmadas) == 2
+
+
+def test_solicitudes_redaccion_pendientes_cuenta_lo_que_hace_falta(tmp_path):
+    """El diálogo tiene que poder ENSEÑAR EL COSTE de las N redacciones
+    ANTES de lanzarlas (§15) -- esto es lo que alimenta
+    `motor.estimar_coste_texto_lote` dentro de `_dialog_confirmar_lote`."""
+    fixtures = [_ficha_completa, _ficha_completa]
+    lote_id, _pids = _preparar_multi(tmp_path, fixtures)
+    productos = _productos_de(tmp_path, lote_id)
+    listos, _saltados = ficha._productos_listos_y_saltados(productos)
+
+    solicitudes = ficha._solicitudes_redaccion_pendientes(listos)
+    assert len(solicitudes) == 2  # nadie tocó título/descripción -> las dos hacen falta
+
+    motor = LLMEngine(cache_dir=tmp_path / "cache_test")
+    estimacion = motor.estimar_coste_texto_lote(solicitudes)
+    assert estimacion.n_llamadas_total == 2
+    assert estimacion.n_a_pagar == 2  # nada en caché todavía
+    assert estimacion.coste_usd_estimado > 0
+
+
+def test_solicitudes_redaccion_pendientes_omite_texto_ya_editado(tmp_path):
+    """Si Diego YA escribió su propio título Y descripción antes de pulsar
+    "confirmar todas", esa ficha no necesita redacción -- cero coste."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    st.session_state[f"ficha_{pid}_titulo_valor"] = "Mi propio título"
+    st.session_state[f"ficha_{pid}_descripcion_valor"] = "Mi propia descripción, tal cual."
+    producto = _producto(tmp_path, lote_id, pid)
+
+    solicitudes = ficha._solicitudes_redaccion_pendientes([producto])
+    assert solicitudes == []
+
+
+def test_boton_confirmar_lote_aparece_con_n_listos_y_avisa_de_saltados(tmp_path):
+    fixtures = [_ficha_completa, _ficha_completa, _marca_leida_no_publicada_lista_para_confirmar]
+    lote_id, _pids = _preparar_multi(tmp_path, fixtures)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    labels = [b.label for b in at.button]
+    assert any("Confirmar todas las fichas listas" in lbl and "2" in lbl for lbl in labels)
+    textos = " ".join(c.value for c in at.caption)
+    assert "1 ficha" in textos
+
+
+def test_boton_confirmar_lote_deshabilitado_si_ninguno_listo(tmp_path):
+    """Extraído pero SIN obligatorios (`_marca_leida_no_publicada`, sin
+    categoría/título/descripción) -- el botón se ENSEÑA (nunca se
+    esconde), pero deshabilitado con "0"."""
+    lote_id, _pid = _preparar(tmp_path, _marca_leida_no_publicada)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    boton = next(b for b in at.button if "Confirmar todas las fichas listas" in b.label)
+    assert boton.proto.disabled is True
+    assert "(0)" in boton.label
+
+
+def test_boton_confirmar_lote_no_aparece_sin_nada_extraido(tmp_path):
+    lote_id, _pids = _preparar_n_sin_extraer(tmp_path, 3)  # nada extraído todavía
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    labels = [b.label for b in at.button]
+    assert not any("Confirmar todas las fichas listas" in lbl for lbl in labels)
+
+
+def test_boton_confirmar_lote_no_aparece_si_ya_todo_confirmado(tmp_path):
+    """Producto YA confirmado (persistido directo en el store, SIN pasar
+    por un click dentro de `AppTest`): `AppTest` no limpia su cola de
+    mensajes entre un `st.rerun()` interno y el run que lo disparó (a
+    diferencia de la app real, cuyo `AppSession` sí lo hace) -- combinar
+    "click que confirma" + "un run() más" en el MISMO test dispara ese
+    límite del arnés de pruebas, no un bug de producto (mismo patrón que
+    documenta la sección de extracción-en-lote más arriba: la mutación se
+    verifica llamando la función directa; aquí, en cambio, se puede
+    reproducir con `AppTest` con tal de que el estado YA venga confirmado
+    ANTES del primer `.run()`, sin un click de por medio)."""
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    store = LoteStore(data_dir=tmp_path)
+    producto = _producto(tmp_path, lote_id, pid)
+    confirmado = dict(producto["campos"])
+    confirmado["confirmada"] = True
+    store.confirmar_ficha(pid, confirmado)
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    labels = [b.label for b in at.button]
+    assert not any("Confirmar todas las fichas listas" in lbl for lbl in labels)

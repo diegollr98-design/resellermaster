@@ -47,6 +47,7 @@ from core import images, pricing
 from core.extract import (
     ExtractorEngine,
     ExtractorError,
+    construir_solicitud_redaccion,
     deserializar_extraccion,
     redactar_desde_campos_confirmados,
     serializar_extraccion,
@@ -334,6 +335,16 @@ def _productos_sin_extraer(productos: list[dict]) -> list[dict]:
     return [p for p in productos if not _esta_extraido(p)]
 
 
+def _productos_pendientes_confirmar(productos: list[dict]) -> list[dict]:
+    """Extraídos, con la ficha SIN confirmar todavía — el universo de
+    entrada del botón de confirmación en bloque (`_dialog_confirmar_lote`).
+    NO filtra por "listo" (obligatorios completos): eso lo hace
+    `_productos_listos_y_saltados`, más abajo, sobre este mismo conjunto —
+    aquí sólo se descarta lo que NUNCA tendría sentido ofrecer: lo que aún
+    no se ha extraído, o lo que Diego ya confirmó."""
+    return [p for p in productos if _esta_extraido(p) and not _ficha_confirmada(p)]
+
+
 def _accion_extraer_lote(
     store: LoteStore,
     lote_id: str,
@@ -456,12 +467,84 @@ def _valor_por_defecto(campo: str, datos_campo: dict) -> str:
     return ""
 
 
+def _valor_por_defecto_serial(campo: str, datos_campo_serial: dict) -> str:
+    """MISMO criterio que `_valor_por_defecto`, pero sobre el dict SERIAL
+    crudo (`producto['campos']['campos'][campo]`, la forma que guarda
+    `serializar_extraccion` -- la que consume `_construir_confirmado`).
+    Ahí `lecturas` es `[origen, texto]` -- una LISTA posicional
+    (`core.extract._lecturas_a_lista`), no la lista de dicts que produce
+    `deserializar_extraccion` y que `_valor_por_defecto` sabe leer.
+    Confundir las dos formas es EXACTAMENTE el bug que reventaba el botón
+    de confirmar en bloque (`'list' object has no attribute 'get'`,
+    reproducido ejecutando `AppTest`, `decision-making.md` §4/§16) -- no se
+    pasa por `deserializar_extraccion` completo aquí porque eso reconstruye
+    `Path` de cada recorte, que este cálculo no necesita."""
+    if datos_campo_serial.get("valor"):
+        return str(datos_campo_serial["valor"])
+    propuesta = datos_campo_serial.get("propuesta") or {}
+    for lec in propuesta.get("lecturas", []):
+        texto = lec[1] if isinstance(lec, (list, tuple)) and len(lec) > 1 else None
+        if texto:
+            return str(texto)
+    return ""
+
+
 def _rellenar_valor(key: str, valor: str) -> None:
     """Callback de un botón "usar «X»": escribe la key del text_input ANTES
     de que se instancie en el próximo rerun (patrón legal de Streamlit; lo
     contrario —escribir la key de un widget ya instanciado— lanza
     StreamlitAPIException, ver `app.py`)."""
     st.session_state[key] = valor
+
+
+# --------------------------------------------------------------------------
+# Defaults de "estado"/"categoria" — UN sitio (`change-loop.md` §C3): los
+# usa la siembra inicial del widget (`_sembrar_valores_iniciales`) Y la
+# detección de "¿lo tocó Diego?" del confirm en bloque (`_construir_confirmado`,
+# `modo_bloque=True`, ver su docstring). Si algún día cambia CÓMO se deriva
+# el default (p.ej. normalizar mayúsculas del modelo), cambia en un sitio y
+# ambos caminos lo heredan.
+# --------------------------------------------------------------------------
+def _estado_default(datos_campo: dict) -> str:
+    sugerido = datos_campo.get("valor")
+    return sugerido if sugerido in _OPCIONES_ESTADO else _OPCIONES_ESTADO[0]
+
+
+def _categoria_default(datos_campo: dict) -> str:
+    sugerido = datos_campo.get("valor")
+    return sugerido if sugerido in _OPCIONES_CATEGORIA else _OPCIONES_CATEGORIA[0]
+
+
+# --------------------------------------------------------------------------
+# "Valor actual, o el default que se habría sembrado" — para poder decidir
+# si un campo está TOCADO sin depender de que `_render_producto` ya haya
+# recorrido ese producto EN ESTE script run (el botón de confirmar en
+# bloque vive ANTES del bucle que siembra `session_state`, ver `render()`).
+# Si la key ya está sembrada (el caso normal, tras un render previo), se lee
+# de ahí -- MISMO valor que leería un widget ya instanciado. `datos_campo`
+# aquí es SIEMPRE la forma SERIAL (`_construir_confirmado` itera
+# `serial.get("campos", {})`) -- por eso el fallback usa
+# `_valor_por_defecto_serial`, no `_valor_por_defecto` (forma deserializada).
+# --------------------------------------------------------------------------
+def _valor_actual_o_defecto(pid: str, campo: str, datos_campo: dict) -> str:
+    key = f"ficha_{pid}_{campo}_valor"
+    if key in st.session_state:
+        return st.session_state[key]
+    return _valor_por_defecto_serial(campo, datos_campo)
+
+
+def _estado_actual_o_defecto(pid: str, datos_campo: dict) -> str:
+    key = f"ficha_{pid}_estado_estado"
+    if key in st.session_state:
+        return st.session_state[key]
+    return _estado_default(datos_campo)
+
+
+def _categoria_actual_o_defecto(pid: str, datos_campo: dict) -> str:
+    key = f"ficha_{pid}_categoria_categoria"
+    if key in st.session_state:
+        return st.session_state[key]
+    return _categoria_default(datos_campo)
 
 
 def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
@@ -483,15 +566,9 @@ def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
         return
     for campo, dc in campos.items():
         if campo == "estado":
-            sugerido = dc.get("valor")
-            st.session_state[f"ficha_{pid}_estado_estado"] = (
-                sugerido if sugerido in _OPCIONES_ESTADO else _OPCIONES_ESTADO[0]
-            )
+            st.session_state[f"ficha_{pid}_estado_estado"] = _estado_default(dc)
         elif campo == "categoria":
-            sugerido = dc.get("valor")
-            st.session_state[f"ficha_{pid}_categoria_categoria"] = (
-                sugerido if sugerido in _OPCIONES_CATEGORIA else _OPCIONES_CATEGORIA[0]
-            )
+            st.session_state[f"ficha_{pid}_categoria_categoria"] = _categoria_default(dc)
         else:
             st.session_state[f"ficha_{pid}_{campo}_valor"] = _valor_por_defecto(campo, dc)
     st.session_state[marcador] = firma
@@ -598,17 +675,37 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
 
 
 # --------------------------------------------------------------------------
-# Confirmación de la ficha: recoge lo que Diego dejó en cada campo y lo
-# persiste con fuente="diego" (su palabra), preservando el recorte/lecturas
-# para poder re-revisar. Hecho append-only en `confirmaciones` (tipo='ficha').
+# Confirmación de la ficha: recoge lo que Diego dejó en cada campo.
+#
+# DOS MODOS, mismo código (`change-loop.md` §C3 — un predicado, no dos):
+#   - `modo_bloque=False` (confirmar UN producto, "como hoy"): Diego abrió
+#     ESTA ficha y la revisó campo a campo con el píxel al lado -- eso ES la
+#     confirmación (`truth-loop.md` §A.2: "quien afirma es Diego, al
+#     confirmar"). TODO campo pasa a `fuente="diego"`, lo haya tocado o no.
+#   - `modo_bloque=True` (confirmar VARIAS de golpe, botón de lote): Diego
+#     NO ha mirado cada píxel de cada ficha -- sólo aceptó el lote. Un campo
+#     que él NO tocó (el valor actual es el mismo default que se sembró)
+#     MANTIENE su `fuente`/`confianza` originales (`foto`/`inferido`); sólo
+#     los que sí editó -- a mano, o con un botón "usar «X»" -- se marcan
+#     `fuente="diego"`. Mentir sobre la procedencia es justo lo único que el
+#     giro del 2026-07-16 NO relajó (`truth-loop.md` §A.2).
 # --------------------------------------------------------------------------
-def _construir_confirmado(pid: str, serial: dict) -> dict[str, Any]:
+def _construir_confirmado(pid: str, serial: dict, *, modo_bloque: bool = False) -> dict[str, Any]:
     """Se parte del dict SERIALIZADO (`producto['campos']`, rutas de recorte
     como `str`), NO del deserializado (rutas `Path`, que `json.dumps` de
     `confirmar_ficha` no sabe serializar). Se preserva el envoltorio entero
     (`coste_usd`, `fallos`, la propuesta con su recorte para re-revisar) y
-    sólo se sobrescriben `valor`/`fuente`/`confianza` con lo que Diego dejó.
-    Un campo que Diego dejó vacío es un null CONFIRMADO, no un fallo."""
+    sólo se sobrescriben `valor` (siempre) y `fuente`/`confianza` (según el
+    modo de arriba). Un campo que Diego dejó vacío es un null CONFIRMADO,
+    no un fallo.
+
+    Usa `_valor_actual_o_defecto`/`_estado_actual_o_defecto`/
+    `_categoria_actual_o_defecto` (no `st.session_state` directo): así
+    funciona igual si el widget de este producto YA está sembrado (el caso
+    normal) o si todavía NO se ha renderizado en este script run (el botón
+    de confirmar en bloque vive ANTES del bucle que siembra, ver `render()`)
+    -- en ese caso cae al MISMO default que sembraría `_sembrar_valores_
+    iniciales`, así que "tocado" se puede evaluar sin depender del orden."""
     # `[INC-011]` (ficha Frankenstein) CON DIENTES: si la extracción avisó de
     # incoherencia (campos de fotos disjuntas), un valor confirmado NUNCA sube
     # a `alta` — el aviso baja el techo, no es sólo un pie de foto (`§12`).
@@ -617,24 +714,35 @@ def _construir_confirmado(pid: str, serial: dict) -> dict[str, Any]:
     campos_confirmados: dict[str, Any] = {}
     for campo, datos_campo in serial.get("campos", {}).items():
         if campo == "estado":
-            elegido = st.session_state.get(f"ficha_{pid}_{campo}_estado", _OPCIONES_ESTADO[0])
+            elegido = _estado_actual_o_defecto(pid, datos_campo)
             valor = None if elegido == _OPCIONES_ESTADO[0] else elegido
+            tocado = elegido != _estado_default(datos_campo)
         elif campo == "categoria":
-            elegido = st.session_state.get(f"ficha_{pid}_{campo}_categoria", _OPCIONES_CATEGORIA[0])
+            elegido = _categoria_actual_o_defecto(pid, datos_campo)
             valor = None if elegido == _OPCIONES_CATEGORIA[0] else elegido
+            tocado = elegido != _categoria_default(datos_campo)
         else:
-            crudo = st.session_state.get(f"ficha_{pid}_{campo}_valor", "")
+            crudo = _valor_actual_o_defecto(pid, campo, datos_campo)
             valor = crudo.strip() or None
+            tocado = crudo.strip() != (_valor_por_defecto_serial(campo, datos_campo) or "").strip()
 
         base = dict(datos_campo)  # json-safe: rutas ya son str
         base["valor"] = valor
-        base["fuente"] = "diego"
-        if valor is None:
-            base["confianza"] = "baja"
-        elif hay_aviso_coherencia:
-            base["confianza"] = "media"
+        if modo_bloque and not tocado:
+            # Sin tocar, en modo bloque: se PRESERVA fuente/confianza
+            # originales (ya están en `base` vía `dict(datos_campo)`) —
+            # Diego no lo revisó, así que no puede decir "esto lo confirmé
+            # yo". `valor` sí se actualiza arriba porque, al no estar
+            # tocado, coincide exactamente con el default (foto/inferido).
+            pass
         else:
-            base["confianza"] = "alta"
+            base["fuente"] = "diego"
+            if valor is None:
+                base["confianza"] = "baja"
+            elif hay_aviso_coherencia:
+                base["confianza"] = "media"
+            else:
+                base["confianza"] = "alta"
         campos_confirmados[campo] = base
 
     nuevo = dict(serial)
@@ -792,40 +900,223 @@ def _obligatorios_faltantes_en_pantalla(pid: str) -> list[str]:
     return faltan
 
 
-def _accion_confirmar_ficha(store: LoteStore, pid: str, serial: dict, motor: LLMEngine) -> bool:
-    """Corre en el mismo script run que el click del botón (no en un
-    on_click), así que `st.session_state` ya tiene los valores de los
-    widgets y `st.error` es válido — mismo criterio que
-    `ui/curar.py::_accion_archivar_foto`."""
-    confirmado = _construir_confirmado(pid, serial)
+def _confirmar_uno(
+    store: LoteStore, pid: str, serial: dict, motor: LLMEngine, *, modo_bloque: bool
+) -> tuple[bool, str | None]:
+    """EL ÚNICO camino que escribe una ficha confirmada -- lo llaman
+    `_accion_confirmar_ficha` (botón individual) Y `_accion_confirmar_lote`
+    (botón de bloque), con el MISMO orden de validaciones
+    (`change-loop.md` §C3: un predicado, no dos que puedan divergir). Pura
+    (nunca llama a `st.*`): devuelve `(ok, motivo_del_fallo_o_None)` para
+    que cada llamador decida cómo mostrarlo (un `st.error` inmediato en el
+    caso individual; una lista de `(pid, motivo)` acumulada en el de bloque,
+    ver `decision-making.md` §13: nunca un fallo que se traga en silencio)."""
+    confirmado = _construir_confirmado(pid, serial, modo_bloque=modo_bloque)
 
     confirmado, error_redaccion = _regenerar_titulo_descripcion(confirmado, serial, motor, pid)
     if error_redaccion:
-        st.error(error_redaccion)
-        return False
+        return False, error_redaccion
 
     faltan = _obligatorios_faltantes_en_confirmado(confirmado)
     if faltan:
-        st.error(
-            "Faltan campos obligatorios antes de confirmar: " + ", ".join(faltan) + "."
-        )
-        return False
+        return False, "Faltan campos obligatorios antes de confirmar: " + ", ".join(faltan) + "."
 
     marca = (confirmado.get("campos", {}).get("marca") or {}).get("valor")
     problemas = _problemas_de_texto(confirmado, marca)
     if problemas:
-        st.error(
+        return False, (
             "Arregla el texto antes de confirmar (Wallapop/Vinted lo rechazan):\n\n"
             + "\n".join(f"- {p}" for p in problemas)
         )
-        return False
     try:
         store.confirmar_ficha(pid, confirmado)
     except StoreError as exc:
         logger.exception("No se pudo confirmar la ficha del producto %s", pid)
-        st.error(f"No se pudo confirmar la ficha: {exc}")
-        return False
-    return True
+        return False, f"No se pudo confirmar la ficha: {exc}"
+    return True, None
+
+
+def _accion_confirmar_ficha(store: LoteStore, pid: str, serial: dict, motor: LLMEngine) -> bool:
+    """Corre en el mismo script run que el click del botón (no en un
+    on_click), así que `st.session_state` ya tiene los valores de los
+    widgets y `st.error` es válido — mismo criterio que
+    `ui/curar.py::_accion_archivar_foto`. `modo_bloque=False`: Diego abrió
+    ESTA ficha y la revisó -- "como hoy", todo pasa a `fuente="diego"`."""
+    ok, motivo = _confirmar_uno(store, pid, serial, motor, modo_bloque=False)
+    if motivo:
+        st.error(motivo)
+    return ok
+
+
+# --------------------------------------------------------------------------
+# CONFIRMACIÓN DE TODAS LAS FICHAS LISTAS DE GOLPE (Fase 3, pedido de
+# Diego: "menos clics"). SIN MENTIR SOBRE LA PROCEDENCIA -- contrato exacto
+# (decidido por Diego cuando se le preguntó): un campo que él NO tocó
+# MANTIENE su `fuente`/`confianza` originales (`_construir_confirmado`,
+# `modo_bloque=True`); sólo lo que sí editó pasa a `fuente="diego"`. La
+# ficha queda `confirmada=True` igual (él ACEPTÓ los valores), pero el
+# rastro de qué revisó de verdad sobrevive hasta el export
+# (`truth-loop.md` §A.2: "un 'confirmar todo' a ciegas" es EXACTAMENTE el
+# caso que tumbaría la premisa del giro si mintiera -- por eso no miente).
+#
+# La red de seguridad que Diego pidió explícitamente: un producto con
+# obligatorios vacíos NUNCA se confirma en bloque -- se SALTA y se NOMBRA
+# (nunca en silencio, `decision-making.md` §13).
+# --------------------------------------------------------------------------
+def _productos_listos_y_saltados(
+    productos: list[dict],
+) -> tuple[list[dict], list[tuple[str, list[str]]]]:
+    """`productos` debe venir YA FILTRADO a extraídos-sin-confirmar (mismo
+    criterio que `_productos_sin_extraer` para la extracción en bloque, ver
+    `render()`). Separa los que tienen TODOS los obligatorios listos
+    (confirmables de golpe) de los que no (se saltan, nombrando QUÉ les
+    falta). Reusa `_construir_confirmado` (`modo_bloque=True`, pura, sin
+    llamar a la API ni a `st.error`) + `_obligatorios_faltantes_en_
+    confirmado`, que YA EXISTEN -- el MISMO predicado que decide si un
+    confirm individual pasa la puerta decide aquí si un producto entra en
+    el lote (`change-loop.md` §C3)."""
+    listos: list[dict] = []
+    saltados: list[tuple[str, list[str]]] = []
+    for producto in productos:
+        pid = producto["id"]
+        confirmado_preview = _construir_confirmado(pid, producto["campos"], modo_bloque=True)
+        faltan = _obligatorios_faltantes_en_confirmado(confirmado_preview)
+        if faltan:
+            saltados.append((pid, faltan))
+        else:
+            listos.append(producto)
+    return listos, saltados
+
+
+def _solicitudes_redaccion_pendientes(productos: list[dict]) -> list[tuple[str, str]]:
+    """`(prompt, version_prompt)` de la redacción que HARÍA FALTA para cada
+    `producto` de `productos` si se confirmara en bloque AHORA MISMO -- para
+    poder ENSEÑAR EL COSTE antes de gastar (§15) sin llamar a nadie. Sigue
+    el MISMO criterio que `_regenerar_titulo_descripcion`/`_diego_edito_
+    texto`: si Diego ya tocó título Y descripción, no hace falta redacción
+    -- no se cuenta ni se paga."""
+    solicitudes: list[tuple[str, str]] = []
+    for producto in productos:
+        pid = producto["id"]
+        serial = producto["campos"]
+        confirmado = _construir_confirmado(pid, serial, modo_bloque=True)
+        campos = confirmado.get("campos", {})
+        if "titulo" not in campos and "descripcion" not in campos:
+            continue
+        titulo_tocado = _diego_edito_texto("titulo", serial, confirmado)
+        descripcion_tocada = _diego_edito_texto("descripcion", serial, confirmado)
+        if titulo_tocado and descripcion_tocada:
+            continue
+        campos_para_redaccion = {
+            c: (dc or {}).get("valor") for c, dc in campos.items() if c not in ("titulo", "descripcion")
+        }
+        solicitudes.append(construir_solicitud_redaccion(campos_para_redaccion))
+    return solicitudes
+
+
+def _accion_confirmar_lote(
+    store: LoteStore,
+    productos: list[dict],
+    motor: LLMEngine,
+    *,
+    on_progreso: Callable[[int, int, str], None] | None = None,
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Confirma TODOS los `productos` (ya filtrados a LISTOS por
+    `_productos_listos_y_saltados`) de una tirada, por el MISMO camino que
+    confirmar uno (`_confirmar_uno`, `modo_bloque=True`). Persiste CADA
+    ficha según termina (dinero de la redacción ya gastado no se pierde si
+    la N+1 revienta); un fallo de UNA no tumba las demás -- se loguea, se
+    anota con su `producto_id` y el motivo real, y el bucle SIGUE (mismo
+    criterio que `_accion_extraer_lote`, `decision-making.md` §13/§16)."""
+    ok: list[str] = []
+    fallos: list[tuple[str, str]] = []
+    total = len(productos)
+    for i, producto in enumerate(productos, start=1):
+        pid = producto["id"]
+        if on_progreso is not None:
+            on_progreso(i, total, pid)
+        try:
+            exito, motivo = _confirmar_uno(store, pid, producto["campos"], motor, modo_bloque=True)
+        except Exception as exc:  # noqa: BLE001 — un producto no puede tumbar el lote entero (ver docstring de `_accion_extraer_lote`).
+            logger.exception("Fallo inesperado confirmando en bloque el producto %s", pid)
+            fallos.append((pid, str(exc)))
+            continue
+        if exito:
+            ok.append(pid)
+        else:
+            fallos.append((pid, motivo or "motivo desconocido"))
+    return ok, fallos
+
+
+@st.dialog("Confirmar todas las fichas listas — coste antes de gastar", width="large")
+def _dialog_confirmar_lote(
+    store: LoteStore,
+    productos: list[dict],
+    motor: LLMEngine,
+) -> None:
+    """UNA sola puerta de coste (§15) para las N redacciones que este
+    confirm en bloque va a disparar — mismo patrón que
+    `_dialog_extraer_lote`. `productos` viene YA FILTRADO a extraídos-sin-
+    confirmar (ver `render()`); aquí se separan listos/saltados y se avisa
+    de los saltados ANTES de mostrar el botón de gasto real."""
+    listos, saltados = _productos_listos_y_saltados(productos)
+
+    if saltados:
+        with st.expander(f"⚠️ {len(saltados)} ficha(s) se van a SALTAR (les falta algo)"):
+            for pid, faltan in saltados:
+                st.caption(f"- producto `{pid[:8]}`: falta " + ", ".join(faltan))
+
+    if not listos:
+        st.warning(
+            "Ninguna ficha tiene todos los obligatorios listos todavía — no hay nada "
+            "que confirmar en bloque. Complétalas una a una primero."
+        )
+        if st.button("cerrar", use_container_width=True):
+            st.rerun()
+        return
+
+    st.caption(
+        f"{len(listos)} ficha(s) lista(s). Los campos que edites/uses individualmente "
+        "quedan `fuente=diego`; los que se aceptan SIN TOCAR mantienen su procedencia "
+        "original (📷 leído en foto / 🧠 inferido) — nunca se marcan como verificados "
+        "por ti si no los miraste."
+    )
+
+    try:
+        with st.spinner("Estimando el coste de la redacción…"):
+            solicitudes = _solicitudes_redaccion_pendientes(listos)
+            estimacion = motor.estimar_coste_texto_lote(solicitudes)
+    except Exception as exc:  # noqa: BLE001 — la estimación no puede tumbar la pantalla.
+        logger.exception("No se pudo estimar el coste de la confirmación en bloque")
+        st.error(f"No se pudo preparar la confirmación en bloque: {exc}")
+        return
+
+    coste_cts = estimacion.coste_usd_estimado * 100
+    st.write(
+        f"**{estimacion.n_llamadas_total} redacción(es) de título/descripción** · "
+        f"{estimacion.n_en_cache} ya en caché (0 €) · {estimacion.n_a_pagar} a pagar."
+    )
+    if estimacion.n_a_pagar == 0:
+        st.success("Coste estimado: **0 €** — todo estaba en caché o ya escrito por ti.")
+    else:
+        st.info(f"Coste estimado: **~{coste_cts:.2f} cts USD** (Haiku 4.5) para las {len(listos)} fichas.")
+
+    if st.button(f"✅ Confirmar las {len(listos)} ficha(s) ahora", type="primary", use_container_width=True):
+        progreso = st.progress(0.0, text=f"Confirmando 0/{len(listos)}…")
+
+        def _avisar(i: int, total: int, pid: str) -> None:
+            progreso.progress(i / total, text=f"Ficha {i}/{total} (`{pid[:8]}`)…")
+
+        ok, fallos = _accion_confirmar_lote(store, listos, motor, on_progreso=_avisar)
+        if fallos:
+            st.error(
+                f"Fallaron {len(fallos)} de {len(listos)} (las demás SÍ quedaron confirmadas):\n\n"
+                + "\n".join(f"- producto `{pid[:8]}`: {motivo}" for pid, motivo in fallos)
+            )
+        if ok:
+            st.success(f"{len(ok)} ficha(s) confirmada(s).")
+        if not fallos:
+            st.rerun()
 
 
 # --------------------------------------------------------------------------
@@ -974,15 +1265,54 @@ def render(
     # urgente de Diego (2026-07-17): "no quiero rellenar las fichas
     # manualmente" — de 2 clics × N productos a 1 clic + 1 confirmación de
     # coste para TODO el lote. Ver el bloque `_dialog_extraer_lote` arriba.
-    sin_extraer = _productos_sin_extraer(confirmados_agrupacion)
-    if sin_extraer:
-        if st.button(
-            f"🔎 Extraer TODO el lote ({len(sin_extraer)} producto(s) sin extraer)",
-            type="primary",
-            use_container_width=True,
-        ):
-            _dialog_extraer_lote(store, lote_id, sin_extraer, fotos_por_id, motor, crear_extractor)
-        st.divider()
+    #
+    # `st.container()` ENVOLVIENDO cada bloque condicional, A PROPÓSITO
+    # (`decision-making.md` §4/§16, bug reproducido ejecutando `AppTest`):
+    # sin el contenedor, el NÚMERO de elementos que este bloque emite antes
+    # del bucle de productos cambia entre el run que procesa un click (p.ej.
+    # confirmar una ficha) y el run que dispara ese mismo click vía
+    # `st.rerun()` -- eso DESPLAZA la posición del contenedor de cada
+    # producto entre un run y el siguiente, y `AppTest` (a diferencia de la
+    # app real: su cola de mensajes NUNCA se limpia entre un `st.rerun()`
+    # interno y el run que lo originó) deja el producto DUPLICADO en el
+    # árbol resultante -- un botón "Confirmar ficha" fantasma con la key
+    # repetida que el siguiente click puede agarrar por error. Envolver en
+    # un contenedor SIEMPRE presente fija la posición de todo lo que viene
+    # después, pase lo que pase dentro del contenedor.
+    with st.container():
+        sin_extraer = _productos_sin_extraer(confirmados_agrupacion)
+        if sin_extraer:
+            if st.button(
+                f"🔎 Extraer TODO el lote ({len(sin_extraer)} producto(s) sin extraer)",
+                type="primary",
+                use_container_width=True,
+            ):
+                _dialog_extraer_lote(store, lote_id, sin_extraer, fotos_por_id, motor, crear_extractor)
+            st.divider()
+
+    # BOTÓN "CONFIRMAR TODAS DE GOLPE" — junto al de arriba, pedido de
+    # Diego ("menos clics"). N = listos AHORA MISMO (obligatorios completos);
+    # se recalcula en el diálogo por si algo cambió entre medias. Si hay
+    # pendientes pero NINGUNO está listo, el botón se enseña deshabilitado
+    # (nunca escondido: Diego tiene que poder ver por qué no puede pulsarlo).
+    # MISMO motivo de arriba para el `st.container()`.
+    with st.container():
+        pendientes_confirmar = _productos_pendientes_confirmar(confirmados_agrupacion)
+        if pendientes_confirmar:
+            listos_preview, saltados_preview = _productos_listos_y_saltados(pendientes_confirmar)
+            if st.button(
+                f"✅ Confirmar todas las fichas listas ({len(listos_preview)})",
+                type="primary",
+                use_container_width=True,
+                disabled=not listos_preview,
+            ):
+                _dialog_confirmar_lote(store, pendientes_confirmar, motor)
+            if saltados_preview:
+                st.caption(
+                    f"⚠️ {len(saltados_preview)} ficha(s) sin obligatorios completos se "
+                    "saltarán (se detallan al abrir el diálogo)."
+                )
+            st.divider()
 
     for producto in confirmados_agrupacion:
         _render_producto(store, lote_id, producto, fotos_por_id, motor, crear_extractor)

@@ -118,6 +118,14 @@ LADO_LARGO_RESCALADO_PX = 1568
 TOKENS_ENTRADA_ESTIMADOS_POR_IMAGEN = 1600
 TOKENS_SALIDA_ESTIMADOS_DEFECTO = 300
 
+# Estimacion para llamadas de puro TEXTO (la redaccion de titulo/descripcion,
+# ver `estimar_coste_texto_lote`). Medido: el prompt real de
+# `core/extract.py::_construir_prompt_redaccion` con una ficha tipica ronda
+# ~450 tokens (~1800 caracteres, aprox. 4 caracteres/token) -- 600 es un
+# techo conservador, igual que el criterio de
+# `TOKENS_ENTRADA_ESTIMADOS_POR_IMAGEN`: nunca subestima el gasto real.
+TOKENS_ENTRADA_ESTIMADOS_POR_LLAMADA_TEXTO = 600
+
 VERSION_PROMPT_DEFECTO = "v1"
 
 # Aviso (no bloqueante) si una imagen individual pesa mas que esto: es la
@@ -430,6 +438,53 @@ class LLMEngine:
             llamadas.append(
                 EstimacionLlamada(
                     ficheros=tuple(imagen.fichero for imagen in imagenes),
+                    en_cache=en_cache,
+                    tokens_entrada_estimados=tokens_entrada_est,
+                    tokens_salida_estimados=tokens_salida_est,
+                    coste_usd_estimado=coste_est,
+                )
+            )
+        n_en_cache = sum(1 for llamada in llamadas if llamada.en_cache)
+        return EstimacionLote(
+            llamadas=tuple(llamadas),
+            n_llamadas_total=len(llamadas),
+            n_en_cache=n_en_cache,
+            n_a_pagar=len(llamadas) - n_en_cache,
+            coste_usd_estimado=sum(llamada.coste_usd_estimado for llamada in llamadas),
+        )
+
+    def estimar_coste_texto_lote(
+        self,
+        solicitudes: Sequence[tuple[str, str]],
+        tokens_salida_estimados: int = TOKENS_SALIDA_ESTIMADOS_DEFECTO,
+    ) -> EstimacionLote:
+        """Version de `estimar_coste_lote` para llamadas de puro TEXTO (hoy,
+        la redaccion de titulo/descripcion, `core/extract.py::
+        redactar_desde_campos_confirmados` / `construir_solicitud_redaccion`
+        -- CERO imagenes, `consultar_texto`, no `consultar`).
+
+        `solicitudes` es una lista de `(prompt, version_prompt)` -- el MISMO
+        par que devuelve `construir_solicitud_redaccion`, en el mismo orden
+        en que se llamaria a `consultar_texto`. Mismo contrato que
+        `estimar_coste_lote`: no llama a la API, no necesita clave, solo
+        mira el disco de cache (`_clave_cache((), prompt, version_prompt)`
+        -- exactamente la clave que calculara `consultar_texto` de verdad,
+        asi que una redaccion ya cacheada estima coste 0, dinero ya
+        gastado). Metodo SEPARADO de `estimar_coste_lote` (no se relaja su
+        guarda de "cero imagenes prohibido") para que esa guarda siga
+        protegiendo al camino de EXTRACCION (con imagenes) de un bug que
+        le cuele una solicitud vacia por error -- ver su docstring.
+        """
+        llamadas: list[EstimacionLlamada] = []
+        for prompt, version_prompt in solicitudes:
+            clave = self._clave_cache((), prompt, version_prompt)
+            en_cache = self._ruta_cache(clave).exists()
+            tokens_entrada_est = 0 if en_cache else TOKENS_ENTRADA_ESTIMADOS_POR_LLAMADA_TEXTO
+            tokens_salida_est = 0 if en_cache else tokens_salida_estimados
+            coste_est = 0.0 if en_cache else self._calcular_coste(tokens_entrada_est, tokens_salida_est)
+            llamadas.append(
+                EstimacionLlamada(
+                    ficheros=(),
                     en_cache=en_cache,
                     tokens_entrada_estimados=tokens_entrada_est,
                     tokens_salida_estimados=tokens_salida_est,
