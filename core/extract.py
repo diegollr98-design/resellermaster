@@ -153,7 +153,10 @@ golden set (`tests/golden/legibilidad.json`) se enfrentan ASI:
      sea `ubicacion`/`contenido_probable` -- el texto de fondo (un
      portatil ajeno en el encuadre) no es un atributo del producto.
   8. `estado` SIEMPRE sale con `fuente="inferido"` -- nunca "foto", pase lo
-     que declare el VLM. Lo confirma Diego (`truth-loop.md` SS A.4).
+     que declare el VLM. Lo confirma Diego (`truth-loop.md` SS A.4). Desde
+     2026-07-17 vive en la sintesis con un ENUM CERRADO (igual que
+     `categoria`), no una llamada VLM propia con prosa libre -- ver
+     "LA SINTESIS COMPROMETIDA" mas abajo.
   9. `color` se muestrea en varias fotos; si divergen, `confianza="baja"`.
      NUNCA "alta", ni siquiera si TODAS las fotos coinciden -- el acuerdo
      puede ser el mismo sesgo del sensor repetido (ver `_extraer_color`).
@@ -201,9 +204,11 @@ clasificador de tipo de foto en este repo, `truth-loop.md` SS E, asi que se
 reparten con `_muestrear_fotos` igual que el muestreo de color, no se
 "eligen las de mas resolucion" de verdad) MAS la lista en texto de todo lo
 que el OCR/VLM YA detecto en los crops, y PROPONE un valor COMPROMETIDO
-para `marca`/`modelo`/`talla`/`color`/`estado`/`medidas`, ademas
-de redactar `titulo`/`descripcion` (campos NUEVOS que no existian antes de
-este paso).
+para `marca`/`modelo`/`talla`/`color`/`medidas`, ademas de redactar
+`titulo`/`descripcion` (campos NUEVOS que no existian antes de este paso).
+`estado` (y `categoria`, ver mas abajo) van APARTE, con su PROPIO ENUM
+CERRADO -- ver el parrafo de `categoria` mas abajo, la misma disciplina
+se aplica a los dos.
 
 GAP-FILLER, NUNCA reemplazo ciego: la sintesis solo toca un campo si la
 agregacion determinista (o el histograma de pixeles) YA lo dejo en
@@ -234,9 +239,9 @@ la fuerza a "baja" en codigo, pase lo que diga el modelo.
 
 Lo que SI cambia respecto a `truth-loop.md` SS A.3 ("inferido nunca se pega
 tal cual en un campo estructurado"): un valor "inferido" AHORA SI se
-publica en `marca`/`talla`/`medidas`/`color`/`estado` -- ese es
-el pivote explicito de Diego para ESTE camino, y SOLO para el hueco que la
-agregacion determinista dejo vacio. Se publica siempre marcado
+publica en `marca`/`talla`/`medidas`/`color` -- ese es el pivote explicito
+de Diego para ESTE camino, y SOLO para el hueco que la agregacion
+determinista dejo vacio. Se publica siempre marcado
 `fuente="inferido"`, con su recorte de CONTEXTO si lo hay (nunca "el
 recorte que se mando", si no hay un candidato real que lo respalde) y
 techo `confianza="baja"` -- la UI (`ui/ficha.py`, pendiente) es quien debe
@@ -251,11 +256,33 @@ importa `anthropic`.
 cada plataforma, `core.schema.WALLAPOP_ATRIBUTOS_POR_CATEGORIA`) se anadio
 a la MISMA llamada de sintesis (0 llamadas extra, 0 coste extra): es un
 ENUM CERRADO (`core.schema.CATEGORIAS`), no un texto legible, asi que NO
-tiene camino a `fuente="foto"` -- sale SIEMPRE "inferido"/"baja", igual
-que `estado`. Regla dura nueva: si el modelo devuelve algo fuera del enum,
-la clave "categoria" NO se anade a `campos` (nunca "otros" como comodin
-silencioso, decision-making.md SS13) -- unica excepcion a que `campos`
-siempre traiga las mismas claves de `CAMPOS_PRODUCIDOS`.
+tiene camino a `fuente="foto"` -- sale SIEMPRE "inferido"/"baja". Regla
+dura nueva: si el modelo devuelve algo fuera del enum, la clave
+"categoria" NO se anade a `campos` (nunca "otros" como comodin silencioso,
+decision-making.md SS13) -- unica excepcion a que `campos` siempre traiga
+las mismas claves de `CAMPOS_PRODUCIDOS`.
+
+`estado` (2026-07-17, fix de un bug real de Diego, no un hallazgo de
+auditoria): hasta aqui `estado` lo rellenaba una llamada VLM SEPARADA
+(`_extraer_estado`, "regla dura #8" historica, ELIMINADA) que pedia una
+frase libre describiendo el estado -- y esa PROSA (p.ej. "El producto
+muestra buen estado de conservacion...") nunca coincidia con ninguno de
+los 6 literales de `ui/ficha.py::_OPCIONES_ESTADO`, asi que el selectbox
+de la ficha caia siempre en "(sin elegir)" y el boton "Confirmar todas
+las fichas listas" quedaba inservible en los 7 productos de un lote real.
+La correccion sigue EXACTAMENTE el patron de `categoria`: `estado` ahora
+vive DENTRO de `ESQUEMA_SINTESIS_FICHA` como su PROPIO objeto (`valor`
+ENUM CERRADO derivado de `core.schema.ESTADO_UI_A_CANONICO` -- para que
+el enum del modelo y el de la UI NUNCA puedan divergir -- mas `motivo`,
+la frase libre de POR QUE, que se sigue ensenando a Diego como pista/
+caption -- y `confianza`, acotada a "media"/"baja"). Sin camino a
+`fuente="foto"` (un estado es SIEMPRE un juicio, `truth-loop.md` SS A.4).
+Sin llamada VLM extra -- al contrario, ELIMINA una (la que tenia
+`_extraer_estado`): el coste por producto BAJA respecto a la version
+anterior. Mismo camino de fallo no-fatal que `categoria`: si el modelo
+viola el enum, la clave "estado" NO se rellena con un valor inventado
+(nunca "Bueno" como comodin) -- se anota en `fallos` y el campo queda en
+su placeholder `valor=None`.
 """
 
 from __future__ import annotations
@@ -277,7 +304,14 @@ from core.llm import (
     LLMEngine,
     LLMLlamadaFallidaError,
 )
-from core.schema import CATEGORIAS, Campo, CategoriaTipo, Evidencia, es_categoria_valida
+from core.schema import (
+    CATEGORIAS,
+    ESTADO_UI_A_CANONICO,
+    Campo,
+    CategoriaTipo,
+    Evidencia,
+    es_categoria_valida,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -310,8 +344,7 @@ class RespuestaVLMInvalidaError(ExtractorError):
 
 VERSION_PROMPT_CROP = "extract-crop-v2"  # v2: hallazgos como LISTA (regla 4)
 VERSION_PROMPT_METRO = "extract-metro-v1"
-VERSION_PROMPT_ESTADO = "extract-estado-v1"
-VERSION_PROMPT_SINTESIS = "extract-sintesis-v3"  # v3: + categoria (enum cerrado, SIEMPRE inferido)
+VERSION_PROMPT_SINTESIS = "extract-sintesis-v4"  # v4: + estado (enum cerrado, SIEMPRE inferido) -- v3: + categoria
 # NO existe VERSION_PROMPT_COLOR: el color sale de pixeles
 # (`architecture.md` Costura 1, tabla de proveedores: "color por pixeles"),
 # nunca del VLM -- ver `_color_dominante_rgb` mas abajo. La sintesis SI
@@ -1339,30 +1372,16 @@ ESQUEMA_MEDIDA_METRO: dict = {
     "additionalProperties": False,
 }
 
-PROMPT_ESTADO = """Mira esta foto de un producto de segunda mano y evalua su
-estado de conservacion visible (manchas, roturas, desgaste, decoloracion).
-
-Responde:
-- estimacion_legible: true solo si puedes distinguir con razonable
-  seguridad si hay danos visibles o no. false si es ambiguo (por ejemplo,
-  no puedes distinguir una mancha real de una sombra o un reflejo de luz).
-- descripcion: una frase corta describiendo lo que ves, SOLO si
-  estimacion_legible=true. null en caso contrario.
-
-Este campo lo confirmara siempre una persona despues -- tu respuesta es
-solo una sugerencia inicial, no una decision final.
-
-Responde SOLO el JSON pedido."""
-
-ESQUEMA_ESTADO: dict = {
-    "type": "object",
-    "properties": {
-        "estimacion_legible": {"type": "boolean"},
-        "descripcion": {"type": ["string", "null"]},
-    },
-    "required": ["estimacion_legible", "descripcion"],
-    "additionalProperties": False,
-}
+# PROMPT_ESTADO/ESQUEMA_ESTADO/VERSION_PROMPT_ESTADO -- ELIMINADOS
+# (2026-07-17). Eran una llamada VLM SEPARADA (`_extraer_estado`, "regla
+# dura #8" historica) que pedia una frase libre describiendo el estado --
+# y esa PROSA nunca coincidia con ninguno de los 6 literales de
+# `ui/ficha.py::_OPCIONES_ESTADO`, asi que el selectbox de la ficha caia
+# siempre en "(sin elegir)" (bug real de Diego sobre un lote de 7
+# productos). `estado` ahora vive DENTRO de `ESQUEMA_SINTESIS_FICHA`
+# (ver `_esquema_estado_sintesis` mas abajo), con el mismo patron que
+# `categoria`: ENUM CERRADO, SIN llamada VLM propia -- el coste por
+# producto BAJA respecto a la version anterior (una llamada menos).
 
 
 # ============================================================================
@@ -1372,7 +1391,10 @@ ESQUEMA_ESTADO: dict = {
 # EAN y desperfectos quedan fuera a proposito -- no estan en este esquema.
 # ============================================================================
 
-# Los 6 campos de identidad/atributo que la sintesis puede rellenar.
+# Los 5 campos de identidad/atributo de TEXTO LIBRE que la sintesis puede
+# rellenar (valor/visible_en_foto/de_texto_detectado/confianza). "estado"
+# y "categoria" NO estan aqui -- son ENUM CERRADO, con su PROPIO esquema
+# (`_esquema_estado_sintesis`/enum de `CATEGORIAS`), nunca texto libre.
 # "material" (-> "composicion") ELIMINADO de este esquema (Diego,
 # 2026-07-17): solo aplicaba a ropa y no aportaba valor a su flujo. Un
 # campo menos que pedir al modelo, pero el numero de LLAMADAS no cambia
@@ -1382,7 +1404,7 @@ ESQUEMA_ESTADO: dict = {
 # el coste REAL (prompt mas corto, un objeto menos en la respuesta JSON),
 # demasiado pequeno para verse en la cifra redondeada que muestra la UI.
 _CAMPOS_SINTESIS: tuple[str, ...] = (
-    "marca", "modelo", "talla", "color", "estado", "medidas"
+    "marca", "modelo", "talla", "color", "medidas"
 )
 
 PROMPT_SINTESIS_FICHA = """Estas viendo UN producto de segunda mano (varias fotos
@@ -1403,7 +1425,7 @@ usas, cita el texto EXACTO):
 
 {texto_candidatos}
 
-Para cada uno de estos 6 campos -- marca, modelo, talla, color, estado,
+Para cada uno de estos 5 campos -- marca, modelo, talla, color,
 medidas -- responde un objeto con:
   - valor: tu mejor estimacion en texto corto, o null SOLO si no tienes
     ninguna base razonable ni siquiera para inferir (esto debe ser RARO:
@@ -1428,11 +1450,7 @@ medidas -- responde un objeto con:
 NUNCA propongas un valor que CONTRADIGA algo visible (si un texto
 detectado dice claramente "Nike", no propongas "Adidas").
 
-DOS campos con reglas ESPECIALES (no des una frase libre en ellos):
-  - estado: usa EXACTAMENTE uno de estos seis valores, nada mas: "Nuevo",
-    "Como nuevo", "Muy bueno", "Bueno", "Satisfactorio", "Para reparar".
-    Ante la duda elige el MAS BAJO (mas conservador). Para estado,
-    visible_en_foto es SIEMPRE false (es un juicio, no un texto que se lea).
+UN campo con reglas ESPECIALES (no des una frase libre en el):
   - medidas: SOLO una dimension real en cm que puedas ver medida con un
     metro/regla en la foto (p.ej. "largo 70 cm"). Si no hay ninguna medida
     tomada a la vista, pon null -- NO metas aqui una descripcion del
@@ -1448,6 +1466,21 @@ etc.):
     claramente en las anteriores -- deportes, juguetes, herramientas...).
     Esto es SIEMPRE un juicio tuyo, nunca un texto que se lea en una
     etiqueta -- no hay "visible_en_foto" para este campo.
+
+Ademas, evalua el ESTADO de conservacion. Este campo tiene una estructura
+PROPIA (no uses valor/visible_en_foto/de_texto_detectado aqui):
+  - estado: un objeto con:
+      - valor: usa EXACTAMENTE uno de estos seis valores, nada mas:
+        "Nuevo", "Como nuevo", "Muy bueno", "Bueno", "Satisfactorio",
+        "Para reparar". Ante la duda elige el MAS BAJO (mas conservador).
+        Esto es SIEMPRE un juicio tuyo, nunca un texto que se lea en una
+        etiqueta.
+      - motivo: una frase corta explicando POR QUE eliges ese nivel (lo
+        que ves: manchas, roturas, desgaste, decoloracion...) -- esto SI
+        se le ensena a Diego como pista, aunque el valor sea el enum
+        cerrado de arriba.
+      - confianza: "media" si tienes bases razonables, "baja" si es una
+        estimacion mas debil. NUNCA "alta".
 
 Ademas, redacta:
   - titulo: un titulo de venta corto y honesto para Wallapop/Vinted (maximo
@@ -1486,21 +1519,52 @@ def _esquema_campo_sintesis() -> dict:
     }
 
 
+def _esquema_estado_sintesis() -> dict:
+    """`estado` en el `json_schema` de la sintesis -- ENUM CERRADO, igual
+    que `categoria` (NO el esquema generico de `_esquema_campo_sintesis()`:
+    sin `visible_en_foto`/`de_texto_detectado`, un estado no es un texto
+    que se lea en un pixel, es SIEMPRE un juicio, `truth-loop.md` SS A.4).
+
+    La lista de valores se DERIVA de `core.schema.ESTADO_UI_A_CANONICO`
+    (la MISMA fuente que usa `ui/ficha.py::_OPCIONES_ESTADO`) para que el
+    enum que ve el modelo y el enum que reconoce la UI NUNCA puedan
+    divergir -- una tercera copia a mano es exactamente el bug que esto
+    corrige: la version anterior (`_extraer_estado`, ELIMINADA) dejaba
+    que el modelo devolviera PROSA libre, que ninguna UI podia reconocer
+    contra el enum -> "(sin elegir)" en los 7 productos de un lote real.
+
+    `motivo`: la razon en texto libre (lo que ve: manchas, roturas,
+    desgaste...) -- se conserva y se ensena a Diego como pista/caption,
+    NUNCA como el valor publicado."""
+    return {
+        "type": "object",
+        "properties": {
+            "valor": {"type": "string", "enum": list(ESTADO_UI_A_CANONICO)},
+            "motivo": {"type": "string"},
+            "confianza": {"type": "string", "enum": ["media", "baja"]},  # NUNCA "alta"
+        },
+        "required": ["valor", "motivo", "confianza"],
+        "additionalProperties": False,
+    }
+
+
 ESQUEMA_SINTESIS_FICHA: dict = {
     "type": "object",
     "properties": {
         **{campo: _esquema_campo_sintesis() for campo in _CAMPOS_SINTESIS},
-        # "categoria" NO usa `_esquema_campo_sintesis()` -- no es un texto
-        # legible con visible_en_foto/de_texto_detectado, es un ENUM CERRADO
-        # de clasificacion (`core.schema.CATEGORIAS`). El enum en el
-        # json_schema ya restringe la respuesta a nivel de API; el codigo
-        # (`_construir_campo_categoria_desde_sintesis`) NUNCA confia solo en
-        # eso -- vuelve a validar con `es_categoria_valida`.
+        # "categoria"/"estado" NO usan `_esquema_campo_sintesis()` -- no son
+        # texto legible con visible_en_foto/de_texto_detectado, son ENUM
+        # CERRADO. El enum en el json_schema ya restringe la respuesta a
+        # nivel de API; el codigo (`_construir_campo_categoria_desde_
+        # sintesis`/`_construir_campo_estado_desde_sintesis`) NUNCA confia
+        # solo en eso -- revalida contra `es_categoria_valida`/
+        # `ESTADO_UI_A_CANONICO`.
         "categoria": {"type": "string", "enum": list(CATEGORIAS)},
+        "estado": _esquema_estado_sintesis(),
         "titulo": {"type": "string"},
         "descripcion": {"type": "string"},
     },
-    "required": [*_CAMPOS_SINTESIS, "categoria", "titulo", "descripcion"],
+    "required": [*_CAMPOS_SINTESIS, "categoria", "estado", "titulo", "descripcion"],
     "additionalProperties": False,
 }
 
@@ -1583,14 +1647,15 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
     Normaliza `valor`/`de_texto_detectado` vacios o solo-espacios a `None`
     (mismo patron que `_parsear_lectura_crop` con `texto`).
 
-    `categoria` se exige PRESENTE (estructura minima), pero su ENUM se
-    valida mas abajo, en `_construir_campo_categoria_desde_sintesis` --
-    no aqui. Si se validara aqui y se lanzara, un valor de categoria fuera
-    de enum tumbaria la sintesis ENTERA (marca/talla/color/... y titulo/
-    descripcion con ella) por culpa de un campo que tiene su propio camino
-    de fallo no-fatal (decision-making.md SS13: la clave simplemente no se
-    anade a `campos`, nunca aborta el resto)."""
-    claves_requeridas = (*_CAMPOS_SINTESIS, "categoria", "titulo", "descripcion")
+    `categoria`/`estado` se exigen PRESENTES (estructura minima), pero su
+    ENUM se valida mas abajo, en `_construir_campo_categoria_desde_sintesis`/
+    `_construir_campo_estado_desde_sintesis` -- no aqui. Si se validara
+    aqui y se lanzara, un valor fuera de enum tumbaria la sintesis ENTERA
+    (marca/talla/color/... y titulo/descripcion con ella) por culpa de un
+    campo que tiene su propio camino de fallo no-fatal (decision-making.md
+    SS13: la clave simplemente no se anade a `campos`, nunca aborta el
+    resto)."""
+    claves_requeridas = (*_CAMPOS_SINTESIS, "categoria", "estado", "titulo", "descripcion")
     for clave in claves_requeridas:
         if clave not in datos:
             raise RespuestaVLMInvalidaError(
@@ -1626,6 +1691,32 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
 
     # Se pasa CRUDO (sin normalizar/validar enum): ver docstring de arriba.
     resultado["categoria"] = datos["categoria"]
+
+    # "estado" tiene su ESTRUCTURA PROPIA (valor ENUM + motivo + confianza)
+    # -- NO pasa por el bucle generico de arriba (sin visible_en_foto/
+    # de_texto_detectado: un estado no es un texto que se lea en un pixel).
+    # Se valida la ESTRUCTURA minima aqui (defensa en profundidad, "un if
+    # es una garantia"); el ENUM de `valor` se valida despues, en
+    # `_construir_campo_estado_desde_sintesis` -- mismo criterio no-fatal
+    # que "categoria" (ver docstring de arriba).
+    bloque_estado = datos["estado"]
+    if not isinstance(bloque_estado, dict):
+        raise RespuestaVLMInvalidaError(f"el campo 'estado' de la sintesis no es un objeto: {bloque_estado!r}")
+    for clave in ("valor", "motivo", "confianza"):
+        if clave not in bloque_estado:
+            raise RespuestaVLMInvalidaError(
+                f"falta la clave {clave!r} en el campo 'estado' de la sintesis: {bloque_estado!r}"
+            )
+    if bloque_estado["confianza"] not in ("media", "baja"):
+        raise RespuestaVLMInvalidaError(
+            f"confianza invalida en el campo 'estado' de la sintesis: {bloque_estado['confianza']!r}"
+        )
+    resultado["estado"] = {
+        "valor": bloque_estado["valor"],  # crudo -- el ENUM se valida despues
+        "motivo": str(bloque_estado["motivo"]).strip(),
+        "confianza": bloque_estado["confianza"],
+    }
+
     resultado["titulo"] = str(datos["titulo"]).strip()
     resultado["descripcion"] = str(datos["descripcion"]).strip()
     return resultado
@@ -2021,15 +2112,52 @@ def _construir_campo_categoria_desde_sintesis(valor: Any) -> Campo | None:
     return Campo(valor=valor, fuente="inferido", confianza="baja")
 
 
+def _construir_campo_estado_desde_sintesis(decision: dict[str, Any]) -> Campo | None:
+    """Traduce el `estado` crudo de la sintesis (ENUM CERRADO + motivo) a
+    un `Campo`, o `None` si `decision["valor"]` no es uno de los 6
+    literales canonicos (`core.schema.ESTADO_UI_A_CANONICO` -- la MISMA
+    fuente que usa `ui/ficha.py::_OPCIONES_ESTADO`, para que el enum del
+    modelo y el de la UI NUNCA puedan divergir).
+
+    Mismo patron que `_construir_campo_categoria_desde_sintesis`: un
+    estado NUNCA es un texto legible en un pixel -- es SIEMPRE un juicio
+    (`truth-loop.md` SS A.4) -- asi que no hay camino a `fuente="foto"`,
+    sale SIEMPRE "inferido". La `confianza` viene de la sintesis, ya
+    acotada a "media"/"baja" por el `json_schema` y revalidada en
+    `_parsear_respuesta_sintesis` -- "alta" es estructuralmente
+    IMPOSIBLE desde este camino.
+
+    (2026-07-17, fix de un bug real de Diego: antes `estado` lo rellenaba
+    una llamada VLM SEPARADA con una frase libre -- "El producto muestra
+    buen estado de conservacion..." -- que ninguna UI podia reconocer
+    contra un enum, asi que el selectbox caia siempre en "(sin elegir)"
+    en los 7 productos de un lote real. Esa llamada, `_extraer_estado`,
+    fue ELIMINADA -- `estado` ahora vive AQUI, dentro de la MISMA llamada
+    de sintesis que ya existia, con CERO llamadas VLM extra (de hecho,
+    una MENOS que antes).)
+
+    `None` cuando el valor no valida (el modelo violo el enum cerrado, o
+    un mock de test manda basura): quien llama NO debe inventar un valor
+    de relleno tipo "Bueno" como comodin -- eso seria exactamente el
+    fallback silencioso que `decision-making.md` SS13 prohibe. Debe
+    anotar el fallo en `ResultadoExtraccion.fallos` y dejar "estado" en
+    su placeholder `valor=None` (nunca peor que antes de este paso)."""
+    valor = decision["valor"]
+    if valor not in ESTADO_UI_A_CANONICO:
+        return None
+    return Campo(valor=valor, fuente="inferido", confianza=decision["confianza"])
+
+
 # nombre_del_campo_en_el_json_schema -> (nombre_canonico_del_modulo, ubicaciones_validas)
 # EAN, desperfectos y "material" (composicion, ELIMINADA 2026-07-17) quedan
-# fuera A PROPOSITO -- no estan en `_CAMPOS_SINTESIS`.
+# fuera A PROPOSITO -- no estan en `_CAMPOS_SINTESIS`. "estado" TAMBIEN
+# queda fuera -- ya no es gap-filler generico, tiene su PROPIO camino
+# (`_construir_campo_estado_desde_sintesis`, mismo patron que "categoria").
 _CAMPOS_SINTESIS_GAP: dict[str, tuple[str, frozenset[str] | None]] = {
     "marca": ("marca", _UBICACIONES_VALIDAS_MARCA),
     "modelo": ("modelo", _UBICACIONES_VALIDAS_MODELO),
     "talla": ("talla", _UBICACIONES_VALIDAS_TALLA),
     "color": ("color", None),  # sin restriccion de ubicacion -- el color no viene de un texto
-    "estado": ("estado", None),
     "medidas": ("medidas", None),
 }
 
@@ -2309,15 +2437,10 @@ class ExtractorEngine:
 
         # El color NO genera ninguna solicitud VLM PRIMARIA: sale de pixeles
         # (`_color_dominante_rgb`), gratis -- solo puede entrar via la
-        # sintesis de abajo, como gap-filler.
-
-        if fotos:
-            imagen_pil = _abrir_foto_o_none(fotos[0], fallos_descartados, "estado")
-            if imagen_pil is not None:
-                foto_bytes = foto_completa_a_bytes(imagen_pil)
-                solicitudes.append(
-                    ([Imagen(bytes_=foto_bytes, fichero=fotos[0].name)], PROMPT_ESTADO, VERSION_PROMPT_ESTADO)
-                )
+        # sintesis de abajo, como gap-filler. "estado" TAMPOCO genera
+        # solicitud propia (ELIMINADA 2026-07-17): vive dentro de la MISMA
+        # solicitud de sintesis de abajo, como ENUM CERRADO -- ver
+        # "regla dura #8" en el docstring del modulo.
 
         # LA SINTESIS COMPROMETIDA: UNA llamada mas, SIEMPRE (produce
         # titulo/descripcion ademas de rellenar huecos) -- si no se contara
@@ -2537,6 +2660,28 @@ class ExtractorEngine:
         else:
             fallos.append(f"sintesis_categoria_fuera_de_enum: {decisiones['categoria']!r}")
 
+        # "estado": mismo patron que "categoria" -- SIEMPRE un juicio del
+        # modelo (`truth-loop.md` SS A.4), nunca gap-filler sobre un valor
+        # previo real (el placeholder que construye `extraer_producto`
+        # antes de llamar aqui es SIEMPRE `valor=None` -- ya no hay una
+        # llamada VLM separada que proteger, ver "regla dura #8" en el
+        # docstring del modulo). El `motivo` (la razon en texto libre) SI
+        # se conserva y se ensena a Diego -- `_render_campo` en
+        # `ui/ficha.py` ya pinta `propuesta.motivo` como caption para
+        # CUALQUIER campo, "estado" incluido.
+        campo_estado = _construir_campo_estado_desde_sintesis(decisiones["estado"])
+        if campo_estado is not None:
+            campos["estado"] = campo_estado
+            propuestas["estado"] = Propuesta(
+                campo="estado",
+                valor=campo_estado.valor,
+                recorte=None,
+                evidencia=None,
+                motivo=decisiones["estado"]["motivo"] or "estimacion del modelo, confirmala",
+            )
+        else:
+            fallos.append(f"sintesis_estado_fuera_de_enum: {decisiones['estado']['valor']!r}")
+
         for campo_texto in ("titulo", "descripcion"):
             texto = decisiones[campo_texto]
             campos[campo_texto] = Campo(valor=texto, fuente="inferido", confianza="baja")
@@ -2667,10 +2812,18 @@ class ExtractorEngine:
         # El color excluye el bbox de un estampado ya localizado en la MISMA
         # foto (si lo hay) -- pasa las lecturas VLM, no llama al VLM.
         campo_color, propuesta_color, fallos_color = self._extraer_color(fotos, lecturas_totales)
-        campo_estado, propuesta_estado, fallos_estado = self._extraer_estado(fotos, producto_id)
+        # "estado" YA NO tiene una llamada VLM propia (ELIMINADA
+        # 2026-07-17, ver "regla dura #8" en el docstring del modulo): el
+        # placeholder de aqui es SIEMPRE `valor=None` -- lo rellena
+        # `_sintetizar_ficha` con un ENUM CERRADO (mismo patron que
+        # "categoria"), nunca gap-filler sobre un valor previo real.
+        campo_estado = Campo(valor=None, fuente="inferido", confianza="baja")
+        propuesta_estado = Propuesta(
+            campo="estado", valor=None, recorte=None, evidencia=None,
+            motivo="sin estimacion del modelo todavia -- elige tu el estado",
+        )
         fallos.extend(fallos_medidas)
         fallos.extend(fallos_color)
-        fallos.extend(fallos_estado)
 
         campos = {
             "marca": grupo_marca.campo,
@@ -2875,62 +3028,16 @@ class ExtractorEngine:
         )
         return campo, propuesta, fallos
 
-    # -- estado: regla dura #8, SIEMPRE fuente=inferido ------------------------
-
-    def _extraer_estado(
-        self, fotos: Sequence[Path], producto_id: str | None
-    ) -> tuple[Campo, Propuesta, list[str]]:
-        fallos: list[str] = []
-        if not fotos:
-            campo = Campo(valor=None, fuente="inferido", confianza="baja")
-            propuesta = Propuesta(campo="estado", valor=None, recorte=None, evidencia=None, motivo="sin fotos")
-            return campo, propuesta, fallos
-
-        foto = fotos[0]
-        imagen_pil = _abrir_foto_o_none(foto, fallos, "estado")
-        if imagen_pil is None:
-            campo = Campo(valor=None, fuente="inferido", confianza="baja")
-            propuesta = Propuesta(
-                campo="estado", valor=None, recorte=None, evidencia=None,
-                motivo=f"no se pudo abrir {foto.name}",
-            )
-            return campo, propuesta, fallos
-        try:
-            foto_bytes = foto_completa_a_bytes(imagen_pil)
-            imagen = Imagen(bytes_=foto_bytes, fichero=foto.name)
-            resultado = self.motor_llm.consultar(
-                [imagen],
-                PROMPT_ESTADO,
-                ESQUEMA_ESTADO,
-                version_prompt=VERSION_PROMPT_ESTADO,
-                producto_id=producto_id,
-            )
-            datos = resultado.datos
-            if "estimacion_legible" not in datos or "descripcion" not in datos:
-                raise RespuestaVLMInvalidaError(f"respuesta de estado incompleta: {datos!r}")
-        except (LLMLlamadaFallidaError, ApiKeyFaltanteError, RespuestaVLMInvalidaError) as exc:
-            logger.error("Fallo VLM evaluando estado en %s: %s", foto.name, exc)
-            fallos.append(f"vlm_estado:{foto.name}: {exc}")
-            campo = Campo(valor=None, fuente="inferido", confianza="baja")
-            propuesta = Propuesta(
-                campo="estado", valor=None, recorte=None, evidencia=Evidencia(fichero=foto.name),
-                motivo=f"fallo tecnico consultando el VLM: {exc}",
-            )
-            return campo, propuesta, fallos
-
-        legible = bool(datos["estimacion_legible"])
-        descripcion = datos["descripcion"] if legible else None
-        valor = str(descripcion).strip() if descripcion else None
-        # Regla dura #8: SIEMPRE "inferido", nunca "foto" -- lo confirma
-        # Diego siempre, pase lo que declare el VLM.
-        campo = Campo(valor=valor, fuente="inferido", confianza="media" if legible else "baja")
-        propuesta = Propuesta(
-            campo="estado", valor=valor, recorte=None, evidencia=Evidencia(fichero=foto.name),
-            lecturas=(Lectura(origen="vlm", texto=valor),) if valor else (),
-            motivo="estimacion visual del VLM -- SIEMPRE la confirma Diego, nunca se afirma sola (regla dura #8)",
-        )
-        return campo, propuesta, fallos
-
+    # -- estado: regla dura #8, SIEMPRE fuente=inferido -----------------------
+    # ELIMINADO 2026-07-17: `_extraer_estado` era una llamada VLM propia
+    # que pedia una frase libre ("El producto muestra buen estado...") --
+    # esa PROSA nunca coincidia con el enum de 6 literales de
+    # `ui/ficha.py::_OPCIONES_ESTADO`, asi que el selectbox de la ficha
+    # caia siempre en "(sin elegir)" en los 7 productos de un lote real de
+    # Diego. `estado` vive ahora en `_sintetizar_ficha` (ver
+    # `_construir_campo_estado_desde_sintesis`), con un ENUM CERRADO
+    # dentro de la MISMA llamada de sintesis -- una llamada VLM MENOS por
+    # producto, no una mas.
 
 def _muestrear_fotos(fotos: Sequence[Path], k: int) -> list[Path]:
     """`k` fotos repartidas a lo largo de la secuencia (no las k primeras

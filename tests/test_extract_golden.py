@@ -26,7 +26,6 @@ import pytest
 from core.extract import (
     ExtractorEngine,
     VERSION_PROMPT_CROP,
-    VERSION_PROMPT_ESTADO,
     VERSION_PROMPT_METRO,
     recortar_region,
     _es_ristra_metro,
@@ -321,15 +320,14 @@ def _consultar_oraculo(motor: _MotorFake):
     """Cierre que fabrica el `consultar` del oraculo: responde segun
     `_ORACULO_POR_FOTO` para VERSION_PROMPT_CROP; para METRO, dice que la
     medida NO es derivable (Trampa del metro sin origen, producto 7,
-    legibilidad.json); para ESTADO, se abstiene siempre (no es objeto de
-    esta medicion de cobertura de identidad)."""
+    legibilidad.json). "estado" ya no tiene una llamada VLM propia
+    (ELIMINADA 2026-07-17, vive dentro de la sintesis) -- no es objeto de
+    esta medicion de cobertura de identidad."""
 
     def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
         fichero = imagenes[0].fichero
         motor.llamadas.append((fichero, version_prompt))
-        if version_prompt == VERSION_PROMPT_ESTADO:
-            datos = {"estimacion_legible": False, "descripcion": None}
-        elif version_prompt == VERSION_PROMPT_METRO:
+        if version_prompt == VERSION_PROMPT_METRO:
             # legibilidad.json producto 7: la cinta se lee pero NO el 0 ni
             # el borde de la prenda -- la medida NO es derivable.
             datos = {"cero_visible": False, "borde_prenda_visible": True, "medida_cm": None}

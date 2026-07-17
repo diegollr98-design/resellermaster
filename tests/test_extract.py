@@ -45,10 +45,10 @@ import pytest
 from PIL import Image
 
 from core.extract import (
+    ESQUEMA_SINTESIS_FICHA,
     MAX_LLAMADAS_VLM_POR_PRODUCTO,
     UMBRAL_SIMILITUD_DUDOSO,
     VERSION_PROMPT_CROP,
-    VERSION_PROMPT_ESTADO,
     VERSION_PROMPT_METRO,
     VERSION_PROMPT_REDACCION,
     VERSION_PROMPT_SINTESIS,
@@ -63,6 +63,7 @@ from core.extract import (
     _agregar_campo_texto,
     _color_dominante_rgb,
     _construir_campo_categoria_desde_sintesis,
+    _construir_campo_estado_desde_sintesis,
     _construir_prompt_redaccion,
     _es_bloque_de_texto_largo,
     _es_repeticion_de_un_campo_ya_resuelto,
@@ -85,7 +86,7 @@ from core.extract import (
     serializar_extraccion,
 )
 from core.llm import ApiKeyFaltanteError, LLMEngine, LLMLlamadaFallidaError, ResultadoLLM
-from core.schema import Campo, Evidencia
+from core.schema import ESTADO_UI_A_CANONICO, Campo, Evidencia, parsear_estado
 
 
 # ============================================================================
@@ -185,20 +186,33 @@ def _respuesta_sintesis(
     descripcion: str = "",
 ) -> dict:
     """Construye una respuesta de sintesis completa (contrato de
-    `ESQUEMA_SINTESIS_FICHA`). Cada campo, si no se pasa, usa el default
-    "SIN OPINION" (valor=None, visible_en_foto=False, de_texto_detectado=
-    None, confianza="baja") -- asi `_MotorFake` puede usarlo como respuesta
-    por defecto (la sintesis no opina -> gap-filler no pisa nada) y los
-    tests de este archivo que NO les interesa la sintesis siguen viendo el
-    comportamiento de la agregacion vieja intacto.
+    `ESQUEMA_SINTESIS_FICHA`). Cada campo de TEXTO LIBRE, si no se pasa,
+    usa el default "SIN OPINION" (valor=None, visible_en_foto=False,
+    de_texto_detectado=None, confianza="baja") -- asi `_MotorFake` puede
+    usarlo como respuesta por defecto (la sintesis no opina -> gap-filler
+    no pisa nada) y los tests de este archivo que NO les interesa la
+    sintesis siguen viendo el comportamiento de la agregacion vieja intacto.
 
     `categoria` default "otros" (valido, dentro del enum) -- para los
     tests que no les interesa este campo, la sintesis "opina" pero con un
     valor SIEMPRE aceptable, y no revientan la clave requerida por
-    `_parsear_respuesta_sintesis`."""
+    `_parsear_respuesta_sintesis`.
+
+    `estado` tiene su PROPIA estructura (valor ENUM + motivo + confianza,
+    NO visible_en_foto/de_texto_detectado -- ver `_esquema_estado_
+    sintesis` en `core/extract.py`); el default es "Bueno" (valido, dentro
+    del enum), mismo criterio que `categoria`: siempre aceptable, para que
+    los tests que no les interesa `estado` no revienten la clave
+    requerida ni disparen `sintesis_estado_fuera_de_enum` sin querer."""
 
     def _campo(override: dict | None) -> dict:
         base = {"valor": None, "visible_en_foto": False, "de_texto_detectado": None, "confianza": "baja"}
+        if override:
+            base.update(override)
+        return base
+
+    def _campo_estado(override: dict | None) -> dict:
+        base = {"valor": "Bueno", "motivo": "", "confianza": "baja"}
         if override:
             base.update(override)
         return base
@@ -208,7 +222,7 @@ def _respuesta_sintesis(
         "modelo": _campo(modelo),
         "talla": _campo(talla),
         "color": _campo(color),
-        "estado": _campo(estado),
+        "estado": _campo_estado(estado),
         "material": _campo(material),
         "medidas": _campo(medidas),
         "categoria": categoria,
@@ -220,19 +234,18 @@ def _respuesta_sintesis(
 class _MotorFake:
     """Sustituye a `LLMEngine`: `consultar()` devuelve lo que se haya
     configurado para ese `version_prompt`, o lanza la excepcion
-    configurada. Nunca toca la red ni `anthropic`. La respuesta de estado
-    por defecto es "legible=false" para que un test que solo le interesa
-    el crop de marca/talla no tenga que configurarla siempre. El color NO
-    pasa por aqui -- sale de pixeles (`_color_dominante_rgb`), nunca del
-    VLM (architecture.md Costura 1). La respuesta de sintesis por defecto
-    "no opina en nada" (`_respuesta_sintesis()`) -- gap-filler, ver
-    core/extract.py: si la sintesis no propone nada, no pisa nada, y los
-    tests que no configuran su propia respuesta de sintesis siguen viendo
-    el comportamiento de la agregacion vieja."""
+    configurada. Nunca toca la red ni `anthropic`. El color NO pasa por
+    aqui -- sale de pixeles (`_color_dominante_rgb`), nunca del VLM
+    (architecture.md Costura 1). "estado" TAMPOCO tiene una llamada VLM
+    propia (ELIMINADA 2026-07-17, ver `core/extract.py`): vive dentro de
+    la respuesta de sintesis, como cualquier otro campo. La respuesta de
+    sintesis por defecto "no opina en nada" (`_respuesta_sintesis()`) --
+    gap-filler, ver core/extract.py: si la sintesis no propone nada, no
+    pisa nada, y los tests que no configuran su propia respuesta de
+    sintesis siguen viendo el comportamiento de la agregacion vieja."""
 
     def __init__(self) -> None:
         self.respuestas: dict[str, dict] = {
-            VERSION_PROMPT_ESTADO: {"estimacion_legible": False, "descripcion": None},
             VERSION_PROMPT_SINTESIS: _respuesta_sintesis(),
         }
         self.excepciones: dict[str, Exception] = {}
@@ -1054,7 +1067,10 @@ class TestExtraerProductoFelizYAtajos:
         # viaja explicito porque el hash de cache ahora lo incluye.
         version_prompts = {vp for _, _, vp in solicitudes}
         assert VERSION_PROMPT_CROP in version_prompts
-        assert VERSION_PROMPT_ESTADO in version_prompts
+        assert VERSION_PROMPT_SINTESIS in version_prompts
+        # "estado" YA NO genera una solicitud VLM propia (ELIMINADA
+        # 2026-07-17) -- vive dentro de VERSION_PROMPT_SINTESIS.
+        assert "extract-estado-v1" not in version_prompts
         # El color NUNCA genera una solicitud VLM (sale de pixeles).
         assert "extract-color-v1" not in version_prompts
 
@@ -1127,11 +1143,11 @@ class TestExtraerProductoFelizYAtajos:
         assert resultado.campos["color"].confianza == "baja"
         assert resultado.campos["color"].fuente == "inferido"
         # el color nunca gasta una llamada VLM DIRECTA -- lo unico que puede
-        # haber llamado al motor es la evaluacion de estado y la sintesis
-        # (esta ultima SIEMPRE se llama, pero con el `_MotorFake` por
-        # defecto "no opina" -- gap-filler, no pisa el None de arriba).
+        # haber llamado al motor es la sintesis (SIEMPRE se llama, pero con
+        # el `_MotorFake` por defecto "no opina" -- gap-filler, no pisa el
+        # None de arriba).
         assert all(vp != VERSION_PROMPT_CROP for _, vp in motor.llamadas)
-        assert {vp for _, vp in motor.llamadas} <= {VERSION_PROMPT_ESTADO, VERSION_PROMPT_SINTESIS}
+        assert {vp for _, vp in motor.llamadas} <= {VERSION_PROMPT_SINTESIS}
 
     def test_color_convergente_sigue_con_techo_media_nunca_alta(self, tmp_path, monkeypatch):
         """C3(a): ni siquiera con las 3 fotos de acuerdo el color puede
@@ -1183,20 +1199,93 @@ class TestExtraerProductoFelizYAtajos:
         assert _nombre_color_mas_cercano(rgb_excluido) == "rosa"
 
     def test_estado_siempre_fuente_inferido(self, tmp_path, monkeypatch):
+        """`estado` (2026-07-17) vive DENTRO de la sintesis, como ENUM
+        CERRADO -- SIEMPRE `fuente="inferido"`, pase lo que declare el
+        modelo (regla dura #8, `truth-loop.md` SS A.4)."""
         foto = _foto_sintetica(tmp_path / "IMG_estado.jpg")
         monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
 
         motor = _MotorFake()
-        motor.respuestas[VERSION_PROMPT_ESTADO] = {
-            "estimacion_legible": True,
-            "descripcion": "buen estado general, sin danos visibles",
-        }
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            estado={"valor": "Bueno", "motivo": "sin danos visibles", "confianza": "media"},
+        )
         extractor = ExtractorEngine(motor)
         resultado = extractor.extraer_producto([foto])
 
-        # Regla dura #8: SIEMPRE "inferido", pase lo que declare el VLM.
         assert resultado.campos["estado"].fuente == "inferido"
-        assert resultado.campos["estado"].valor == "buen estado general, sin danos visibles"
+        assert resultado.campos["estado"].valor == "Bueno"
+        assert resultado.campos["estado"].confianza == "media"
+        # el motivo (la razon en texto libre) se conserva como caption.
+        assert "sin danos visibles" in resultado.propuestas["estado"].motivo
+
+    def test_estado_fuera_de_enum_no_inventa_un_valor(self, tmp_path, monkeypatch):
+        """El bug real de Diego (2026-07-17): el evaluador ANTERIOR de
+        estado devolvia PROSA libre ("El producto muestra buen estado de
+        conservacion...") que ninguna UI podia reconocer contra el enum de
+        6 literales -> "(sin elegir)" en 7/7 productos de un lote real.
+        Ahora el json_schema fuerza un ENUM CERRADO a nivel de API, pero
+        este test verifica la defensa EN CODIGO (decision-making.md SS13):
+        si de todas formas llega algo fuera del enum (un mock, un bug del
+        proveedor), el pipeline NUNCA inventa un valor de relleno tipo
+        "Bueno" como comodin -- el campo queda en su placeholder
+        `valor=None` y el fallo se anota, nunca en silencio."""
+        foto = _foto_sintetica(tmp_path / "IMG_estado_prosa.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            estado={
+                "valor": (
+                    "El producto muestra buen estado de conservacion. La caja "
+                    "presenta ligeros signos de uso con posibles marcas menores."
+                ),
+                "motivo": "",
+                "confianza": "media",
+            },
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["estado"].valor is None
+        assert resultado.campos["estado"].fuente == "inferido"
+        assert any("sintesis_estado_fuera_de_enum" in f for f in resultado.fallos)
+
+    def test_estado_nunca_confianza_alta_aunque_el_modelo_la_proponga(self, tmp_path, monkeypatch):
+        """El json_schema de la sintesis restringe `confianza` de "estado"
+        a "media"/"baja" (nunca "alta") -- verificado aqui contra el
+        contrato real de `ESQUEMA_SINTESIS_FICHA`, no solo leyendo el
+        docstring (decision-making.md SS4)."""
+        enum_confianza = ESQUEMA_SINTESIS_FICHA["properties"]["estado"]["properties"]["confianza"]["enum"]
+        assert set(enum_confianza) == {"media", "baja"}
+        assert "alta" not in enum_confianza
+
+    def test_estado_enum_del_json_schema_coincide_con_schema_estado_ui_a_canonico(self):
+        """El enum que ve el MODELO tiene que ser EXACTAMENTE el mismo que
+        reconoce la UI (`ui/ficha.py::_OPCIONES_ESTADO`) -- derivado de
+        `core.schema.ESTADO_UI_A_CANONICO`, nunca una lista hardcodeada
+        aparte que pueda divergir (el bug que se esta corrigiendo)."""
+        enum_valor = ESQUEMA_SINTESIS_FICHA["properties"]["estado"]["properties"]["valor"]["enum"]
+        assert set(enum_valor) == set(ESTADO_UI_A_CANONICO)
+        assert len(enum_valor) == 6
+
+    def test_barre_el_enum_de_estado_entero_contra_construir_campo_y_parsear_estado(self):
+        """(decision-making.md SS4/SS16, `[INC-018]`): no un representante
+        comodo -- los 6 literales, uno a uno, por LOS DOS caminos que
+        importan: `_construir_campo_estado_desde_sintesis` (extraccion) y
+        `schema.parsear_estado` (export). Ninguno cae a `None`; ese
+        round-trip es lo que hace que el export publique el literal
+        correcto."""
+        assert len(ESTADO_UI_A_CANONICO) == 6
+        for literal in ESTADO_UI_A_CANONICO:
+            decision = {"valor": literal, "motivo": "test", "confianza": "media"}
+            campo = _construir_campo_estado_desde_sintesis(decision)
+            assert campo is not None, f"{literal!r} no construyo un Campo"
+            assert campo.valor == literal
+            assert campo.fuente == "inferido"
+            assert campo.confianza in ("media", "baja")
+
+            canonico = parsear_estado(literal)
+            assert canonico is not None, f"{literal!r} no parseo a EstadoCanonico"
 
     def test_extraer_producto_sin_fotos_lanza(self):
         extractor = ExtractorEngine(_MotorFake())
@@ -1229,14 +1318,6 @@ class TestPropuestaExponeAlternativasConRecorte:
         def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
             fichero = imagenes[0].fichero
             motor.llamadas.append((fichero, version_prompt))
-            if version_prompt == VERSION_PROMPT_ESTADO:
-                return ResultadoLLM(
-                    datos={"estimacion_legible": False, "descripcion": None},
-                    fuente="api",
-                    coste_usd=0.0,
-                    tokens_entrada=10,
-                    tokens_salida=5,
-                )
             if fichero == foto_pecho.name:
                 datos = _respuesta_crop_simple("marca", True, "UMBRO", ubicacion="estampado_o_grafico")
             else:
@@ -1382,14 +1463,6 @@ class TestAvisoDeCoherencia:
         def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
             fichero = imagenes[0].fichero
             motor.llamadas.append((fichero, version_prompt))
-            if version_prompt == VERSION_PROMPT_ESTADO:
-                return ResultadoLLM(
-                    datos={"estimacion_legible": False, "descripcion": None},
-                    fuente="api",
-                    coste_usd=0.0,
-                    tokens_entrada=10,
-                    tokens_salida=5,
-                )
             if fichero == foto_marca.name:
                 datos = _respuesta_crop_simple("marca", True, "Reebok")
             else:
@@ -1423,14 +1496,6 @@ class TestAvisoDeCoherencia:
         def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
             fichero = imagenes[0].fichero
             motor.llamadas.append((fichero, version_prompt))
-            if version_prompt == VERSION_PROMPT_ESTADO:
-                return ResultadoLLM(
-                    datos={"estimacion_legible": False, "descripcion": None},
-                    fuente="api",
-                    coste_usd=0.0,
-                    tokens_entrada=10,
-                    tokens_salida=5,
-                )
             # Ambas lecturas de crop en esta foto (misma imagen, distinto bbox);
             # devolvemos segun el contenido esperado alternando por orden de llamada.
             indice_crop = sum(1 for f, vp in motor.llamadas if vp == VERSION_PROMPT_CROP)
@@ -1517,14 +1582,6 @@ class TestSerializacionRoundTrip:
         def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
             fichero = imagenes[0].fichero
             motor.llamadas.append((fichero, version_prompt))
-            if version_prompt == VERSION_PROMPT_ESTADO:
-                return ResultadoLLM(
-                    datos={"estimacion_legible": False, "descripcion": None},
-                    fuente="api",
-                    coste_usd=0.0,
-                    tokens_entrada=10,
-                    tokens_salida=5,
-                )
             if fichero == foto_pecho.name:
                 datos = _respuesta_crop_simple("marca", True, "UMBRO", ubicacion="estampado_o_grafico")
             else:
@@ -1628,11 +1685,6 @@ class TestSintesisComprometida:
         def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
             fichero = imagenes[0].fichero
             motor.llamadas.append((fichero, version_prompt))
-            if version_prompt == VERSION_PROMPT_ESTADO:
-                return ResultadoLLM(
-                    datos={"estimacion_legible": False, "descripcion": None},
-                    fuente="api", coste_usd=0.0, tokens_entrada=10, tokens_salida=5,
-                )
             if version_prompt == VERSION_PROMPT_SINTESIS:
                 return ResultadoLLM(
                     datos=respuesta_sintesis, fuente="api", coste_usd=0.002, tokens_entrada=200, tokens_salida=80,
@@ -1749,11 +1801,6 @@ class TestSintesisComprometida:
         def _consultar(imagenes, prompt, json_schema, version_prompt="v1", producto_id=None):
             fichero = imagenes[0].fichero
             motor.llamadas.append((fichero, version_prompt))
-            if version_prompt == VERSION_PROMPT_ESTADO:
-                return ResultadoLLM(
-                    datos={"estimacion_legible": False, "descripcion": None},
-                    fuente="api", coste_usd=0.0, tokens_entrada=10, tokens_salida=5,
-                )
             if version_prompt == VERSION_PROMPT_SINTESIS:
                 return ResultadoLLM(
                     datos=respuesta_sintesis, fuente="api", coste_usd=0.002, tokens_entrada=200, tokens_salida=80,
