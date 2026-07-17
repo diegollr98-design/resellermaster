@@ -37,6 +37,7 @@ from core.extract import (
 )
 from core.schema import Campo, Evidencia
 from core.store import Foto, LoteStore
+from ui import ficha
 from ui.ficha import _ficha_confirmada
 
 
@@ -446,3 +447,162 @@ def test_valor_pegado_de_extraccion_vieja_se_refresca(tmp_path):
     at.run()
     assert not at.exception
     assert _texto_input(at, f"ficha_{pid}_marca_valor").value == "lufthous"
+
+
+# ============================================================================
+# EXTRACCIÓN DE TODO EL LOTE (Fase 3, 2026-07-17) — pedido urgente de Diego:
+# "no quiero rellenar las fichas manualmente". Antes: 2 clics + 2 esperas POR
+# PRODUCTO (14 clics para su lote de 7). Ahora: 1 clic + 1 confirmación de
+# coste PARA TODO EL LOTE.
+#
+# `_accion_extraer_lote` es PURA (nunca llama a `st.*`) — mismo límite que
+# `test_curar.py` documenta para `_accion_dividir_grupo`/`_cerrar_costura`:
+# `AppTest` no puede clicar un botón DENTRO de un `@st.dialog` que ya está
+# abierto (fuerza un rerun completo y el diálogo no reabre solo), así que la
+# MUTACIÓN se prueba llamando la función directamente — es exactamente lo
+# que el botón "💸 Extraer los N productos ahora" invoca. Lo que SÍ ve
+# `AppTest` es que el botón de fuera aparece/desaparece con el conteo
+# correcto (`decision-making.md` §16: el caso de FALLO se ejecuta, no se lee).
+# ============================================================================
+class _ExtractorFake:
+    """Extractor de mentira para estos tests: no toca OCR ni la API real.
+    `falla_en` son los `producto_id` que deben REVENTAR — el caso de fallo
+    que `decision-making.md` §16 exige ejecutar, no sólo leer."""
+
+    def __init__(self, motor, carpeta_crops, *, falla_en: frozenset[str] = frozenset()):
+        self.carpeta_crops = carpeta_crops
+        self.falla_en = falla_en
+
+    def construir_solicitudes(self, fotos):
+        return []
+
+    def extraer_producto(self, fotos, categoria="moda", producto_id=None, carpeta_crops=None):
+        if producto_id in self.falla_en:
+            raise RuntimeError(f"fallo simulado en {producto_id}")
+        valor = f"Marca-{(producto_id or '')[:6]}"
+        campos = {"marca": Campo(valor=valor, fuente="inferido", confianza="baja")}
+        propuestas = {
+            "marca": Propuesta(
+                campo="marca", valor=valor, recorte=None, evidencia=None, motivo="test masivo"
+            ),
+        }
+        return ResultadoExtraccion(campos=campos, propuestas=propuestas, fallos=(), coste_usd=0.0)
+
+
+def _preparar_n_sin_extraer(tmp_path: Path, n: int) -> tuple[str, list[str]]:
+    """`n` productos, cada uno con 1 foto, agrupación CONFIRMADA (Fase 1),
+    SIN extraer todavía (`campos == {}`, el estado real tras `guardar_agrupacion`)."""
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote masivo", "C:/fotos/origen")
+    carpeta = store.lotes_dir / lote_id
+    foto_ids = []
+    for i in range(n):
+        ruta = carpeta / f"IMG_{i}.jpg"
+        _crear_img(ruta, (10 * i % 255, 20, 30))
+        (foto_id,) = store.añadir_fotos(lote_id, [Foto(ruta=str(ruta), hash=f"hash_{i}")])
+        foto_ids.append(foto_id)
+    pids = store.guardar_agrupacion(lote_id, [[fid] for fid in foto_ids])
+    for pid in pids:
+        store.confirmar_producto(pid)
+    return lote_id, pids
+
+
+def _fotos_por_id(tmp_path: Path, lote_id: str) -> dict[str, dict]:
+    estado = LoteStore(data_dir=tmp_path).cargar_lote(lote_id)
+    return {f["id"]: f for f in estado["fotos"]}
+
+
+def _productos_de(tmp_path: Path, lote_id: str) -> list[dict]:
+    estado = LoteStore(data_dir=tmp_path).cargar_lote(lote_id)
+    return estado["productos"]
+
+
+def test_boton_extraer_lote_aparece_y_dice_n(tmp_path):
+    lote_id, _pids = _preparar_n_sin_extraer(tmp_path, 6)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    labels = [b.label for b in at.button]
+    assert any("Extraer TODO el lote" in lbl and "6" in lbl for lbl in labels)
+
+
+def test_boton_extraer_lote_no_aparece_si_ya_todo_extraido(tmp_path):
+    lote_id, _pid = _preparar(tmp_path, _marca_leida_no_publicada)  # ya extraído
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    labels = [b.label for b in at.button]
+    assert not any("Extraer TODO el lote" in lbl for lbl in labels)
+
+
+def test_accion_extraer_lote_persiste_los_n_productos(tmp_path):
+    """`ui.ficha._accion_extraer_lote` es exactamente lo que llama el botón
+    "💸 Extraer los N productos ahora" — se prueba directo (ver docstring
+    de esta sección)."""
+    lote_id, pids = _preparar_n_sin_extraer(tmp_path, 6)
+    store = LoteStore(data_dir=tmp_path)
+    fotos_por_id = _fotos_por_id(tmp_path, lote_id)
+    productos = _productos_de(tmp_path, lote_id)
+
+    ok, fallos = ficha._accion_extraer_lote(
+        store, lote_id, productos, fotos_por_id, None,
+        lambda motor, crops: _ExtractorFake(motor, crops),
+    )
+    assert fallos == []
+    assert set(ok) == set(pids)
+
+    productos_tras = _productos_de(tmp_path, lote_id)
+    extraidos = [p for p in productos_tras if ficha._esta_extraido(p)]
+    assert len(extraidos) == 6
+    for p in extraidos:
+        assert p["campos"]["campos"]["marca"]["valor"].startswith("Marca-")
+
+
+def test_accion_extraer_lote_un_producto_revienta_los_demas_se_persisten(tmp_path):
+    """EL TEST QUE IMPORTA (§16): un producto revienta A MITAD del lote ->
+    los otros 5 SE PERSISTEN igual (dinero ya gastado, no se pierde), y el
+    fallo sale NOMBRADO con su producto_id y el motivo real — nunca un
+    `except: pass`, nunca un producto que se salta en silencio."""
+    lote_id, pids = _preparar_n_sin_extraer(tmp_path, 6)
+    pid_que_revienta = pids[3]
+    store = LoteStore(data_dir=tmp_path)
+    fotos_por_id = _fotos_por_id(tmp_path, lote_id)
+    productos = _productos_de(tmp_path, lote_id)
+
+    ok, fallos = ficha._accion_extraer_lote(
+        store, lote_id, productos, fotos_por_id, None,
+        lambda motor, crops: _ExtractorFake(motor, crops, falla_en=frozenset({pid_que_revienta})),
+    )
+
+    assert len(ok) == 5
+    assert pid_que_revienta not in ok
+    assert len(fallos) == 1
+    fallo_pid, motivo = fallos[0]
+    assert fallo_pid == pid_que_revienta
+    assert "fallo simulado" in motivo
+
+    productos_tras = _productos_de(tmp_path, lote_id)
+    extraidos = {p["id"] for p in productos_tras if ficha._esta_extraido(p)}
+    assert extraidos == set(ok)
+    assert pid_que_revienta not in extraidos
+
+
+def test_valores_nuevos_se_pintan_tras_extraccion_masiva(tmp_path):
+    """`[INC-014]` (Streamlit ignora `value=` si la key ya está en
+    `session_state`): tras la extracción MASIVA, el campo muestra el valor
+    NUEVO — no tapado por una key vieja pegada de un render anterior.
+    Verificado EJECUTANDO, no leído del docstring de `_sembrar_valores_iniciales`."""
+    lote_id, pids = _preparar_n_sin_extraer(tmp_path, 2)
+    store = LoteStore(data_dir=tmp_path)
+    fotos_por_id = _fotos_por_id(tmp_path, lote_id)
+    productos = _productos_de(tmp_path, lote_id)
+    ok, fallos = ficha._accion_extraer_lote(
+        store, lote_id, productos, fotos_por_id, None,
+        lambda motor, crops: _ExtractorFake(motor, crops),
+    )
+    assert fallos == []
+    pid = pids[0]
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id))
+    at.session_state[f"ficha_{pid}_marca_valor"] = ""  # valor pegado, sin marcador de firma
+    at.run()
+    assert not at.exception
+    assert _texto_input(at, f"ficha_{pid}_marca_valor").value.startswith("Marca-")

@@ -252,6 +252,126 @@ def _dialog_extraer(
 
 
 # --------------------------------------------------------------------------
+# EXTRACCIÓN DE TODO EL LOTE (Fase 3, 2026-07-17, pedido urgente de Diego):
+# "no quiero rellenar las fichas manualmente" — antes había que abrir el
+# diálogo POR PRODUCTO (2 clics + 2 esperas × 7 productos = 14 clics). Este
+# botón hace la MISMA extracción de siempre (`ExtractorEngine.extraer_producto`,
+# la costura no cambia) pero recorre TODOS los productos sin extraer detrás
+# de UNA sola puerta de coste (`decision-making.md` §15: se sigue enseñando
+# el coste ANTES de gastar, sólo que una vez para el lote entero, no 7).
+#
+# `_accion_extraer_lote` es PURA (nunca llama a `st.*`) — mismo criterio que
+# `ui.curar._accion_dividir_grupo`/`_cerrar_costura`: así se puede probar
+# directamente el caso de FALLO (`decision-making.md` §16) sin necesitar el
+# runtime de Streamlit. Persiste CADA resultado según termina (nunca junta
+# todo para guardarlo al final): si el producto 4 revienta, los 3 primeros
+# YA están en disco — dinero ya gastado, no se pierde (`CLAUDE.md`). Un
+# fallo en un producto se LOGUEA, se ANOTA con su id y el motivo real, y el
+# bucle SIGUE con los demás — nunca un `except: pass`, nunca un producto que
+# se salta en silencio (`decision-making.md` §13).
+# --------------------------------------------------------------------------
+def _productos_sin_extraer(productos: list[dict]) -> list[dict]:
+    return [p for p in productos if not _esta_extraido(p)]
+
+
+def _accion_extraer_lote(
+    store: LoteStore,
+    lote_id: str,
+    productos: list[dict],
+    fotos_por_id: dict[str, dict],
+    motor: LLMEngine,
+    crear_extractor: Callable[[LLMEngine, Path], ExtractorEngine],
+    *,
+    on_progreso: Callable[[int, int, str], None] | None = None,
+) -> tuple[list[str], list[tuple[str, str]]]:
+    """Extrae TODOS los `productos` de una tirada. Devuelve
+    `(ids_extraidos_ok, [(producto_id, motivo_del_fallo), ...])`. Ver el
+    bloque de arriba para el porqué de cada decisión."""
+    carpeta_crops = store.lotes_dir / lote_id / "crops"
+    extractor = crear_extractor(motor, carpeta_crops)
+    ok: list[str] = []
+    fallos: list[tuple[str, str]] = []
+    total = len(productos)
+    for i, producto in enumerate(productos, start=1):
+        pid = producto["id"]
+        if on_progreso is not None:
+            on_progreso(i, total, pid)
+        try:
+            fotos = _paths_producto(producto, fotos_por_id)
+            resultado = extractor.extraer_producto(fotos, producto_id=pid)
+            store.guardar_extraccion(pid, serializar_extraccion(resultado))
+        except Exception as exc:  # noqa: BLE001 — frontera "un producto no puede tumbar el lote entero" (ver docstring).
+            logger.exception("Falló la extracción masiva del producto %s", pid)
+            fallos.append((pid, str(exc)))
+            continue
+        ok.append(pid)
+    return ok, fallos
+
+
+@st.dialog("Extraer TODO el lote — coste antes de gastar", width="large")
+def _dialog_extraer_lote(
+    store: LoteStore,
+    lote_id: str,
+    productos: list[dict],
+    fotos_por_id: dict[str, dict],
+    motor: LLMEngine,
+    crear_extractor: Callable[[LLMEngine, Path], ExtractorEngine],
+) -> None:
+    """UNA sola puerta de coste para todo el lote: suma la estimación
+    (`LLMEngine.estimar_coste_lote`, sólo caché en disco, 0 red, 0 €) de
+    CADA producto sin extraer antes de mostrar el botón de gasto real."""
+    n = len(productos)
+    st.caption(
+        f"{n} producto(s) sin extraer todavía. Se localiza el texto en local "
+        "(gratis) y sólo los recortes con texto van al VLM — igual que la "
+        "extracción de un producto suelto, pero de una vez."
+    )
+
+    carpeta_crops = store.lotes_dir / lote_id / "crops"
+    extractor = crear_extractor(motor, carpeta_crops)
+    try:
+        with st.spinner(f"Planificando (OCR local) los {n} productos…"):
+            solicitudes_totales: list = []
+            for producto in productos:
+                fotos = _paths_producto(producto, fotos_por_id)
+                solicitudes_totales.extend(extractor.construir_solicitudes(fotos))
+            estimacion = motor.estimar_coste_lote(solicitudes_totales)
+    except Exception as exc:  # noqa: BLE001 — la planificación (OCR) no puede tumbar la pantalla.
+        logger.exception("No se pudo estimar el coste del lote %s", lote_id)
+        st.error(f"No se pudo preparar la extracción del lote: {exc}")
+        return
+
+    coste_cts = estimacion.coste_usd_estimado * 100
+    st.write(
+        f"**{n} producto(s)** · **{estimacion.n_llamadas_total} llamada(s) al VLM en total** · "
+        f"{estimacion.n_en_cache} ya en caché (0 €) · {estimacion.n_a_pagar} a pagar."
+    )
+    if estimacion.n_a_pagar == 0:
+        st.success("Coste estimado: **0 €** — todo estaba en caché (ya se extrajo antes).")
+    else:
+        st.info(f"Coste estimado: **~{coste_cts:.2f} cts USD** (Haiku 4.5) para los {n} productos.")
+
+    if st.button(f"💸 Extraer los {n} productos ahora", type="primary", use_container_width=True):
+        progreso = st.progress(0.0, text=f"Extrayendo 0/{n}…")
+
+        def _avisar(i: int, total: int, pid: str) -> None:
+            progreso.progress(i / total, text=f"Producto {i}/{total} (`{pid[:8]}`)…")
+
+        ok, fallos = _accion_extraer_lote(
+            store, lote_id, productos, fotos_por_id, motor, crear_extractor, on_progreso=_avisar
+        )
+        if fallos:
+            st.error(
+                f"Fallaron {len(fallos)} de {n} (los demás SÍ quedaron guardados en disco):\n\n"
+                + "\n".join(f"- producto `{pid[:8]}`: {motivo}" for pid, motivo in fallos)
+            )
+        if ok:
+            st.success(f"{len(ok)} producto(s) extraído(s) y guardado(s).")
+        if not fallos:
+            st.rerun()
+
+
+# --------------------------------------------------------------------------
 # Un campo de la ficha: EL VALOR JUNTO A SU RECORTE. Promueve lecturas y
 # alternativas a propuesta confirmable en un click.
 # --------------------------------------------------------------------------
@@ -646,7 +766,21 @@ def render(
     # que sólo revisa fichas ya extraídas no llega a tocar la API ni su clave
     # (la caché sirve sin clave) — el engine en sí sí se instancia ya.
     motor = crear_motor()
-
     fotos_por_id = {f["id"]: f for f in estado["fotos"]}
+
+    # BOTÓN DE LOTE ENTERO — arriba del todo, antes de la lista. Pedido
+    # urgente de Diego (2026-07-17): "no quiero rellenar las fichas
+    # manualmente" — de 2 clics × N productos a 1 clic + 1 confirmación de
+    # coste para TODO el lote. Ver el bloque `_dialog_extraer_lote` arriba.
+    sin_extraer = _productos_sin_extraer(confirmados_agrupacion)
+    if sin_extraer:
+        if st.button(
+            f"🔎 Extraer TODO el lote ({len(sin_extraer)} producto(s) sin extraer)",
+            type="primary",
+            use_container_width=True,
+        ):
+            _dialog_extraer_lote(store, lote_id, sin_extraer, fotos_por_id, motor, crear_extractor)
+        st.divider()
+
     for producto in confirmados_agrupacion:
         _render_producto(store, lote_id, producto, fotos_por_id, motor, crear_extractor)
