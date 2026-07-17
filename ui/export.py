@@ -81,6 +81,36 @@ def _contador(texto: str, limite: "schema.LimiteTexto | None") -> str:
 
 
 # --------------------------------------------------------------------------
+# Categoría: HOJAS CANDIDATAS. La máquina PROPONE 2-3 hojas (de "navega 859
+# a mano" a "1 clic"); Diego ELIGE. Nunca se auto-rellena una hoja
+# (`decision-making.md` §18: una hoja mal = anuncio oculto = venta perdida
+# silenciosa). Si ninguna encaja, el fallback es navegar a mano en la
+# plataforma — exactamente lo de hoy, nunca peor.
+# --------------------------------------------------------------------------
+def _render_candidatas_categoria(payload: export.PayloadPlataforma) -> None:
+    st.subheader("Categoría — elige UNA hoja")
+    if payload.categoria_snapshot:
+        st.caption(
+            f"Árbol de {_ETIQUETA_PLATAFORMA[payload.plataforma]} · snapshot "
+            f"{payload.categoria_snapshot} · refresca con "
+            "`python -m core.categorias --refrescar`"
+        )
+    if not payload.candidatas_categoria:
+        st.caption(
+            "— ninguna hoja candidata encaja con este producto: navega el árbol "
+            "a mano en la plataforma (como hasta ahora). —"
+        )
+        return
+    st.caption(
+        "Sugerencias ordenadas por parecido con el título/descripción. "
+        "**No están elegidas** — elige tú la que corresponda (fíjate en el "
+        "género y el subtipo); una hoja equivocada oculta el anuncio."
+    )
+    for cand in payload.candidatas_categoria:
+        st.code(cand.hoja.ruta_completa, language=None)
+
+
+# --------------------------------------------------------------------------
 # Un campo estructurado ya traducido (o crudo con su nota).
 # --------------------------------------------------------------------------
 def _render_campo_exportado(campo: export.CampoExportado) -> None:
@@ -161,6 +191,9 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
     st.code(payload.descripcion, language=None)
     st.caption("Título + descripción juntos, para pegar de una vez:")
     st.code(f"{payload.titulo}\n\n{payload.descripcion}", language=None)
+
+    st.divider()
+    _render_candidatas_categoria(payload)
 
     st.divider()
     st.subheader("Campos")

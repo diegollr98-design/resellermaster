@@ -1,0 +1,10292 @@
+{
+"plataforma": "wallapop",
+"descargado": "2026-07-17",
+"fuente": "https://api.wallapop.com/api/v3/categories (Accept-Language: es_ES)",
+"n_hojas": 859,
+"hojas": [
+{
+"id": 100,
+"nombre": "Coches",
+"ruta": [],
+"raiz_id": 100,
+"raiz_nombre": "Coches",
+"leaf_mandatory": false
+},
+{
+"id": 14000,
+"nombre": "Motos",
+"ruta": [],
+"raiz_id": 14000,
+"raiz_nombre": "Motos",
+"leaf_mandatory": false
+},
+{
+"id": 10164,
+"nombre": "GPS y electrónica",
+"ruta": [
+"Motor y accesorios"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10165,
+"nombre": "Herramientas",
+"ruta": [
+"Motor y accesorios"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10328,
+"nombre": "Accesorios",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10329,
+"nombre": "Aceites, lubricantes y líquidos",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10330,
+"nombre": "Carrocerías",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10331,
+"nombre": "Faros y luces indicadoras",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10332,
+"nombre": "Llantas",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10333,
+"nombre": "Motor y piezas de motor",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10334,
+"nombre": "Neumáticos",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10335,
+"nombre": "Seguridad",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10336,
+"nombre": "Suspensión y dirección",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10337,
+"nombre": "Transmisión",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10338,
+"nombre": "Tuning",
+"ruta": [
+"Motor y accesorios",
+"Recambios de coches y furgonetas"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10339,
+"nombre": "Aceites, lubricantes y líquidos",
+"ruta": [
+"Motor y accesorios",
+"Recambios de motos y cuatriciclos"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10340,
+"nombre": "Faros y luces indicadoras",
+"ruta": [
+"Motor y accesorios",
+"Recambios de motos y cuatriciclos"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10439,
+"nombre": "Motor y piezas de motor",
+"ruta": [
+"Motor y accesorios",
+"Recambios de motos y cuatriciclos"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10440,
+"nombre": "Neumáticos",
+"ruta": [
+"Motor y accesorios",
+"Recambios de motos y cuatriciclos"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10341,
+"nombre": "Vestimenta y protección",
+"ruta": [
+"Motor y accesorios",
+"Recambios de motos y cuatriciclos"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 10166,
+"nombre": "Otros",
+"ruta": [
+"Motor y accesorios"
+],
+"raiz_id": 12800,
+"raiz_nombre": "Motor y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9839,
+"nombre": "Botas a media pantorrilla",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9843,
+"nombre": "Botas de agua",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9844,
+"nombre": "Botas de trabajo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9840,
+"nombre": "Botas hasta la rodilla",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9842,
+"nombre": "Botas para la nieve",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9841,
+"nombre": "Botas por encima de la rodilla",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9838,
+"nombre": "Botines",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9845,
+"nombre": "Otras botas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9873,
+"nombre": "Botas de esquí",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9864,
+"nombre": "Botas de fútbol",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9868,
+"nombre": "Botas de fútbol sala",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9870,
+"nombre": "Botas de moto",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9874,
+"nombre": "Botas de snowboard",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9866,
+"nombre": "Botas y calzado de senderismo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9862,
+"nombre": "Calzado de ciclismo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9863,
+"nombre": "Calzado de danza",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9861,
+"nombre": "Calzado de escalada y búlder",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9865,
+"nombre": "Calzado de golf",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9875,
+"nombre": "Calzado de natación y agua",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9867,
+"nombre": "Patines de hielo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9871,
+"nombre": "Patines de ruedas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9860,
+"nombre": "Zapatillas de baloncesto",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9872,
+"nombre": "Zapatillas de correr",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9869,
+"nombre": "Zapatillas de gimnasio",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9876,
+"nombre": "Zapatillas de tenis",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9877,
+"nombre": "Otro calzado deportivo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11027,
+"nombre": "Pantuflas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9855,
+"nombre": "Chanclas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9854,
+"nombre": "Chanclas de dedo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9853,
+"nombre": "Sandalias planas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9856,
+"nombre": "Otras chanclas y sandalias",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9858,
+"nombre": "Sandalias de tacón",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Tacones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9857,
+"nombre": "Zapatos de salón",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Tacones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9859,
+"nombre": "Otros tacones",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Tacones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11029,
+"nombre": "Zapatillas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9848,
+"nombre": "Alpargatas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Zapatos planos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9846,
+"nombre": "Bailarinas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Zapatos planos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9850,
+"nombre": "Merceditas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Zapatos planos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9849,
+"nombre": "Zapatos con cordones",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Zapatos planos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9847,
+"nombre": "Zapatos náuticos y mocasines",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Zapatos planos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9851,
+"nombre": "Otros zapatos planos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado",
+"Zapatos planos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11023,
+"nombre": "Zuecos y mules",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11030,
+"nombre": "Otro calzado",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9757,
+"nombre": "Blusas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9769,
+"nombre": "Blusas con peplum",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9766,
+"nombre": "Bodys",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9756,
+"nombre": "Camisas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9759,
+"nombre": "Camisetas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9763,
+"nombre": "Camisetas de manga corta",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9765,
+"nombre": "Camisetas de manga larga",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9764,
+"nombre": "Camisetas de manga ¾",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9760,
+"nombre": "Chalecos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9762,
+"nombre": "Crop tops",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9768,
+"nombre": "Cuello alto",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9770,
+"nombre": "Cuello halter",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9758,
+"nombre": "Sin mangas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9767,
+"nombre": "Tops sin hombros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9761,
+"nombre": "Túnicas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9771,
+"nombre": "Otros tops y camisetas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Camisetas y tops"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11019,
+"nombre": "Disfraces y trajes especiales",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9747,
+"nombre": "Faldas acampanadas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9748,
+"nombre": "Faldas ajustadas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9752,
+"nombre": "Faldas de cintura alta",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9754,
+"nombre": "Faldas de tubo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9745,
+"nombre": "Faldas midi",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9751,
+"nombre": "Faldas plisadas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9749,
+"nombre": "Faldas skater",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9753,
+"nombre": "Faldas tulipán",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9750,
+"nombre": "Faldas vaqueras",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9746,
+"nombre": "Maxifaldas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9744,
+"nombre": "Minifaldas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9755,
+"nombre": "Otras faldas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Faldas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9724,
+"nombre": "Boleros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9725,
+"nombre": "Chalecos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9723,
+"nombre": "Cárdigans",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9721,
+"nombre": "Jerséis",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9722,
+"nombre": "Kimonos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9720,
+"nombre": "Sudaderas con y sin capucha",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9726,
+"nombre": "Otros jerséis y sudaderas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9813,
+"nombre": "Accesorios de lencería",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9810,
+"nombre": "Batas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9806,
+"nombre": "Braguitas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9812,
+"nombre": "Calcetines",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9807,
+"nombre": "Conjuntos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9808,
+"nombre": "Lencería moldeadora",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9811,
+"nombre": "Medias",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9809,
+"nombre": "Pijamas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9805,
+"nombre": "Sujetadores",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9814,
+"nombre": "Otros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Lencería y pijamas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9799,
+"nombre": "Monos cortos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Monos cortos y largos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9798,
+"nombre": "Monos largos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Monos cortos y largos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9800,
+"nombre": "Otros monos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Monos cortos y largos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9795,
+"nombre": "Pantalones cortos cargo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9790,
+"nombre": "Pantalones cortos de cintura alta",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9789,
+"nombre": "Pantalones cortos de cintura baja",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9794,
+"nombre": "Pantalones cortos de cuero",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9793,
+"nombre": "Pantalones cortos de encaje",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9791,
+"nombre": "Pantalones cortos hasta la rodilla",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9792,
+"nombre": "Pantalones cortos vaqueros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9796,
+"nombre": "Pantalones ¾",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9797,
+"nombre": "Otros pantalones cortos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9786,
+"nombre": "Leggings",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9787,
+"nombre": "Pantalones  harén",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9781,
+"nombre": "Pantalones anchos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9785,
+"nombre": "Pantalones de cuero",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9783,
+"nombre": "Pantalones de pinzas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9782,
+"nombre": "Pantalones pitillo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9784,
+"nombre": "Pantalones rectos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9780,
+"nombre": "Pantalones tobilleros y chinos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9788,
+"nombre": "Otros pantalones",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Pantalones y leggings"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9822,
+"nombre": "Abrigos y chaquetas premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9823,
+"nombre": "Bañadores y ropa de playa premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9817,
+"nombre": "Faldas premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9821,
+"nombre": "Jerseys premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9820,
+"nombre": "Monos y monos premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9819,
+"nombre": "Pantalones cortos premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9818,
+"nombre": "Pantalones premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9825,
+"nombre": "Ropa deportiva",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9824,
+"nombre": "Ropa interior premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9815,
+"nombre": "Tops premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9816,
+"nombre": "Vestidos premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9826,
+"nombre": "Otra ropa premamá",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Premamá"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9701,
+"nombre": "Abrigos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9700,
+"nombre": "Capas y ponchos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9702,
+"nombre": "Chalecos y gilets",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9705,
+"nombre": "Chaqueta bomber",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9703,
+"nombre": "Chaquetas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9704,
+"nombre": "Chaquetas bolero",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9707,
+"nombre": "Chubasqueros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9706,
+"nombre": "Gabardina",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9708,
+"nombre": "Parkas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9709,
+"nombre": "Otras prendas exteriores",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9801,
+"nombre": "Bañadores de una pieza",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de baño"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9802,
+"nombre": "Bikinis y tankinis",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de baño"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9803,
+"nombre": "Camisetas y pareos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de baño"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9804,
+"nombre": "Otros bañadores y ropa de playa",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa de baño"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9835,
+"nombre": "Accesorios deportivos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9828,
+"nombre": "Chándales",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9832,
+"nombre": "Faldas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9829,
+"nombre": "Pantalones",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9830,
+"nombre": "Pantalones cortos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9827,
+"nombre": "Ropa de abrigo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9834,
+"nombre": "Sudaderas con y sin capucha",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9836,
+"nombre": "Sujetadores deportivos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9833,
+"nombre": "Tops y camisetas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9831,
+"nombre": "Vestidos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9837,
+"nombre": "Otra ropa deportiva",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9727,
+"nombre": "Blazers",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Trajes y blazers"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9730,
+"nombre": "Piezas de traje",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Trajes y blazers"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9729,
+"nombre": "Trajes de falda",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Trajes y blazers"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9728,
+"nombre": "Trajes de pantalón",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Trajes y blazers"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9731,
+"nombre": "Otros trajes y blazers",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Trajes y blazers"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9774,
+"nombre": "Vaqueros acampanados",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9772,
+"nombre": "Vaqueros boyfriend",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9775,
+"nombre": "Vaqueros de cintura alta",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9777,
+"nombre": "Vaqueros pitillo",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9773,
+"nombre": "Vaqueros recortados",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9778,
+"nombre": "Vaqueros rectos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9776,
+"nombre": "Vaqueros rotos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9779,
+"nombre": "Otros vaqueros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9732,
+"nombre": "Minivestidos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9737,
+"nombre": "Vestidos de invierno",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9736,
+"nombre": "Vestidos de verano",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9738,
+"nombre": "Vestidos formales y de oficina",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9739,
+"nombre": "Vestidos informales",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9734,
+"nombre": "Vestidos largos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9733,
+"nombre": "Vestidos midi",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9741,
+"nombre": "Vestidos negros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9735,
+"nombre": "Vestidos para ocasiones especiales",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9740,
+"nombre": "Vestidos sin tirantes",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9742,
+"nombre": "Vestidos vaqueros",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9743,
+"nombre": "Otros vestidos",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa",
+"Vestidos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11020,
+"nombre": "Otras prendas",
+"ruta": [
+"Moda y accesorios",
+"Mujer",
+"Ropa"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11047,
+"nombre": "Alpargatas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9928,
+"nombre": "Botas Chelsea y sin cordones",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9931,
+"nombre": "Botas de agua",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9930,
+"nombre": "Botas de nieve",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9932,
+"nombre": "Botas de trabajo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9929,
+"nombre": "Botas safari y con cordones",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9933,
+"nombre": "Otras botas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Botas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9956,
+"nombre": "Botas de esquí",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9947,
+"nombre": "Botas de fútbol",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9951,
+"nombre": "Botas de fútbol sala",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9953,
+"nombre": "Botas de moto",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9957,
+"nombre": "Botas de snowboard",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9949,
+"nombre": "Botas y calzado de senderismo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9945,
+"nombre": "Calzado de ciclismo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9946,
+"nombre": "Calzado de danza",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9944,
+"nombre": "Calzado de escalada y búlder",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9948,
+"nombre": "Calzado de golf",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9958,
+"nombre": "Calzado de natación y agua",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9950,
+"nombre": "Patines de hielo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9954,
+"nombre": "Patines de ruedas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9943,
+"nombre": "Zapatillas de baloncesto",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9955,
+"nombre": "Zapatillas de correr",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9952,
+"nombre": "Zapatillas de gimnasio",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9959,
+"nombre": "Zapatillas de tenis",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9960,
+"nombre": "Otro calzado deportivo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Calzado deportivo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11050,
+"nombre": "Pantuflas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9937,
+"nombre": "Chanclas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9935,
+"nombre": "Chanclas de dedo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9936,
+"nombre": "Sandalias",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9934,
+"nombre": "Zuecos y mules",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9938,
+"nombre": "Otras sandalias y chanclas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Sandalias y chanclas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11052,
+"nombre": "Zapatillas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9939,
+"nombre": "Zapatos con cordones",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Zapatos de vestir"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9940,
+"nombre": "Zapatos con hebilla",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Zapatos de vestir"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9941,
+"nombre": "Zapatos sin cordones",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Zapatos de vestir"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9942,
+"nombre": "Otros zapatos formales",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado",
+"Zapatos de vestir"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11045,
+"nombre": "Zapatos náuticos y mocasines",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11053,
+"nombre": "Otro calzado",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Calzado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11040,
+"nombre": "Bañadores",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9916,
+"nombre": "Albornoces",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Calcetines y ropa interior"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9915,
+"nombre": "Calcetines",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Calcetines y ropa interior"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9914,
+"nombre": "Calzoncillos y bóxers",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Calcetines y ropa interior"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9918,
+"nombre": "Pijamas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Calcetines y ropa interior"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9919,
+"nombre": "Otros calcetines y ropa interior",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Calcetines y ropa interior"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11033,
+"nombre": "Camisas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11042,
+"nombre": "Disfraces y trajes especiales",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9895,
+"nombre": "Cárdigans",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9892,
+"nombre": "Jerséis",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9897,
+"nombre": "Jerséis con cuello de pico",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9898,
+"nombre": "Jerséis con cuello de tortuga",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9896,
+"nombre": "Jerséis de cuello redondo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9900,
+"nombre": "Jerséis de punto",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9899,
+"nombre": "Jerséis largos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9901,
+"nombre": "Jerséis sin mangas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9894,
+"nombre": "Sudaderas con cremallera",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9893,
+"nombre": "Sudaderas con y sin capucha",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9902,
+"nombre": "Otros jerséis",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Jerséis y sudaderas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9903,
+"nombre": "Chinos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9904,
+"nombre": "Joggers",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9908,
+"nombre": "Pantalones anchos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9906,
+"nombre": "Pantalones cortos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9907,
+"nombre": "Pantalones de pinzas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9905,
+"nombre": "Pantalones pitillo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9909,
+"nombre": "Otros pantalones",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9910,
+"nombre": "Pantalones cortos cargo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9911,
+"nombre": "Pantalones cortos chinos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9912,
+"nombre": "Pantalones cortos vaqueros",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9913,
+"nombre": "Otros pantalones cortos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Pantalones cortos"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9711,
+"nombre": "Abrigos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9710,
+"nombre": "Capas y ponchos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9712,
+"nombre": "Chalecos y gilets",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9715,
+"nombre": "Chaqueta bomber",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9713,
+"nombre": "Chaquetas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9714,
+"nombre": "Chaquetas bolero",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9717,
+"nombre": "Chubasqueros",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9716,
+"nombre": "Gabardina",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9718,
+"nombre": "Parkas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9719,
+"nombre": "Otras prendas exteriores",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa de abrigo"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9926,
+"nombre": "Accesorios deportivos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9921,
+"nombre": "Chándales",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9922,
+"nombre": "Pantalones",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9923,
+"nombre": "Pantalones cortos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9920,
+"nombre": "Ropa de abrigo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9925,
+"nombre": "Sudaderas con y sin capucha",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9924,
+"nombre": "Tops y camisetas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9927,
+"nombre": "Otra ropa deportiva",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Ropa deportiva"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9883,
+"nombre": "Camisetas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Tops y camisetas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9884,
+"nombre": "Chalecos y camisetas sin mangas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Tops y camisetas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9885,
+"nombre": "Otros tops",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Tops y camisetas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9888,
+"nombre": "Chalecos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Trajes y americanas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9886,
+"nombre": "Chaquetas de traje y americanas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Trajes y americanas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9889,
+"nombre": "Conjuntos de traje",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Trajes y americanas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9887,
+"nombre": "Pantalones de traje",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Trajes y americanas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9890,
+"nombre": "Trajes de boda",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Trajes y americanas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9891,
+"nombre": "Otros trajes y americanas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Trajes y americanas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9880,
+"nombre": "Vaqueros ajustados",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9879,
+"nombre": "Vaqueros pitillo",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9881,
+"nombre": "Vaqueros rectos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9878,
+"nombre": "Vaqueros rotos",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9882,
+"nombre": "Otros vaqueros",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa",
+"Vaqueros"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 11043,
+"nombre": "Otras prendas",
+"ruta": [
+"Moda y accesorios",
+"Hombre",
+"Ropa"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9645,
+"nombre": "Accesorios para el cabello",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9649,
+"nombre": "Billeteras",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9600,
+"nombre": "Bolsa de aseo",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9626,
+"nombre": "Bolsas de viaje",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9622,
+"nombre": "Bolsos de fiesta",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9555,
+"nombre": "Bolsos de hombro",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9558,
+"nombre": "Bolsos de mano",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9625,
+"nombre": "Bolsos estampados y bordados",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9621,
+"nombre": "Bolsos tote",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9537,
+"nombre": "Carteras",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9614,
+"nombre": "Equipaje y maletas",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9597,
+"nombre": "Maletines",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9543,
+"nombre": "Mochilas",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9546,
+"nombre": "Monederos",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9623,
+"nombre": "Neceseres",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9596,
+"nombre": "Riñoneras",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9624,
+"nombre": "Satchels",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9578,
+"nombre": "Otros bolsos",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bolsos y mochilas"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9551,
+"nombre": "Bufandas",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bufandas y chales"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9628,
+"nombre": "Bufandas y chales de gran tamaño",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bufandas y chales"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9629,
+"nombre": "Chales",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bufandas y chales"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9552,
+"nombre": "Pañuelos",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bufandas y chales"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9627,
+"nombre": "Pañuelos de cabeza",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bufandas y chales"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9630,
+"nombre": "Otras bufandas y chales",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Bufandas y chales"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9550,
+"nombre": "Cinturones",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9584,
+"nombre": "Corbatas y pañuelos",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9567,
+"nombre": "Gafas de sol",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9610,
+"nombre": "Guantes",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9635,
+"nombre": "Paraguas",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9562,
+"nombre": "Relojes",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9632,
+"nombre": "Boinas",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9633,
+"nombre": "Diademas y cintas",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9541,
+"nombre": "Gorras",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9553,
+"nombre": "Gorros",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9631,
+"nombre": "Gorros de invierno",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9618,
+"nombre": "Sombreros",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9634,
+"nombre": "Otros sombreros y gorras",
+"ruta": [
+"Moda y accesorios",
+"Accesorios",
+"Sombreros y gorras"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9607,
+"nombre": "Otros accesorios",
+"ruta": [
+"Moda y accesorios",
+"Accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9534,
+"nombre": "Anillos",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9579,
+"nombre": "Broches",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9581,
+"nombre": "Cadenas",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9539,
+"nombre": "Colgantes",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9572,
+"nombre": "Collares",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9637,
+"nombre": "Conjuntos de joyas",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9636,
+"nombre": "Cuentas",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9654,
+"nombre": "Gemelos",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9644,
+"nombre": "Joyeros",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9571,
+"nombre": "Pendientes",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9651,
+"nombre": "Piercings",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9570,
+"nombre": "Pulseras",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9638,
+"nombre": "Tobilleras",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9639,
+"nombre": "Otras joyas",
+"ruta": [
+"Moda y accesorios",
+"Joyería"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9617,
+"nombre": "Colonia",
+"ruta": [
+"Moda y accesorios",
+"Belleza"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9672,
+"nombre": "Aftershave y colonia",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9671,
+"nombre": "Artículos y kits de cuidado personal",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9669,
+"nombre": "Cuidado corporal",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9667,
+"nombre": "Cuidado de las manos",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9668,
+"nombre": "Cuidado de las uñas",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9670,
+"nombre": "Cuidado del cabello",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9666,
+"nombre": "Cuidado facial",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9673,
+"nombre": "Otros productos de cuidado personal",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Cuidado personal"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9590,
+"nombre": "Maquillaje",
+"ruta": [
+"Moda y accesorios",
+"Belleza"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9603,
+"nombre": "Perfume",
+"ruta": [
+"Moda y accesorios",
+"Belleza"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9663,
+"nombre": "Utensilios de afeitado",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9643,
+"nombre": "Utensilios de maquillaje",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9652,
+"nombre": "Cepillos para el pelo",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios",
+"Utensilios de peinado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9611,
+"nombre": "Planchas para el pelo",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios",
+"Utensilios de peinado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9647,
+"nombre": "Rizadores",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios",
+"Utensilios de peinado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9648,
+"nombre": "Secadores",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios",
+"Utensilios de peinado"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9641,
+"nombre": "Utensilios para el cuidado corporal",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9640,
+"nombre": "Utensilios para el cuidado facial",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9664,
+"nombre": "Utensilios para el cuidado personal",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9642,
+"nombre": "Utensilios para las uñas",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9665,
+"nombre": "Otros utensilios",
+"ruta": [
+"Moda y accesorios",
+"Belleza",
+"Utensilios y accesorios"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 9674,
+"nombre": "Otros productos de belleza",
+"ruta": [
+"Moda y accesorios",
+"Belleza"
+],
+"raiz_id": 12465,
+"raiz_nombre": "Moda y accesorios",
+"leaf_mandatory": false
+},
+{
+"id": 200,
+"nombre": "Inmobiliaria",
+"ruta": [],
+"raiz_id": 200,
+"raiz_nombre": "Inmobiliaria",
+"leaf_mandatory": false
+},
+{
+"id": 10414,
+"nombre": "TV",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10406,
+"nombre": "Proyectores",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24140,
+"nombre": "Lámparas proyector",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24141,
+"nombre": "Pantallas de proyección",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24142,
+"nombre": "Soportes para proyectores",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24144,
+"nombre": "DVD y Blu-Ray",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24145,
+"nombre": "Soportes TV",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10413,
+"nombre": "Mandos a distancia",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24146,
+"nombre": "TDT",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24147,
+"nombre": "Muebles de TV",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24148,
+"nombre": "Marcos para TV",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10409,
+"nombre": "Otros accesorios de televisores y proyectores",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores",
+"Accesorios de televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24192,
+"nombre": "Otros artículos de imagen",
+"ruta": [
+"Tecnología y electrónica",
+"Imagen: televisores y proyectores"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10395,
+"nombre": "Auriculares",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24150,
+"nombre": "Altavoces",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24151,
+"nombre": "Home cinema y barras de sonido",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24152,
+"nombre": "Despertadores digitales",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24153,
+"nombre": "Grabadoras de voz",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24154,
+"nombre": "Karaoke",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24155,
+"nombre": "MP3 y MP4",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24156,
+"nombre": "Radio",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24157,
+"nombre": "Radio CD",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24158,
+"nombre": "Reproductor CD",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24159,
+"nombre": "Otros dispositivos de audio",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"Dispositivos de sonido"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10070,
+"nombre": "Tocadiscos",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24161,
+"nombre": "Accesorios de Grabación",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24162,
+"nombre": "Amplificadores",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24163,
+"nombre": "Receptores",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24164,
+"nombre": "Auriculares para DJ",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24165,
+"nombre": "Controladores MIDI",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24166,
+"nombre": "Grabadoras",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24167,
+"nombre": "Maletas de DJ",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24168,
+"nombre": "Mesa de mezclas / DJ",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24169,
+"nombre": "Micrófonos",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24170,
+"nombre": "Monitores de estudio",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24171,
+"nombre": "Pedales",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24172,
+"nombre": "Sintetizadores",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces",
+"DJ y audio profesional"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24173,
+"nombre": "Otros dispositivos de sonido",
+"ruta": [
+"Tecnología y electrónica",
+"Sonido: auriculares y altavoces"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24174,
+"nombre": "Reflex",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24175,
+"nombre": "Compactas",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24176,
+"nombre": "Sin espejo",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24177,
+"nombre": "Vintage",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24178,
+"nombre": "Instantáneas",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10417,
+"nombre": "Cámaras de video",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24179,
+"nombre": "Otras cámaras",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Cámaras"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10401,
+"nombre": "Objetivos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10201,
+"nombre": "Drones",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10398,
+"nombre": "Flashes",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24181,
+"nombre": "Carretes fotográficos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24182,
+"nombre": "Filtros fotograficos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24183,
+"nombre": "Papel fotográfico",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24184,
+"nombre": "Grips",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24185,
+"nombre": "Tapas y parasoles",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10403,
+"nombre": "Trípodes y monopies",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24186,
+"nombre": "Fundas de objetivos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24187,
+"nombre": "Fundas, mochilas y correas para cámara",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10203,
+"nombre": "Baterías y cargadores",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24188,
+"nombre": "Álbumes de fotos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24189,
+"nombre": "Marcos de fotos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24190,
+"nombre": "Libros de fotos",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24191,
+"nombre": "Otros accesorios de fotografía",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones",
+"Accesorios de fotografía"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10199,
+"nombre": "Cámaras de vigilancia",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24193,
+"nombre": "Otros articulos de fotografía",
+"ruta": [
+"Tecnología y electrónica",
+"Fotografía: cámaras y drones"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 9447,
+"nombre": "Smartphones",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 9487,
+"nombre": "Smartwatches y pulsera de actividad",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10175,
+"nombre": "Teléfonos vintage",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24102,
+"nombre": "Telefonos fijos",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24103,
+"nombre": "Otros teléfonos",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10427,
+"nombre": "Cargadores y cables para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24104,
+"nombre": "Powerbanks",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10428,
+"nombre": "Fundas y carcasas para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10423,
+"nombre": "Baterías para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24105,
+"nombre": "Soportes para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24106,
+"nombre": "Cristales templados para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24107,
+"nombre": "Palos selfies",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24108,
+"nombre": "Trípodes para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24109,
+"nombre": "Manos libres",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24110,
+"nombre": "Aros de luz para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24111,
+"nombre": "Estabilizadores para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24112,
+"nombre": "Amplificadores de pantalla para móviles",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24113,
+"nombre": "Localizadores para móvil",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 9388,
+"nombre": "Piezas de recambio",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 9370,
+"nombre": "Otros accesorios de móviles y smartwatches",
+"ruta": [
+"Tecnología y electrónica",
+"Telefonía: móviles y smartwatches",
+"Accesorios de móviles y smartwatches"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10310,
+"nombre": "Portátiles",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10309,
+"nombre": "Ordenadores de sobremesa",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24114,
+"nombre": "Gafas de realidad virtual",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Realidad Virtual y aumentada"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24194,
+"nombre": "Otros accesorios de realidad virtual",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Realidad Virtual y aumentada"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 9374,
+"nombre": "Tablets",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24132,
+"nombre": "E-readers",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10307,
+"nombre": "Impresoras",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10133,
+"nombre": "Monitores",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10311,
+"nombre": "Ratones",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10312,
+"nombre": "Teclados",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24133,
+"nombre": "Escáners",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24134,
+"nombre": "Webcams",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24135,
+"nombre": "Otros periféricos",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Periféricos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10304,
+"nombre": "Componentes y piezas de ordenador",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10305,
+"nombre": "Accesorios para portátiles",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24137,
+"nombre": "Accesorios para tablets",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10306,
+"nombre": "Accesorios consumibles para impresoras",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10137,
+"nombre": "Software",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24138,
+"nombre": "Redes y conectividad",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10308,
+"nombre": "Discos duros externos",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10130,
+"nombre": "Cables de informática",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24139,
+"nombre": "Pendrives y memorias USB",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10135,
+"nombre": "Otros accesorios de informática",
+"ruta": [
+"Tecnología y electrónica",
+"Informática: ordenadores y tablets",
+"Accesorios de informática"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10088,
+"nombre": "Consolas",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"Consolas y accesorios"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10092,
+"nombre": "Accesorios y recambios de consolas",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"Consolas y accesorios"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24116,
+"nombre": "Portátiles gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24117,
+"nombre": "Ordenadores sobremesa gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24118,
+"nombre": "Monitores gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24119,
+"nombre": "Ratones gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24120,
+"nombre": "Teclados gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24121,
+"nombre": "Sillas gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24122,
+"nombre": "Mesas gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24123,
+"nombre": "Alfombrillas gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24124,
+"nombre": "Mandos para PC",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24125,
+"nombre": "Volantes para PC",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24126,
+"nombre": "Altavoces gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24127,
+"nombre": "Microfonos para PC gamer",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24128,
+"nombre": "Auriculares gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24129,
+"nombre": "Juegos para PC",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 24130,
+"nombre": "Accesorios de PC gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"PC gaming y streaming"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10093,
+"nombre": "Videojuegos",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"Videojuegos y más"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10089,
+"nombre": "Manuales y guías de videojuegos",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"Videojuegos y más"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10090,
+"nombre": "Merchandising de videojuegos",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos",
+"Videojuegos y más"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10091,
+"nombre": "Otros artículos de gaming",
+"ruta": [
+"Tecnología y electrónica",
+"Gaming: consolas y videojuegos"
+],
+"raiz_id": 24200,
+"raiz_nombre": "Tecnología y electrónica",
+"leaf_mandatory": false
+},
+{
+"id": 10094,
+"nombre": "Baloncesto",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10095,
+"nombre": "Balonmano",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10096,
+"nombre": "Estáticas y elípticas",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10097,
+"nombre": "Fitness, running y yoga",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10098,
+"nombre": "Fútbol",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10099,
+"nombre": "Golf",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10100,
+"nombre": "Juegos recreativos y de mesa",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10101,
+"nombre": "Manualidades",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10102,
+"nombre": "Montaña y esquí",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10103,
+"nombre": "Natación y accesorios piscina",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10105,
+"nombre": "Otros deportes",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10106,
+"nombre": "Patinetes y patinaje",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10107,
+"nombre": "Rugby",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10108,
+"nombre": "Tenis y pádel",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10109,
+"nombre": "Vóley",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10104,
+"nombre": "Otros",
+"ruta": [
+"Deporte y ocio"
+],
+"raiz_id": 12579,
+"raiz_nombre": "Deporte y ocio",
+"leaf_mandatory": false
+},
+{
+"id": 10208,
+"nombre": "Bombas e infladores",
+"ruta": [
+"Bicicletas",
+"Accesorios para bicicletas"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10209,
+"nombre": "Electrónica para bicicletas",
+"ruta": [
+"Bicicletas",
+"Accesorios para bicicletas"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10210,
+"nombre": "Luces",
+"ruta": [
+"Bicicletas",
+"Accesorios para bicicletas"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10211,
+"nombre": "Portabicicletas",
+"ruta": [
+"Bicicletas",
+"Accesorios para bicicletas"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10212,
+"nombre": "Rodillos",
+"ruta": [
+"Bicicletas",
+"Accesorios para bicicletas"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10216,
+"nombre": "Bicicletas Infantiles",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10213,
+"nombre": "Bicicletas ciudad",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10438,
+"nombre": "Bicicletas de carretera",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10215,
+"nombre": "Bicicletas eléctricas",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10217,
+"nombre": "Bicicletas plegables",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10218,
+"nombre": "Fixies",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10214,
+"nombre": "MTB",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10219,
+"nombre": "Monociclos",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10220,
+"nombre": "Triciclos",
+"ruta": [
+"Bicicletas",
+"Bicicletas y triciclos"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10221,
+"nombre": "Cuadros",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10223,
+"nombre": "Herramientas",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10222,
+"nombre": "Neumáticos y cámaras",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10224,
+"nombre": "Piezas",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10225,
+"nombre": "Recambios",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10226,
+"nombre": "Ruedas",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10227,
+"nombre": "Sillín",
+"ruta": [
+"Bicicletas",
+"Piezas y recambios de bici"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10230,
+"nombre": "Alforjas",
+"ruta": [
+"Bicicletas",
+"Protección y vestimenta"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10228,
+"nombre": "Cascos",
+"ruta": [
+"Bicicletas",
+"Protección y vestimenta"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10229,
+"nombre": "Gafas ciclismo y de sol",
+"ruta": [
+"Bicicletas",
+"Protección y vestimenta"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10231,
+"nombre": "Ropa ciclismo",
+"ruta": [
+"Bicicletas",
+"Protección y vestimenta"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10232,
+"nombre": "Zapatillas y cubrezapatillas",
+"ruta": [
+"Bicicletas",
+"Protección y vestimenta"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10057,
+"nombre": "Otros",
+"ruta": [
+"Bicicletas"
+],
+"raiz_id": 17000,
+"raiz_nombre": "Bicicletas",
+"leaf_mandatory": false
+},
+{
+"id": 10269,
+"nombre": "Colchones",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Camas y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10270,
+"nombre": "Ropa de cama",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Camas y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24204,
+"nombre": "Estructura de camas",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Camas y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24205,
+"nombre": "Cabeceros y pies de cama",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Camas y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10268,
+"nombre": "Almohadas y cojines",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Camas y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24206,
+"nombre": "Accesorios",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Camas y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24208,
+"nombre": "Escritorios",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Mesas y mesitas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24209,
+"nombre": "Mesas de comedor",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Mesas y mesitas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24210,
+"nombre": "Mesas de centro y bajas",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Mesas y mesitas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24211,
+"nombre": "Mesitas de noche y auxiliares",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Mesas y mesitas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24212,
+"nombre": "Tocadores",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Mesas y mesitas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10288,
+"nombre": "Almacenaje de oficina",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10292,
+"nombre": "Estanterías",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24268,
+"nombre": "Muebles de salón y televisión",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10289,
+"nombre": "Armarios",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24213,
+"nombre": "Vitrinas, aparadores y consolas",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24214,
+"nombre": "Cómodas y cajoneras",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24215,
+"nombre": "Zapateros",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Muebles de almacenaje"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24217,
+"nombre": "Sofas y divanes",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Sofás y sillones"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24218,
+"nombre": "Sofa cama y futones",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Sofás y sillones"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24219,
+"nombre": "Sillones y mecedoras",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Sofás y sillones"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24220,
+"nombre": "Puffs",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Sofás y sillones"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24221,
+"nombre": "Sillas y taburetes",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24223,
+"nombre": "Set de mesas y sillas",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Set de muebles"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24224,
+"nombre": "Set muebles habitación",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Set de muebles"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24225,
+"nombre": "Set de salón",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Set de muebles"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24226,
+"nombre": "Carritos",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24269,
+"nombre": "Colgadores, percheros y burras",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Cajas y organizadores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10290,
+"nombre": "Baúles, cajas y cubos",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Cajas y organizadores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24227,
+"nombre": "Cestas",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Cajas y organizadores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24228,
+"nombre": "Almacenaje de joyas y maquillaje",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Cajas y organizadores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24229,
+"nombre": "Basura y reciclaje",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Cajas y organizadores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24230,
+"nombre": "Organizadores",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización",
+"Cajas y organizadores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10285,
+"nombre": "Antigüedades",
+"ruta": [
+"Hogar y jardín",
+"Muebles y organización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24275,
+"nombre": "Inodoros y bidet",
+"ruta": [
+"Hogar y jardín",
+"Baño y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24277,
+"nombre": "Duchas y bañeras",
+"ruta": [
+"Hogar y jardín",
+"Baño y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10264,
+"nombre": "Picas y muebles baño",
+"ruta": [
+"Hogar y jardín",
+"Baño y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24270,
+"nombre": "Grifería de baño",
+"ruta": [
+"Hogar y jardín",
+"Baño y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10263,
+"nombre": "Textiles de baño",
+"ruta": [
+"Hogar y jardín",
+"Baño y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10419,
+"nombre": "Accesorios baño",
+"ruta": [
+"Hogar y jardín",
+"Baño y accesorios"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10267,
+"nombre": "Platos y vajilla",
+"ruta": [
+"Hogar y jardín",
+"Cocina",
+"Menaje para cocinar, comer y beber"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10266,
+"nombre": "Utensilios para cocinar",
+"ruta": [
+"Hogar y jardín",
+"Cocina",
+"Menaje para cocinar, comer y beber"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24271,
+"nombre": "Cristalería y jarras",
+"ruta": [
+"Hogar y jardín",
+"Cocina",
+"Menaje para cocinar, comer y beber"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10420,
+"nombre": "Cubertería",
+"ruta": [
+"Hogar y jardín",
+"Cocina",
+"Menaje para cocinar, comer y beber"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24272,
+"nombre": "Sartenes, ollas y batería de cocina",
+"ruta": [
+"Hogar y jardín",
+"Cocina",
+"Menaje para cocinar, comer y beber"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24232,
+"nombre": "Picas y muebles cocina",
+"ruta": [
+"Hogar y jardín",
+"Cocina"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24233,
+"nombre": "Grifería de cocina",
+"ruta": [
+"Hogar y jardín",
+"Cocina"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24234,
+"nombre": "Textiles de cocina y comedor",
+"ruta": [
+"Hogar y jardín",
+"Cocina"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24235,
+"nombre": "Accesorios",
+"ruta": [
+"Hogar y jardín",
+"Cocina"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24236,
+"nombre": "Fundas y cojines de sofá",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24237,
+"nombre": "Decoración para pared y colgar",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10271,
+"nombre": "Decoración para festividades",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24238,
+"nombre": "Espejos",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10273,
+"nombre": "Cortinas",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10272,
+"nombre": "Alfombras",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24239,
+"nombre": "Jarrones y figuras decorativas",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24240,
+"nombre": "Velas y portavelas",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24241,
+"nombre": "Otros",
+"ruta": [
+"Hogar y jardín",
+"Decoración y espejos"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24242,
+"nombre": "Apliques, lámparas, pantallas y bases",
+"ruta": [
+"Hogar y jardín",
+"Iluminación"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24243,
+"nombre": "Bombillas",
+"ruta": [
+"Hogar y jardín",
+"Iluminación"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10281,
+"nombre": "Luces decorativas y de exterior",
+"ruta": [
+"Hogar y jardín",
+"Iluminación"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24244,
+"nombre": "Iluminación inteligente",
+"ruta": [
+"Hogar y jardín",
+"Iluminación"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24245,
+"nombre": "Accesorios de iluminación",
+"ruta": [
+"Hogar y jardín",
+"Iluminación"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24246,
+"nombre": "Sets de muebles de exterior",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Muebles para exterior"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24247,
+"nombre": "Mesas de exterior",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Muebles para exterior"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24248,
+"nombre": "Sillas, sillones, sofás y tumbonas",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Muebles para exterior"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24249,
+"nombre": "Carpas, toldos y parasoles",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Muebles para exterior"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24250,
+"nombre": "Armarios y almacenaje",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Muebles para exterior"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24251,
+"nombre": "Decoración",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24252,
+"nombre": "Plantas",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Plantas y jardinería"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24253,
+"nombre": "Semillas y sustratos",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Plantas y jardinería"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24254,
+"nombre": "Insecticidas y tratamiento para plantas",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Plantas y jardinería"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24255,
+"nombre": "Macetas",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Plantas y jardinería"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24256,
+"nombre": "Invernaderos y riego",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Plantas y jardinería"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24257,
+"nombre": "Herramientas de jardinería",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores",
+"Plantas y jardinería"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10280,
+"nombre": "Barbacoas",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10284,
+"nombre": "Piscinas, spa y duchas de exterior",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24258,
+"nombre": "Maquinaria de jardín",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24259,
+"nombre": "Cesped, vallas y paneles",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24260,
+"nombre": "Accesorios",
+"ruta": [
+"Hogar y jardín",
+"Jardín y exteriores"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24261,
+"nombre": "Chimeneas, Estufas y radiadores",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24262,
+"nombre": "Aire acondicionado y ventiladores ",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24263,
+"nombre": "Combustibles y pellet",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24264,
+"nombre": "Termostatos y válvulas termostáticas",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24265,
+"nombre": "Calderas y termos eléctricos",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24266,
+"nombre": "Purificador y humificador",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 24267,
+"nombre": "Otros",
+"ruta": [
+"Hogar y jardín",
+"Calefacción y climatización"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10262,
+"nombre": "Accesorios de paseo",
+"ruta": [
+"Hogar y jardín",
+"Artículos para mascotas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10257,
+"nombre": "Camas",
+"ruta": [
+"Hogar y jardín",
+"Artículos para mascotas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10258,
+"nombre": "Corrales",
+"ruta": [
+"Hogar y jardín",
+"Artículos para mascotas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10259,
+"nombre": "Higiene",
+"ruta": [
+"Hogar y jardín",
+"Artículos para mascotas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10260,
+"nombre": "Jaulas",
+"ruta": [
+"Hogar y jardín",
+"Artículos para mascotas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10261,
+"nombre": "Juguetes",
+"ruta": [
+"Hogar y jardín",
+"Artículos para mascotas"
+],
+"raiz_id": 12467,
+"raiz_nombre": "Hogar y jardín",
+"leaf_mandatory": false
+},
+{
+"id": 10111,
+"nombre": "Electrodomésticos de cocina",
+"ruta": [
+"Electrodomésticos"
+],
+"raiz_id": 13100,
+"raiz_nombre": "Electrodomésticos",
+"leaf_mandatory": false
+},
+{
+"id": 10112,
+"nombre": "Lavandería y plancha",
+"ruta": [
+"Electrodomésticos"
+],
+"raiz_id": 13100,
+"raiz_nombre": "Electrodomésticos",
+"leaf_mandatory": false
+},
+{
+"id": 10113,
+"nombre": "Pequeños electrodomésticos",
+"ruta": [
+"Electrodomésticos"
+],
+"raiz_id": 13100,
+"raiz_nombre": "Electrodomésticos",
+"leaf_mandatory": false
+},
+{
+"id": 10114,
+"nombre": "Piezas y recambios",
+"ruta": [
+"Electrodomésticos"
+],
+"raiz_id": 13100,
+"raiz_nombre": "Electrodomésticos",
+"leaf_mandatory": false
+},
+{
+"id": 10115,
+"nombre": "Vitrocerámica",
+"ruta": [
+"Electrodomésticos"
+],
+"raiz_id": 13100,
+"raiz_nombre": "Electrodomésticos",
+"leaf_mandatory": false
+},
+{
+"id": 10441,
+"nombre": "Otros",
+"ruta": [
+"Electrodomésticos"
+],
+"raiz_id": 13100,
+"raiz_nombre": "Electrodomésticos",
+"leaf_mandatory": false
+},
+{
+"id": 24008,
+"nombre": "Cine",
+"ruta": [
+"Cine, libros y música",
+"Cine y series",
+"Películas y Series"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24010,
+"nombre": "Cine infantil",
+"ruta": [
+"Cine, libros y música",
+"Cine y series",
+"Películas y Series"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24009,
+"nombre": "Series",
+"ruta": [
+"Cine, libros y música",
+"Cine y series",
+"Películas y Series"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24011,
+"nombre": "Otras películas y series",
+"ruta": [
+"Cine, libros y música",
+"Cine y series",
+"Películas y Series"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10068,
+"nombre": "Pósters y merchandising de cine y TV",
+"ruta": [
+"Cine, libros y música",
+"Cine y series"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24035,
+"nombre": "Artbooks",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24036,
+"nombre": "Arte original de cómics",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24037,
+"nombre": "Cómics americanos",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24038,
+"nombre": "Cómics francobelgas y europeos",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24039,
+"nombre": "Fanzines y clubs de fans",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24040,
+"nombre": "Guías de precios y del comprador",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24041,
+"nombre": "Manga",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24042,
+"nombre": "Merchandising y memorabilia",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24043,
+"nombre": "Otras tradiciones de cómics",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24044,
+"nombre": "Otros comics",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Cómics y novelas gráficas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24096,
+"nombre": "Ciencia ficción y fantasía",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24092,
+"nombre": "Crimen y misterio",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24093,
+"nombre": "Humor",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24090,
+"nombre": "Literatura clásica",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24091,
+"nombre": "Novela contemporánea",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24095,
+"nombre": "Novela romántica",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24094,
+"nombre": "Poesía y teatro",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24097,
+"nombre": "Otros libros de ficción",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24100,
+"nombre": "Bebés",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Infantil y juvenil"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24098,
+"nombre": "Infantil",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Infantil y juvenil"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24099,
+"nombre": "Juvenil",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"Infantil y juvenil"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24080,
+"nombre": "Aficiones y manualidades",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24073,
+"nombre": "Arte y entretenimiento",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24101,
+"nombre": "Autoayuda",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24074,
+"nombre": "Biografías",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24086,
+"nombre": "Ciencias y naturaleza",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24087,
+"nombre": "Deportes",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24084,
+"nombre": "Diccionarios y libros de consulta",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24075,
+"nombre": "Economía y empresa",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24077,
+"nombre": "Gastronomía",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24079,
+"nombre": "Historia",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24076,
+"nombre": "Informática y tecnología",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24081,
+"nombre": "Pedagogía y familia",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24082,
+"nombre": "Política y sociología",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24083,
+"nombre": "Profesiones y especialidades",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24085,
+"nombre": "Religión",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24078,
+"nombre": "Salud y bienestar",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24088,
+"nombre": "Viajes",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24089,
+"nombre": "Otros (no ficción)",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10248,
+"nombre": "Escolares y de texto",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Libros",
+"No ficción"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24012,
+"nombre": "Antiguas y de coleccionista",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24014,
+"nombre": "Arquitectura, arte y diseño",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24016,
+"nombre": "Ciencia",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24018,
+"nombre": "Cine y televisión",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24020,
+"nombre": "Cocina",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24022,
+"nombre": "Deportes",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24024,
+"nombre": "Femeninas",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24026,
+"nombre": "Fotografía",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24030,
+"nombre": "Historia y política",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24013,
+"nombre": "Hogar y decoración",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24015,
+"nombre": "Infantiles y juveniles",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24017,
+"nombre": "Informática e internet",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24019,
+"nombre": "Jardinería",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24028,
+"nombre": "LGBTIQ+",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24021,
+"nombre": "Manualidades",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24023,
+"nombre": "Masculinas",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24025,
+"nombre": "Moda y estilo de vida",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24027,
+"nombre": "Música, danza y teatro",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24029,
+"nombre": "Naturaleza y geografía",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24031,
+"nombre": "Negocios",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24032,
+"nombre": "Transportes",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24033,
+"nombre": "Viajes y aventura",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24034,
+"nombre": "Otras revistas",
+"ruta": [
+"Cine, libros y música",
+"Libros, cómics y revistas",
+"Revistas"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24005,
+"nombre": "Casetes",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"CDs, Vinilos y Casetes"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24006,
+"nombre": "Otros formatos de audio",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"CDs, Vinilos y Casetes"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10234,
+"nombre": "CDs Música",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"CDs, Vinilos y Casetes"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10233,
+"nombre": "CDs idiomas",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"CDs, Vinilos y Casetes"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10235,
+"nombre": "Vinilos",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"CDs, Vinilos y Casetes"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10236,
+"nombre": "Cables",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Equipo profesional de sonido"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10237,
+"nombre": "Compresores y ecualizadores",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Equipo profesional de sonido"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10238,
+"nombre": "Dispositivos de grabación",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Equipo profesional de sonido"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10239,
+"nombre": "Mesas de mezclas y DJ",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Equipo profesional de sonido"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10240,
+"nombre": "Micrófonos y accesorios",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Equipo profesional de sonido"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24007,
+"nombre": "Other type of instruments",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24064,
+"nombre": "Cajas",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de Percusión"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24068,
+"nombre": "Claves",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de Percusión"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24067,
+"nombre": "Pandereta",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de Percusión"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24065,
+"nombre": "Platos",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de Percusión"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24066,
+"nombre": "Tambores",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de Percusión"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24069,
+"nombre": "Otros instrumentos de percusión",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de Percusión"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24052,
+"nombre": "Arpa",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24049,
+"nombre": "Banjo",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24048,
+"nombre": "Contrabajo",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24050,
+"nombre": "Mandolina",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24051,
+"nombre": "Ukelele",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24046,
+"nombre": "Viola",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24047,
+"nombre": "Violonchelo",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24045,
+"nombre": "Violín",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24053,
+"nombre": "Otros instrumentos de cuerda",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10241,
+"nombre": "Bajos",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10242,
+"nombre": "Guitarras",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de cuerda"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24057,
+"nombre": "Armónica",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24061,
+"nombre": "Bajón",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24058,
+"nombre": "Clarinete",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24060,
+"nombre": "Corneta",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24055,
+"nombre": "Flauta",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24054,
+"nombre": "Flauta dulce",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24056,
+"nombre": "Flautín",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24062,
+"nombre": "Saxofón",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24059,
+"nombre": "Trompeta",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24063,
+"nombre": "Otros instrumentos de viento",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Instrumentos de viento"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24070,
+"nombre": "Pianos",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Pianos y teclados"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24071,
+"nombre": "Teclados",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Pianos y teclados"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24072,
+"nombre": "Otros pianos y teclados",
+"ruta": [
+"Cine, libros y música",
+"Música",
+"Instrumentos musicales",
+"Pianos y teclados"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10066,
+"nombre": "Partituras y libretos",
+"ruta": [
+"Cine, libros y música",
+"Música"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 24004,
+"nombre": "Pósters y merchandising de música",
+"ruta": [
+"Cine, libros y música",
+"Música"
+],
+"raiz_id": 12463,
+"raiz_nombre": "Cine, libros y música",
+"leaf_mandatory": false
+},
+{
+"id": 10177,
+"nombre": "Accesorios de baño",
+"ruta": [
+"Niños y bebés"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10342,
+"nombre": "Baberos y paños",
+"ruta": [
+"Niños y bebés",
+"Alimentación del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10343,
+"nombre": "Batidoras y mezcladores",
+"ruta": [
+"Niños y bebés",
+"Alimentación del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10344,
+"nombre": "Biberones & calientabiberones",
+"ruta": [
+"Niños y bebés",
+"Alimentación del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10345,
+"nombre": "Chupetes",
+"ruta": [
+"Niños y bebés",
+"Alimentación del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10346,
+"nombre": "Utensilios y cubertería",
+"ruta": [
+"Niños y bebés",
+"Alimentación del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10347,
+"nombre": "Lactancia",
+"ruta": [
+"Niños y bebés",
+"Artículos de maternidad"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10348,
+"nombre": "Libros para madres y padres",
+"ruta": [
+"Niños y bebés",
+"Artículos de maternidad"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10349,
+"nombre": "Mochilas",
+"ruta": [
+"Niños y bebés",
+"Artículos escolares"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10350,
+"nombre": "Porta meriendas",
+"ruta": [
+"Niños y bebés",
+"Artículos escolares"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10351,
+"nombre": "Uniformes",
+"ruta": [
+"Niños y bebés",
+"Artículos escolares"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10356,
+"nombre": "Camas infantiles",
+"ruta": [
+"Niños y bebés",
+"Cunas y camas"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10357,
+"nombre": "Cunas",
+"ruta": [
+"Niños y bebés",
+"Cunas y camas"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10358,
+"nombre": "Iluminación infantil",
+"ruta": [
+"Niños y bebés",
+"Cunas y camas"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10359,
+"nombre": "Ropa de cama infantil",
+"ruta": [
+"Niños y bebés",
+"Cunas y camas"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10360,
+"nombre": "Ropa de cuna",
+"ruta": [
+"Niños y bebés",
+"Cunas y camas"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10361,
+"nombre": "Sacos de dormir",
+"ruta": [
+"Niños y bebés",
+"Cunas y camas"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10183,
+"nombre": "Disfraces infantiles",
+"ruta": [
+"Niños y bebés"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10362,
+"nombre": "Juegos de mesa",
+"ruta": [
+"Niños y bebés",
+"Juguetes, juegos y peluches"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10363,
+"nombre": "Juguetes",
+"ruta": [
+"Niños y bebés",
+"Juguetes, juegos y peluches"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10364,
+"nombre": "Peluches",
+"ruta": [
+"Niños y bebés",
+"Juguetes, juegos y peluches"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10185,
+"nombre": "Mobiliario infantil",
+"ruta": [
+"Niños y bebés"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10365,
+"nombre": "0-6 meses (68 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10374,
+"nombre": "6-9 meses (74 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10376,
+"nombre": "9-12 meses (80 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10367,
+"nombre": "12-18 meses (86 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10369,
+"nombre": "18-24 meses (92 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10370,
+"nombre": "2-3 años (98 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10371,
+"nombre": "3-4 años (104 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10372,
+"nombre": "4-5 años (110 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10373,
+"nombre": "6-7 años (116 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10375,
+"nombre": "8-9 años (130 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10366,
+"nombre": "10-12 años (150 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10368,
+"nombre": "13-14 años (164 cm)",
+"ruta": [
+"Niños y bebés",
+"Ropa infantil"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10377,
+"nombre": "Arneses de seguridad",
+"ruta": [
+"Niños y bebés",
+"Seguridad y cuidado"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10378,
+"nombre": "Monitores para bebés",
+"ruta": [
+"Niños y bebés",
+"Seguridad y cuidado"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10379,
+"nombre": "Pegatinas para el coche",
+"ruta": [
+"Niños y bebés",
+"Seguridad y cuidado"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10380,
+"nombre": "Puertas de seguridad y parques",
+"ruta": [
+"Niños y bebés",
+"Seguridad y cuidado"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10381,
+"nombre": "Termómetros para bebés",
+"ruta": [
+"Niños y bebés",
+"Seguridad y cuidado"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10352,
+"nombre": "Cochecitos",
+"ruta": [
+"Niños y bebés",
+"Transporte del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10353,
+"nombre": "Portabebés",
+"ruta": [
+"Niños y bebés",
+"Transporte del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10354,
+"nombre": "Sillas de coche",
+"ruta": [
+"Niños y bebés",
+"Transporte del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10355,
+"nombre": "Sillas de paseo",
+"ruta": [
+"Niños y bebés",
+"Transporte del bebé"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10382,
+"nombre": "Andadores",
+"ruta": [
+"Niños y bebés",
+"Tronas y andadores"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10383,
+"nombre": "Correpasillos",
+"ruta": [
+"Niños y bebés",
+"Tronas y andadores"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10384,
+"nombre": "Tronas",
+"ruta": [
+"Niños y bebés",
+"Tronas y andadores"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10186,
+"nombre": "Otros",
+"ruta": [
+"Niños y bebés"
+],
+"raiz_id": 12461,
+"raiz_nombre": "Niños y bebés",
+"leaf_mandatory": false
+},
+{
+"id": 10071,
+"nombre": "Antigüedades",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10072,
+"nombre": "Artesanías y decoración",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10073,
+"nombre": "Artículos de escritorio",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10074,
+"nombre": "Banderas",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10075,
+"nombre": "Coches y motocicletas",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10076,
+"nombre": "Coleccionismo deportivo",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10077,
+"nombre": "Coleccionismo militar",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10078,
+"nombre": "Filatelia y sellos",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10079,
+"nombre": "Imanes",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10080,
+"nombre": "Llaveros",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10081,
+"nombre": "Monedas y billetes",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10082,
+"nombre": "Muñecos",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10083,
+"nombre": "Naipes",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10085,
+"nombre": "Postales y suvenires",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10086,
+"nombre": "Relojes",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10084,
+"nombre": "Otros",
+"ruta": [
+"Coleccionismo"
+],
+"raiz_id": 18000,
+"raiz_nombre": "Coleccionismo",
+"leaf_mandatory": false
+},
+{
+"id": 10138,
+"nombre": "Balcones",
+"ruta": [
+"Construcción y reformas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10141,
+"nombre": "Electricidad e Iluminación",
+"ruta": [
+"Construcción y reformas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10142,
+"nombre": "Escaleras y andamios",
+"ruta": [
+"Construcción y reformas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10143,
+"nombre": "Ferretería",
+"ruta": [
+"Construcción y reformas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10317,
+"nombre": "Herramientas",
+"ruta": [
+"Construcción y reformas",
+"Herramientas y maquinaria"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10318,
+"nombre": "Herramientas eléctricas",
+"ruta": [
+"Construcción y reformas",
+"Herramientas y maquinaria"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10319,
+"nombre": "Maquinaria",
+"ruta": [
+"Construcción y reformas",
+"Herramientas y maquinaria"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10145,
+"nombre": "Madera y otros materiales",
+"ruta": [
+"Construcción y reformas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10320,
+"nombre": "Baldosas y azulejos",
+"ruta": [
+"Construcción y reformas",
+"Pavimentos y revestimientos"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10321,
+"nombre": "Parquet",
+"ruta": [
+"Construcción y reformas",
+"Pavimentos y revestimientos"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10322,
+"nombre": "Barnices",
+"ruta": [
+"Construcción y reformas",
+"Pinturas y barnices"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10323,
+"nombre": "Pinturas",
+"ruta": [
+"Construcción y reformas",
+"Pinturas y barnices"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10324,
+"nombre": "Cristales",
+"ruta": [
+"Construcción y reformas",
+"Puertas y ventanas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10325,
+"nombre": "Puertas",
+"ruta": [
+"Construcción y reformas",
+"Puertas y ventanas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10326,
+"nombre": "Puertas correderas",
+"ruta": [
+"Construcción y reformas",
+"Puertas y ventanas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10327,
+"nombre": "Ventanas",
+"ruta": [
+"Construcción y reformas",
+"Puertas y ventanas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10146,
+"nombre": "Otros",
+"ruta": [
+"Construcción y reformas"
+],
+"raiz_id": 19000,
+"raiz_nombre": "Construcción y reformas",
+"leaf_mandatory": false
+},
+{
+"id": 10293,
+"nombre": "Herramientas agrícolas",
+"ruta": [
+"Industria y agricultura",
+"Agricultura"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10294,
+"nombre": "Insumos agrícolas",
+"ruta": [
+"Industria y agricultura",
+"Agricultura"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10295,
+"nombre": "Maquinaria",
+"ruta": [
+"Industria y agricultura",
+"Agricultura"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10296,
+"nombre": "Repuestos",
+"ruta": [
+"Industria y agricultura",
+"Agricultura"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10297,
+"nombre": "Tractores",
+"ruta": [
+"Industria y agricultura",
+"Agricultura"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10298,
+"nombre": "Vehículos",
+"ruta": [
+"Industria y agricultura",
+"Agricultura"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10299,
+"nombre": "Equipamiento industrial",
+"ruta": [
+"Industria y agricultura",
+"Industria"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10300,
+"nombre": "Herramientas",
+"ruta": [
+"Industria y agricultura",
+"Industria"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10301,
+"nombre": "Insumos industriales",
+"ruta": [
+"Industria y agricultura",
+"Industria"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10302,
+"nombre": "Repuestos de herramientas",
+"ruta": [
+"Industria y agricultura",
+"Industria"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10303,
+"nombre": "Repuestos de maquinaria",
+"ruta": [
+"Industria y agricultura",
+"Industria"
+],
+"raiz_id": 20000,
+"raiz_nombre": "Industria y agricultura",
+"leaf_mandatory": false
+},
+{
+"id": 10116,
+"nombre": "Busco empleo",
+"ruta": [
+"Empleo"
+],
+"raiz_id": 21000,
+"raiz_nombre": "Empleo",
+"leaf_mandatory": false
+},
+{
+"id": 10117,
+"nombre": "Ofertas de empleo",
+"ruta": [
+"Empleo"
+],
+"raiz_id": 21000,
+"raiz_nombre": "Empleo",
+"leaf_mandatory": false
+},
+{
+"id": 10385,
+"nombre": "Clases de idiomas",
+"ruta": [
+"Servicios",
+"Clases y entrenamiento"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10386,
+"nombre": "Personal trainers",
+"ruta": [
+"Servicios",
+"Clases y entrenamiento"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10387,
+"nombre": "Tutores y soporte escolar",
+"ruta": [
+"Servicios",
+"Clases y entrenamiento"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10388,
+"nombre": "Cuidadores de ancianos",
+"ruta": [
+"Servicios",
+"Cuidadoras y niñeras"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10389,
+"nombre": "Niñeras",
+"ruta": [
+"Servicios",
+"Cuidadoras y niñeras"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10390,
+"nombre": "Mensajería",
+"ruta": [
+"Servicios",
+"Mudanzas y transporte"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10391,
+"nombre": "Mudanzas",
+"ruta": [
+"Servicios",
+"Mudanzas y transporte"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10392,
+"nombre": "Transporte",
+"ruta": [
+"Servicios",
+"Mudanzas y transporte"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10194,
+"nombre": "Reparaciones",
+"ruta": [
+"Servicios"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10195,
+"nombre": "Servicios de limpieza",
+"ruta": [
+"Servicios"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10393,
+"nombre": "Albañil",
+"ruta": [
+"Servicios",
+"Servicios del hogar"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10394,
+"nombre": "Electricista",
+"ruta": [
+"Servicios",
+"Servicios del hogar"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10197,
+"nombre": "Terapia y crecimiento personal",
+"ruta": [
+"Servicios"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 10193,
+"nombre": "Otros",
+"ruta": [
+"Servicios"
+],
+"raiz_id": 13200,
+"raiz_nombre": "Servicios",
+"leaf_mandatory": false
+},
+{
+"id": 12485,
+"nombre": "Otros",
+"ruta": [],
+"raiz_id": 12485,
+"raiz_nombre": "Otros",
+"leaf_mandatory": false
+}
+]
+}

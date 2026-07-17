@@ -68,7 +68,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core import images, schema
+from core import categorias, images, schema
 
 logger = logging.getLogger(__name__)
 
@@ -115,6 +115,16 @@ class PayloadPlataforma:
     fotos: tuple[Path, ...]
     fotos_excluidas: tuple[Path, ...]
     avisos: tuple[str, ...]
+    # HOJAS de categoria CANDIDATAS (propuestas, NUNCA elegidas -- `[INC-018]`
+    # / `decision-making.md` §18): las 0-3 hojas del arbol de la plataforma
+    # que mejor casan con el titulo/descripcion, para que Diego elija UNA con
+    # 1 clic en vez de navegar cientos a mano. Vacio => ninguna casó, navega a
+    # mano (nunca peor que hoy). Auto-elegir una hoja seria la enesima
+    # confianza anti-correlacionada con el riesgo: una hoja mal = anuncio
+    # oculto = venta perdida silenciosa. El pick final SIEMPRE es de Diego.
+    candidatas_categoria: tuple[categorias.Candidata, ...] = ()
+    # Fecha del snapshot del arbol (para que la UI avise si esta viejo).
+    categoria_snapshot: str | None = None
 
 
 # ============================================================================
@@ -319,14 +329,86 @@ def _campo_composicion(
 
 
 # ============================================================================
+# Envío: el TRAMO DE PESO (Wallapop) / TAMAÑO DE PAQUETE (Vinted) los elige
+# Diego EN la plataforma (no publicamos), pero se SUGIERE uno -- SESGADO HACIA
+# ARRIBA a propósito: sub-dimensionar le cuesta a Diego un recargo de envío
+# (malo para el vendedor); sobre-dimensionar sólo encarece un poco al comprador
+# (leve). Misma asimetría que "sobre-cortar" del agrupado. Es una SUGERENCIA
+# que Diego confirma con 1 tap, nunca un valor publicado.
+#
+# Wallapop: enum VERIFICADO (`schema.WALLAPOP_TRAMOS_PESO_KG` = 2/5/10/20/30) --
+# se sugiere un kg concreto. Vinted: el enum de `package_size` está
+# [NO VERIFICADO] (product.md: requiere token de ontologías para el `id`; las
+# ETIQUETAS del formulario no están confirmadas en el repo) -- NO se inventa un
+# literal (`truth-loop.md`): se sugiere un TAMAÑO en palabras normales y Diego
+# elige la opción real que le muestre Vinted.
+# ============================================================================
+
+# Keywords que suben o bajan el tramo respecto al default de ropa. Sesgo hacia
+# arriba: ante la duda, el tramo MAYOR (la asimetría de arriba).
+_ENVIO_LIGERO: frozenset[str] = frozenset(
+    {"camiseta", "camisetas", "top", "tops", "body", "calcetines", "ropa interior",
+     "bufanda", "panuelo", "gorro", "gorra", "bikini", "bañador", "banador"}
+)
+_ENVIO_PESADO: frozenset[str] = frozenset(
+    {"abrigo", "abrigos", "botas", "bota", "zapatos", "zapatillas", "plancha",
+     "caja", "masajeador", "electrodomestico", "manta", "edredon", "cazadora",
+     "chaqueton", "parka"}
+)
+
+
+def _clasifica_envio(texto: str) -> str:
+    """'ligero' | 'pesado' | 'normal' según keywords del título/descripción."""
+    t = texto.lower()
+    if any(k in t for k in _ENVIO_PESADO):
+        return "pesado"
+    if any(k in t for k in _ENVIO_LIGERO):
+        return "ligero"
+    return "normal"
+
+
+def _campo_envio(texto: str, plataforma: str) -> CampoExportado:
+    clase = _clasifica_envio(texto)
+    if plataforma == "wallapop":
+        # Sesgo arriba: ligero->2, normal->5, pesado->10. (Enum verificado.)
+        kg = {"ligero": 2, "normal": 5, "pesado": 10}[clase]
+        tramos = "/".join(str(t) for t in schema.WALLAPOP_TRAMOS_PESO_KG)
+        return CampoExportado(
+            nombre="tramo_peso_kg",
+            etiqueta="tramo de peso (kg)",
+            valor=f"{kg} kg",
+            traducido=False,
+            nota=f"🧠 SUGERENCIA sesgada hacia arriba (mejor pasarse que quedarse "
+            f"corto: sub-dimensionar te cuesta un recargo). Opciones: {tramos} kg. "
+            "Confírmalo en Wallapop.",
+        )
+    # Vinted: tamaño en palabras (literal del enum NO verificado -> no se inventa).
+    tam = {"ligero": "pequeño", "normal": "mediano", "pesado": "grande"}[clase]
+    return CampoExportado(
+        nombre="package_size",
+        etiqueta="tamaño del paquete",
+        valor=tam,
+        traducido=False,
+        nota="🧠 SUGERENCIA de tamaño (sesgada hacia arriba). Las etiquetas exactas "
+        "de Vinted no están verificadas en el repo -- elige la opción que te muestre "
+        "Vinted que más se acerque a este tamaño.",
+    )
+
+
+# ============================================================================
 # Avisos genéricos: campos OBLIGATORIOS de la plataforma que el pipeline
 # nunca produce -- derivados de las tablas declarativas de `core/schema.py`,
 # nunca de una lista hardcodeada aquí (contrato de la tarea).
 # ============================================================================
 
 _CUBIERTOS_POR_CAMPO: dict[str, frozenset[str]] = {
-    "vinted": frozenset({"title", "description", "fotos", "brand", "status_id"}),
-    "wallapop": frozenset({"title", "description", "fotos", "estado"}),
+    # `package_size_id`/`tramo_peso_kg` los cubre ahora `_campo_envio` (una
+    # SUGERENCIA sesgada hacia arriba que Diego confirma), así que ya no se
+    # reportan como "obligatorio sin cubrir".
+    "vinted": frozenset({"title", "description", "fotos", "brand", "status_id", "package_size_id"}),
+    # `ubicacion`: Diego confirmó (2026-07-17) que Wallapop la autocompleta de
+    # su cuenta -- no es trabajo por producto, así que no se avisa de ella.
+    "wallapop": frozenset({"title", "description", "fotos", "estado", "tramo_peso_kg", "ubicacion"}),
 }
 
 
@@ -340,9 +422,9 @@ def _avisos_obligatorios_sin_cubrir(plataforma: str) -> list[str]:
         detalle = campo_schema.nota or "lo eliges/rellenas a mano en la plataforma."
         if campo_schema.nombre in ("catalog_id", "categoria"):
             detalle = (
-                "el pipeline sólo produce una categoría interna amplia "
-                f"({schema.CATEGORIAS}), no la hoja real del árbol de {plataforma}. "
-                "Elige la categoría exacta a mano en la plataforma."
+                "el pipeline NO elige la hoja del árbol (una hoja mal = anuncio "
+                "oculto). Elige una de las HOJAS CANDIDATAS de abajo con 1 clic, o "
+                "navega a mano si ninguna encaja."
             )
         elif campo_schema.nombre in ("price", "precio"):
             detalle = "el precio nunca sale de aquí (costura 2, core/pricing.py): eligelo con los comparables."
@@ -472,10 +554,11 @@ def construir_payload(
     campo_marca = _campo_marca(campos, plataforma, avisos)
     campo_talla = _campo_talla(campos, plataforma, avisos)
     campo_estado = _campo_estado(campos, plataforma, categoria, avisos)
+    campo_envio = _campo_envio(f"{titulo} {descripcion}", plataforma)
     campo_composicion = _campo_composicion(campos, plataforma, categoria)
     campo_desperfectos = _campo_desperfectos(campos, avisos)
 
-    campos_exportados = [campo_marca, campo_talla, campo_estado]
+    campos_exportados = [campo_marca, campo_talla, campo_estado, campo_envio]
     if campo_composicion is not None:
         campos_exportados.append(campo_composicion)
     if campo_desperfectos is not None:
@@ -492,6 +575,33 @@ def construir_payload(
             f"({images.LIMITE_FOTOS_PLATAFORMA[plataforma]}) -- no se incluyen."
         )
 
+    # HOJAS de categoria candidatas -- se PROPONEN, Diego elige (`[INC-018]`,
+    # `decision-making.md` §18). Nunca se auto-rellena `categoria`/`catalog_id`.
+    # La marca ajena NO entra en el texto de busqueda: si el producto es una
+    # "Nike" y la hoja se llamara "Nike" (no existe), no queremos que empuje;
+    # marca+titulo+descripcion son de Diego, no una marca ajena.
+    #
+    # `[listing-audit] SERIO, 2026-07-17`: las candidatas son una AYUDA
+    # auxiliar -- un snapshot ausente/corrupto (`core/taxonomia/*.json`) NUNCA
+    # puede tumbar el export del resto (titulo/estado/talla/fotos = el 66% del
+    # tiempo de Diego). Degrada MARCADO (`decision-making.md` §13): candidatas
+    # vacias + un aviso, el payload sigue. La promesa del modulo -- "si ninguna
+    # encaja, navegas a mano, nunca peor que hoy" -- solo es cierta con esto.
+    marca_propia = _valor_campo(campos, "marca") or ""
+    texto_busqueda = f"{titulo} {descripcion} {marca_propia}".strip()
+    try:
+        candidatas = tuple(categorias.candidatas(categoria, texto_busqueda, plataforma, k=3))
+        categoria_snapshot = categorias.fecha_snapshot(plataforma)
+    except (OSError, ValueError) as exc:  # snapshot ausente/corrupto
+        logger.exception("Árbol de categorías de %s no disponible", plataforma)
+        candidatas = ()
+        categoria_snapshot = None
+        avisos.append(
+            "el árbol de categorías no está disponible (snapshot ausente o "
+            f"corrupto: {exc}) -- navega la categoría a mano en la plataforma. "
+            "Refréscalo con `python -m core.categorias --refrescar`."
+        )
+
     return PayloadPlataforma(
         plataforma=plataforma,
         titulo=titulo,
@@ -500,4 +610,6 @@ def construir_payload(
         fotos=fotos,
         fotos_excluidas=fotos_excluidas,
         avisos=tuple(avisos),
+        candidatas_categoria=candidatas,
+        categoria_snapshot=categoria_snapshot,
     )

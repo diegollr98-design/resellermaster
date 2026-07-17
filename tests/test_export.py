@@ -528,3 +528,87 @@ def test_campo_exportado_es_frozen():
     c = CampoExportado(nombre="x", etiqueta="x", valor="v", traducido=True)
     with pytest.raises(Exception):
         c.valor = "otro"  # type: ignore[misc]
+
+
+# ============================================================================
+# HOJAS de categoria candidatas -- se PROPONEN, Diego elige (`[INC-018]`,
+# `decision-making.md` §18: una hoja mal = anuncio oculto).
+# ============================================================================
+
+
+def test_candidatas_categoria_se_proponen_para_ropa():
+    # El fixture es una sudadera moda -> hay candidatas de hoja en ambas.
+    for plataforma in ("wallapop", "vinted"):
+        payload = construir_payload(_producto(), _FOTOS_POR_ID, plataforma)
+        assert payload.candidatas_categoria, plataforma
+        # Todas son sugerencias con puntuacion > 0 -- nunca "la hoja elegida".
+        assert all(c.puntuacion > 0 for c in payload.candidatas_categoria)
+        assert payload.categoria_snapshot  # fecha del snapshot presente
+
+
+def test_export_nunca_auto_rellena_una_hoja_de_categoria():
+    # El export NO produce un CampoExportado de categoria/catalog_id con valor:
+    # la hoja SIEMPRE la elige Diego entre las candidatas. Auto-rellenarla
+    # seria el fallo caro (confianza anti-correlacionada con el riesgo).
+    payload = construir_payload(_producto(), _FOTOS_POR_ID, "vinted")
+    nombres_campos = {c.nombre for c in payload.campos}
+    assert "categoria" not in nombres_campos
+    assert "catalog_id" not in nombres_campos
+    # Y sigue habiendo un aviso que le dice que elija la hoja de categoria
+    # (en Vinted el campo es "catalog_id", en Wallapop "categoria").
+    assert any("hoja" in a.lower() for a in payload.avisos)
+
+
+# ============================================================================
+# Envío: SUGERENCIA sesgada hacia arriba (nunca un valor publicado).
+# ============================================================================
+
+
+@pytest.mark.parametrize(
+    ("titulo", "kg_esperado"),
+    [
+        ("Camiseta de algodón talla M", "2 kg"),     # ligero
+        ("Sudadera gris talla M", "5 kg"),           # normal
+        ("Abrigo de invierno largo", "10 kg"),       # pesado
+    ],
+)
+def test_envio_wallapop_sesgado_hacia_arriba(titulo, kg_esperado):
+    producto = _producto(titulo=titulo)
+    payload = construir_payload(producto, _FOTOS_POR_ID, "wallapop")
+    envio = next(c for c in payload.campos if c.nombre == "tramo_peso_kg")
+    assert envio.valor == kg_esperado
+    assert not envio.traducido  # es una sugerencia, no un valor traducido/final
+
+
+def test_envio_vinted_no_inventa_literal_de_enum():
+    # El enum de package_size de Vinted NO esta verificado: se sugiere un
+    # tamaño en palabras, nunca un literal inventado (`truth-loop.md`).
+    payload = construir_payload(_producto(), _FOTOS_POR_ID, "vinted")
+    envio = next(c for c in payload.campos if c.nombre == "package_size")
+    assert envio.valor in ("pequeño", "mediano", "grande")
+    assert not envio.traducido
+
+
+def test_ubicacion_wallapop_no_avisa_wallapop_la_autocompleta():
+    # Diego confirmó que Wallapop autocompleta la ubicación de su cuenta ->
+    # no es trabajo por producto, no se avisa de ella (ni calmado).
+    payload = construir_payload(_producto(), _FOTOS_POR_ID, "wallapop")
+    assert not [a for a in payload.avisos if a.startswith("ubicacion")]
+
+
+def test_snapshot_de_categorias_ausente_no_tumba_el_export(monkeypatch):
+    # `[listing-audit] SERIO, 2026-07-17`: un árbol de categorías ausente/
+    # corrupto NO puede llevarse por delante el export del resto (título/
+    # estado/fotos = el 66% del tiempo). Degrada MARCADO: candidatas vacías +
+    # aviso, el payload sigue construyéndose.
+    from core import categorias
+
+    def _revienta(*_a, **_k):
+        raise FileNotFoundError("snapshot ausente (simulado)")
+
+    monkeypatch.setattr(categorias, "candidatas", _revienta)
+    payload = construir_payload(_producto(), _FOTOS_POR_ID, "wallapop")
+    assert payload.titulo  # el core del payload sobrevive
+    assert payload.candidatas_categoria == ()
+    assert payload.categoria_snapshot is None
+    assert any("árbol de categorías no está disponible" in a for a in payload.avisos)
