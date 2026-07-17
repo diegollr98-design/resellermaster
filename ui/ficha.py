@@ -1587,6 +1587,33 @@ def render(
                 )
             st.divider()
 
+    # SEMBRAR ANTES DE CONTAR — condición de CORRECCIÓN, no de estilo.
+    #
+    # Lo cazó Diego (2026-07-17): el botón decía "(1)" con las 7 fichas
+    # completas en disco. El código estaba bien (una sesión limpia contra su
+    # store real cuenta 7); lo que fallaba era el ORDEN. `_sembrar_valores_
+    # iniciales` vive dentro de `_render_producto`, o sea DESPUÉS de este
+    # bloque — así que el contador leía el `session_state` del render
+    # ANTERIOR (con los valores de la extracción vieja) mientras la pantalla
+    # de abajo ya pintaba los nuevos. El botón iba un render por detrás.
+    #
+    # `_construir_confirmado` cae al default cuando la key NO EXISTE, pero no
+    # cuando existe y está RANCIA (`[INC-014]`): ésa es la diferencia entre un
+    # test —que siempre arranca limpio y por eso nunca vio esto— y la sesión
+    # viva de Diego. Sembrar aquí re-siembra por firma antes de contar, así
+    # que el contador y la pantalla leen SIEMPRE lo mismo.
+    # `deserializar_extraccion` + `_con_obligatorios`: EXACTAMENTE lo que hace
+    # `_render_producto` antes de sembrar. Si aquí se sembrara desde el dict
+    # SERIAL, `_valor_por_defecto` reventaría (`lecturas` es una lista
+    # posicional ahí, no un dict) -- y sobre todo sembraría un default
+    # distinto del de la pantalla, que es el bug que este bloque arregla.
+    for producto in confirmados_agrupacion:
+        if _esta_extraido(producto):
+            datos = deserializar_extraccion(producto["campos"])
+            _sembrar_valores_iniciales(
+                producto["id"], _con_obligatorios(datos.get("campos", {}))
+            )
+
     # BOTÓN "CONFIRMAR TODAS DE GOLPE" — junto al de arriba, pedido de
     # Diego ("menos clics"). N = listos AHORA MISMO (obligatorios completos);
     # se recalcula en el diálogo por si algo cambió entre medias. Si hay

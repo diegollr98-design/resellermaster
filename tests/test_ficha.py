@@ -1497,6 +1497,38 @@ def test_boton_confirmar_lote_aparece_con_n_listos_y_avisa_de_saltados(tmp_path)
     assert "1 ficha" in textos
 
 
+def test_contador_del_boton_no_lo_decide_una_key_rancia(tmp_path):
+    """EL BUG QUE CAZÓ DIEGO (2026-07-17): el botón decía "(1)" con las 7
+    fichas completas EN DISCO. El código estaba bien -- una sesión limpia
+    cuenta bien. Fallaba el ORDEN: `_sembrar_valores_iniciales` vive dentro
+    de `_render_producto`, o sea DESPUÉS del botón, así que el contador leía
+    el `session_state` del render ANTERIOR (extracción vieja: estado en
+    prosa -> "(sin elegir)") mientras la pantalla de abajo ya pintaba los
+    valores nuevos. El botón iba un render por detrás.
+
+    Éste es el test que ningún otro podía dar: todos arrancan `session_state`
+    LIMPIO, y con la key ausente `_construir_confirmado` cae al default y
+    acierta. El bug sólo existe con la key PRESENTE y RANCIA (`[INC-014]`:
+    "un test que siempre arranca en estado limpio no puede ver un bug de
+    estado sucio acumulado")."""
+    lote_id, pids = _preparar_multi(tmp_path, [_ficha_completa, _ficha_completa])
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id))
+
+    # Estado sucio de una extracción ANTERIOR, como el navegador de Diego:
+    # el estado salía en prosa, así que el selectbox se quedó "(sin elegir)".
+    for pid in pids:
+        at.session_state[f"ficha_{pid}_estado_estado"] = "(sin elegir)"
+    at.run()
+    assert not at.exception
+
+    labels = [b.label for b in at.button if "Confirmar todas" in (b.label or "")]
+    assert labels, "el botón de confirmar en bloque no se pintó"
+    assert "(2)" in labels[0], (
+        f"el contador leyó una key rancia en vez del dato refrescado: {labels[0]!r}. "
+        "Sembrar tiene que ocurrir ANTES de contar, o el botón va un render por detrás."
+    )
+
+
 def test_boton_confirmar_lote_deshabilitado_si_ninguno_listo(tmp_path):
     """Extraído pero SIN obligatorios (`_marca_leida_no_publicada`, sin
     categoría/título/descripción) -- el botón se ENSEÑA (nunca se
