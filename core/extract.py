@@ -522,14 +522,15 @@ class Propuesta:
     el pixel del que sale, para que Diego confirme en segundos.
 
     `campo`: nombre del campo ("marca", "talla", "modelo", "ean", "color",
-        "medidas", "estado", "desperfectos", "composicion").
+        "medidas", "estado", "desperfectos"). ("composicion" ELIMINADA de
+        la ficha, Diego 2026-07-17 -- ya no es una clave posible aqui.)
     `valor`: lo que se PROPONE -- `None` es un resultado correcto, nunca un
         fallo (puede haber conflicto, o simplemente no haber nada legible).
     `recorte`: EL PIXEL, guardado en disco, EXACTAMENTE el mismo que se
         mando al modelo (o, si no hubo VLM -- atajo OCR o un valor por
         pixeles/nota manuscrita ilegible-pero-vista --, el recorte de la
         region que originó la propuesta). `None` si no hay ningun recorte
-        que mostrar (p.ej. `composicion`, que nunca se fotografia).
+        que mostrar.
     `evidencia`: foto + bbox, mismo sistema de coordenadas que `recorte`.
     `lecturas`: TODAS las lecturas crudas disponibles sobre el valor
         propuesto (la del VLM y la del OCR, si las hay) -- nunca se
@@ -1371,11 +1372,17 @@ ESQUEMA_ESTADO: dict = {
 # EAN y desperfectos quedan fuera a proposito -- no estan en este esquema.
 # ============================================================================
 
-# Los 7 campos de identidad/atributo que la sintesis puede rellenar (nombre
-# tal y como lo usa el json_schema/prompt -- "material", no "composicion":
-# `_CAMPOS_SINTESIS_GAP` mas abajo traduce al nombre canonico del modulo).
+# Los 6 campos de identidad/atributo que la sintesis puede rellenar.
+# "material" (-> "composicion") ELIMINADO de este esquema (Diego,
+# 2026-07-17): solo aplicaba a ropa y no aportaba valor a su flujo. Un
+# campo menos que pedir al modelo, pero el numero de LLAMADAS no cambia
+# (sigue siendo UNA sintesis) -- `LLMEngine.estimar_coste_lote` usa un
+# coste FIJO por imagen/llamada, no por tamano del json_schema, asi que
+# el coste ESTIMADO que ve Diego antes de gastar no varia; lo que baja es
+# el coste REAL (prompt mas corto, un objeto menos en la respuesta JSON),
+# demasiado pequeno para verse en la cifra redondeada que muestra la UI.
 _CAMPOS_SINTESIS: tuple[str, ...] = (
-    "marca", "modelo", "talla", "color", "estado", "material", "medidas"
+    "marca", "modelo", "talla", "color", "estado", "medidas"
 )
 
 PROMPT_SINTESIS_FICHA = """Estas viendo UN producto de segunda mano (varias fotos
@@ -1396,8 +1403,8 @@ usas, cita el texto EXACTO):
 
 {texto_candidatos}
 
-Para cada uno de estos 7 campos -- marca, modelo, talla, color, estado,
-material, medidas -- responde un objeto con:
+Para cada uno de estos 6 campos -- marca, modelo, talla, color, estado,
+medidas -- responde un objeto con:
   - valor: tu mejor estimacion en texto corto, o null SOLO si no tienes
     ninguna base razonable ni siquiera para inferir (esto debe ser RARO:
     se prefiere un valor con confianza=baja a un null, porque Diego lo
@@ -1869,17 +1876,11 @@ def _agregar_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> _GrupoCampo:
     return _GrupoCampo(campo=campo, representante=primera, alternativas=(), motivo=motivo)
 
 
-def _campo_composicion() -> Campo:
-    """Regla dura #4 -- HISTORICA: hasta la sintesis comprometida
-    (2026-07-15), este campo era SIEMPRE None (ninguna foto del lote
-    fotografiaba la etiqueta de composicion). Sigue siendo la funcion PURA
-    que modela "sin ninguna senal": `ExtractorEngine._sintetizar_ficha`
-    puede ahora rellenar el HUECO que esta funcion deja (gap-filler, ver
-    docstring del modulo, "LA SINTESIS COMPROMETIDA") con la mejor
-    estimacion de `material` marcada `fuente="inferido"` -- pero esta
-    funcion en si misma sigue sin recibir argumentos, y sigue devolviendo
-    SIEMPRE None: es el punto de partida honesto, no el resultado final."""
-    return Campo(valor=None, fuente="inferido", confianza="baja")
+# `_campo_composicion()` ELIMINADA (Diego, 2026-07-17): el campo
+# "composicion" entero salio de la ficha -- ver la regla dura #4 del
+# docstring del modulo. `core/export.py::_campo_composicion` (funcion
+# DISTINTA, del modulo de export) sigue viva y degrada sola a `valor=None`
+# porque la clave "composicion" ya nunca esta en `campos`.
 
 
 # ============================================================================
@@ -2021,14 +2022,14 @@ def _construir_campo_categoria_desde_sintesis(valor: Any) -> Campo | None:
 
 
 # nombre_del_campo_en_el_json_schema -> (nombre_canonico_del_modulo, ubicaciones_validas)
-# EAN y desperfectos quedan fuera A PROPOSITO -- no estan en `_CAMPOS_SINTESIS`.
+# EAN, desperfectos y "material" (composicion, ELIMINADA 2026-07-17) quedan
+# fuera A PROPOSITO -- no estan en `_CAMPOS_SINTESIS`.
 _CAMPOS_SINTESIS_GAP: dict[str, tuple[str, frozenset[str] | None]] = {
     "marca": ("marca", _UBICACIONES_VALIDAS_MARCA),
     "modelo": ("modelo", _UBICACIONES_VALIDAS_MODELO),
     "talla": ("talla", _UBICACIONES_VALIDAS_TALLA),
     "color": ("color", None),  # sin restriccion de ubicacion -- el color no viene de un texto
     "estado": ("estado", None),
-    "material": ("composicion", None),  # nombre canonico del modulo es "composicion"
     "medidas": ("medidas", None),
 }
 
@@ -2439,13 +2440,13 @@ class ExtractorEngine:
         `propuestas` EN SITIO (mismo patron que el resto del pipeline, que
         ya construyo esos dicts antes de llamar aqui).
 
-        GAP-FILLER: para marca/modelo/talla/color/estado/material(->
-        composicion)/medidas, solo sobreescribe si `campos[nombre].valor`
-        YA es `None` -- una lectura de una etiqueta a resolucion NATIVA (o
-        un histograma de pixeles) es mas fiable que una opinion sobre la
-        foto general, asi que nunca se pisa un valor solido. `ean` y
-        `desperfectos` quedan fuera a proposito -- no estan en
-        `_CAMPOS_SINTESIS_GAP`. `titulo`/`descripcion` SON campos nuevos
+        GAP-FILLER: para marca/modelo/talla/color/estado/medidas, solo
+        sobreescribe si `campos[nombre].valor` YA es `None` -- una lectura
+        de una etiqueta a resolucion NATIVA (o un histograma de pixeles)
+        es mas fiable que una opinion sobre la foto general, asi que nunca
+        se pisa un valor solido. `ean`, `desperfectos` y "composicion"
+        (ELIMINADA de la ficha, Diego 2026-07-17) quedan fuera a proposito
+        -- no estan en `_CAMPOS_SINTESIS_GAP`. `titulo`/`descripcion` SON campos nuevos
         (no habia nada previo que preservar): se toman de la sintesis
         siempre, sin gap-filler.
 
@@ -2651,12 +2652,8 @@ class ExtractorEngine:
         grupo_ean = replace(grupo_ean, campo=_validar_campo_ean(grupo_ean.campo))
 
         grupo_desperfectos = _agregar_campo_desperfectos(lecturas_totales)
-        grupo_composicion = _GrupoCampo(
-            campo=_campo_composicion(),
-            representante=None,
-            alternativas=(),
-            motivo="ninguna foto del lote fotografia la etiqueta de composicion (decision de Diego, 2026-07-14)",
-        )
+        # "composicion" ELIMINADA de la ficha entera (Diego, 2026-07-17):
+        # ya no se construye ningun `_GrupoCampo`/`Propuesta` para ella.
 
         propuesta_marca = self._propuesta_desde_grupo(grupo_marca, "marca", rutas_por_nombre, carpeta_crops_efectiva, fallos)
         propuesta_talla = self._propuesta_desde_grupo(grupo_talla, "talla", rutas_por_nombre, carpeta_crops_efectiva, fallos)
@@ -2664,9 +2661,6 @@ class ExtractorEngine:
         propuesta_ean = self._propuesta_desde_grupo(grupo_ean, "ean", rutas_por_nombre, carpeta_crops_efectiva, fallos)
         propuesta_desperfectos = self._propuesta_desde_grupo(
             grupo_desperfectos, "desperfectos", rutas_por_nombre, carpeta_crops_efectiva, fallos
-        )
-        propuesta_composicion = self._propuesta_desde_grupo(
-            grupo_composicion, "composicion", rutas_por_nombre, carpeta_crops_efectiva, fallos
         )
 
         campo_medidas, propuesta_medidas, fallos_medidas = self._evaluar_medidas(producto_id)
@@ -2683,7 +2677,6 @@ class ExtractorEngine:
             "talla": grupo_talla.campo,
             "modelo": grupo_modelo.campo,
             "ean": grupo_ean.campo,
-            "composicion": grupo_composicion.campo,
             "medidas": campo_medidas,
             "color": campo_color,
             "estado": campo_estado,
@@ -2694,7 +2687,6 @@ class ExtractorEngine:
             "talla": propuesta_talla,
             "modelo": propuesta_modelo,
             "ean": propuesta_ean,
-            "composicion": propuesta_composicion,
             "medidas": propuesta_medidas,
             "color": propuesta_color,
             "estado": propuesta_estado,
@@ -2996,13 +2988,15 @@ VERSION_PROMPT_REDACCION = "extract-redaccion-v1"
 
 # Orden de presentacion de los campos en el prompt -- SOLO campos de
 # atributo (nunca titulo/descripcion, que es lo que este paso REDACTA, ni
-# `ean`, que no aporta nada a un texto de venta legible). `desperfectos` va
-# el ultimo A PROPOSITO: es el campo con la instruccion mas dura del
-# prompt, y quedarse el ultimo en la lista reduce que se pierda entre los
-# demas.
+# `ean`, que no aporta nada a un texto de venta legible). "composicion" NO
+# esta aqui: salio ENTERA de la ficha (Diego, 2026-07-17, ver
+# `CAMPOS_PRODUCIDOS`) -- si algun dia vuelve, se anade aqui tambien.
+# `desperfectos` va el ultimo A PROPOSITO: es el campo con la instruccion
+# mas dura del prompt, y quedarse el ultimo en la lista reduce que se
+# pierda entre los demas.
 _CAMPOS_REDACCION_ORDEN: tuple[str, ...] = (
     "categoria", "marca", "modelo", "talla", "color", "estado",
-    "composicion", "medidas", "desperfectos",
+    "medidas", "desperfectos",
 )
 
 _NOMBRE_CAMPO_LEGIBLE: dict[str, str] = {
@@ -3012,7 +3006,6 @@ _NOMBRE_CAMPO_LEGIBLE: dict[str, str] = {
     "talla": "talla",
     "color": "color",
     "estado": "estado de conservacion",
-    "composicion": "material/composicion",
     "medidas": "medidas",
     "desperfectos": "DESPERFECTOS (nota manuscrita del vendedor)",
 }

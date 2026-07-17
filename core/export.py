@@ -293,6 +293,14 @@ _NOTA_COMPOSICION = (
 def _campo_composicion(
     campos: dict[str, Any], plataforma: str, categoria: str
 ) -> CampoExportado | None:
+    """`valor` sale SIEMPRE `None` desde 2026-07-17: Diego decidió quitar
+    "composicion" de la ficha (`ui/ficha.py`/`core/extract.py` ya no la
+    piden ni la producen -- "solo aplicaba a ropa y no es realmente
+    importante"). Esta función se deja tal cual porque `materiales` SÍ es
+    un campo válido de Vinted (hasta 3, opcional) -- `_valor_campo` degrada
+    sola a `None` porque la clave "composicion" ya nunca está en `campos`,
+    así que Diego simplemente ve el hueco y lo rellena a mano si quiere,
+    sin que este módulo tenga que cambiar nada."""
     if plataforma == "wallapop" and categoria == "moda":
         # product.md: "moda: brand, size, color, condition -- SIN material".
         return None

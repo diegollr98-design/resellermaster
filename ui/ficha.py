@@ -43,10 +43,12 @@ from typing import Any, Callable
 
 import streamlit as st
 
-from core import pricing
+from core import images, pricing
 from core.extract import (
     ExtractorEngine,
+    ExtractorError,
     deserializar_extraccion,
+    redactar_desde_campos_confirmados,
     serializar_extraccion,
 )
 from core.llm import LLMEngine, LLMEngineError
@@ -62,8 +64,14 @@ logger = logging.getLogger(__name__)
 # el resto. `estado` va al final: SIEMPRE lo pone Diego (`truth-loop.md`
 # §A.4), no es una lectura del modelo. `categoria` puede faltar de
 # `campos` (el modelo violó el enum) — el filtro de abajo ya lo tolera.
+# "composicion" ELIMINADA de la ficha (Diego, 2026-07-17): sólo aplicaba
+# a ropa y no aportaba valor a su flujo -- `core/extract.py` ya no la
+# produce. Si una extracción VIEJA (persistida antes de este cambio)
+# todavía trae la clave, el fallback `[c for c in campos if c not in
+# _ORDEN_CAMPOS]` de `_render_producto` la sigue pintando al final --
+# degrada, no se pierde.
 _ORDEN_CAMPOS = (
-    "categoria", "marca", "modelo", "ean", "talla", "color", "composicion",
+    "categoria", "marca", "modelo", "ean", "talla", "color",
     "medidas", "estado", "desperfectos", "titulo", "descripcion",
 )
 
@@ -95,6 +103,28 @@ _OPCIONES_CATEGORIA = (
     "libros",
     "otros",
 )
+
+# --------------------------------------------------------------------------
+# CAMPOS OBLIGATORIOS -- defensa CON DIENTES (`decision-making.md` §12,
+# pedido explícito de Diego 2026-07-17: "no deje confirmar ficha hasta que
+# no se rellene"). `categoria`/`estado`/`titulo`/`descripcion` son
+# obligatorios en AMBAS plataformas (`product.md`: Vinted exige
+# `title`/`description`/`catalog_id`/`status_id`; Wallapop exige
+# `title`/`description`/`categoria`/`estado`) y `core/export.py` YA
+# bloquea sin categoría/texto limpio -- bloquear aquí, en la ficha, es
+# más barato para Diego que descubrirlo al exportar.
+#
+# `marca` NO está en esta lista, A PROPÓSITO: en Vinted "Sin marca" es un
+# valor VÁLIDO (`product.md` implicación #4) y en Wallapop es opcional --
+# exigirla inventaría un requisito que la plataforma no tiene.
+# --------------------------------------------------------------------------
+_CAMPOS_OBLIGATORIOS: tuple[str, ...] = ("categoria", "estado", "titulo", "descripcion")
+_ETIQUETA_OBLIGATORIO: dict[str, str] = {
+    "categoria": "categoría",
+    "estado": "estado",
+    "titulo": "título",
+    "descripcion": "descripción",
+}
 
 _KEY_ERROR = "_ficha_error"
 
@@ -150,6 +180,36 @@ def _badge_fuente(fuente: str | None) -> str:
         "comparable": "🔗 comparable",
         "inferido": "🧠 inferido — verifícalo",
     }.get(fuente or "inferido", "🧠 inferido — verifícalo")
+
+
+# --------------------------------------------------------------------------
+# GALERÍA MINIMIZADA (pedido de Diego, 2026-07-17: "que todo ocupe mucho
+# menos"). Sólo la foto PRINCIPAL (pequeña) se ve siempre -- para
+# identificar el producto de un vistazo -- el RESTO vive dentro de un
+# `st.expander` CERRADO por defecto ("escondido pero que se puedan ver
+# todas"). Los recortes/evidencia junto a cada campo (`_render_recorte`
+# dentro de `_render_campo`) NO SE TOCAN -- son el corazón del proyecto
+# (`truth-loop.md` §A: el píxel al lado del campo); esto sólo minimiza la
+# galería de fotos ORIGINALES del producto, nunca la evidencia de un dato.
+# --------------------------------------------------------------------------
+def _render_galeria_fotos(fotos: list[Path]) -> None:
+    """La foto PRINCIPAL es la que `core.images.sugerir_orden` sugiere
+    primero (nitidez descendente, o cronológico si la nitidez falla en
+    alguna foto -- ver su docstring) -- barato, YA se calcula así en otros
+    puntos del pipeline (`core/export.py`), no una heurística nueva sólo
+    para esta pantalla."""
+    if not fotos:
+        return
+    principal = images.sugerir_orden(fotos)[0].ruta
+    _render_recorte(principal, width=160)
+
+    resto = [f for f in fotos if f != principal]
+    if resto:
+        with st.expander(f"Ver las {len(fotos)} foto(s)"):
+            columnas = st.columns(4)
+            for i, foto in enumerate(resto):
+                with columnas[i % 4]:
+                    _render_recorte(foto, width=140)
 
 
 # --------------------------------------------------------------------------
@@ -445,7 +505,7 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
     # Título y descripción: borradores del modelo, sin recorte, a ancho
     # completo y en caja multilínea editable.
     if campo in ("titulo", "descripcion"):
-        st.markdown(f"**{campo}** · borrador del modelo, edítalo")
+        st.markdown(f"**{campo}** *(obligatorio)* · borrador del modelo, edítalo")
         st.text_area(  # sin value=: ya sembrado en session_state
             campo,
             key=key_valor,
@@ -473,8 +533,9 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
             )
 
     with col_dato:
+        marca_obligatorio = " *(obligatorio)*" if campo in _CAMPOS_OBLIGATORIOS else ""
         st.markdown(
-            f"**{campo}** · {_badge_fuente(datos_campo.get('fuente'))} · "
+            f"**{campo}**{marca_obligatorio} · {_badge_fuente(datos_campo.get('fuente'))} · "
             f"confianza {_badge_confianza(datos_campo.get('confianza'))}"
         )
         motivo = propuesta.get("motivo")
@@ -609,12 +670,147 @@ def _problemas_de_texto(confirmado: dict, marca: str | None) -> list[str]:
     return sorted(set(problemas))
 
 
-def _accion_confirmar_ficha(store: LoteStore, pid: str, serial: dict) -> bool:
+# --------------------------------------------------------------------------
+# EL BUG DE DIEGO (2026-07-17, "la descripción no menciona la CREMALLERA
+# ROTA"): `titulo`/`descripcion` se redactaban DURANTE LA EXTRACCIÓN
+# (`core.extract._sintetizar_ficha`), antes de que Diego corrigiera nada —
+# si luego cambiaba `marca` o rellenaba `desperfectos`, el texto se quedaba
+# describiendo la versión VIEJA. Fix: se REGENERAN aquí, al confirmar, a
+# partir de los campos que Diego acaba de dejar en pantalla — nunca de las
+# fotos (`core.extract.redactar_desde_campos_confirmados`, la garantía
+# anti-marca-ajena vive en que `LLMEngine.consultar_texto` ni siquiera
+# ACEPTA imágenes).
+#
+# Excepción — RESPETAR SU EDICIÓN: si Diego escribió su propio título o
+# descripción (a mano, o ya los confirmó así en una vuelta anterior), NUNCA
+# se le pisa: su texto manda. `_diego_edito_texto` decide comparando contra
+# el valor que la extracción tenía ANTES de este confirm (`serial`, el
+# `producto["campos"]` tal y como estaba en disco al abrir la pantalla).
+# --------------------------------------------------------------------------
+def _diego_edito_texto(campo: str, serial: dict, confirmado: dict) -> bool:
+    """True si el texto de `campo` ("titulo"/"descripcion") es de Diego y
+    NO debe regenerarse: (a) ya estaba confirmado con `fuente="diego"`
+    ANTES de este confirm (una vuelta anterior lo fijó a mano y este
+    confirm no lo tocó), o (b) el valor que deja en el widget AHORA
+    difiere del que tenía la extracción — lo acaba de teclear él mismo.
+
+    Si NINGUNA de las dos se cumple, es el borrador del modelo tal cual
+    (`fuente="inferido"`) sin tocar → hay que regenerarlo con los campos
+    recién confirmados (el caso exacto del bug: Diego corrige `marca`/
+    `desperfectos` y no toca la caja de texto)."""
+    original = serial.get("campos", {}).get(campo) or {}
+    valor_actual = (confirmado.get("campos", {}).get(campo) or {}).get("valor")
+    return original.get("fuente") == "diego" or valor_actual != original.get("valor")
+
+
+def _regenerar_titulo_descripcion(
+    confirmado: dict, serial: dict, motor: LLMEngine, pid: str
+) -> tuple[dict, str | None]:
+    """Devuelve `(confirmado_actualizado, error_o_None)`. Si alguno de
+    título/descripción NO lo tocó Diego, llama a la redacción con SOLO los
+    campos ya confirmados (cero fotos) y sobreescribe SÓLO ese campo,
+    `fuente="inferido"` (lo redactó el modelo, no Diego — mentir sobre la
+    procedencia es justo lo único que el giro del 2026-07-16 NO relajó).
+
+    Un fallo de la redacción se propaga como error explícito: NUNCA se
+    confirma en silencio con el texto viejo (describiría el producto
+    PRE-corrección)."""
+    campos = confirmado.get("campos", {})
+    if "titulo" not in campos and "descripcion" not in campos:
+        return confirmado, None  # extracción sin estos campos (muy vieja); nada que regenerar
+
+    titulo_tocado = _diego_edito_texto("titulo", serial, confirmado)
+    descripcion_tocada = _diego_edito_texto("descripcion", serial, confirmado)
+    if titulo_tocado and descripcion_tocada:
+        return confirmado, None  # los dos son de Diego -- no se toca nada
+
+    campos_para_redaccion = {
+        campo: (dc or {}).get("valor")
+        for campo, dc in campos.items()
+        if campo not in ("titulo", "descripcion")
+    }
+    try:
+        nuevo_titulo, nueva_descripcion = redactar_desde_campos_confirmados(
+            campos_para_redaccion, motor, producto_id=pid
+        )
+    except (LLMEngineError, ExtractorError) as exc:
+        logger.exception("No se pudo regenerar título/descripción del producto %s", pid)
+        return confirmado, (
+            f"No se pudo regenerar el título/descripción con los datos corregidos: {exc}. "
+            "No se ha confirmado la ficha (para no dejar un texto desactualizado) — "
+            "reintenta o edita el título/descripción a mano y confirma de nuevo."
+        )
+
+    if not titulo_tocado and "titulo" in campos:
+        campos["titulo"] = {**campos["titulo"], "valor": nuevo_titulo, "fuente": "inferido", "confianza": "baja"}
+    if not descripcion_tocada and "descripcion" in campos:
+        campos["descripcion"] = {
+            **campos["descripcion"], "valor": nueva_descripcion, "fuente": "inferido", "confianza": "baja",
+        }
+    confirmado["campos"] = campos
+    return confirmado, None
+
+
+def _obligatorios_faltantes_en_confirmado(confirmado: dict) -> list[str]:
+    """Lee el dict YA CONSTRUIDO (post `_construir_confirmado` +
+    `_regenerar_titulo_descripcion`) -- la fuente AUTORITATIVA de lo que
+    de verdad se va a persistir; `titulo`/`descripcion` pueden haberse
+    regenerado justo antes, así que este chequeo va DESPUÉS de eso, nunca
+    antes. Nunca revienta si la clave no existe (extracción vieja sin ese
+    campo) -- ausencia cuenta como obligatorio faltante, igual que un
+    valor vacío (`decision-making.md` §12: una defensa que sólo avisa no
+    es defensa -- ésta BLOQUEA, no sugiere)."""
+    campos = confirmado.get("campos", {})
+    return [
+        _ETIQUETA_OBLIGATORIO[campo]
+        for campo in _CAMPOS_OBLIGATORIOS
+        if not (campos.get(campo) or {}).get("valor")
+    ]
+
+
+def _obligatorios_faltantes_en_pantalla(pid: str) -> list[str]:
+    """Mismo chequeo que `_obligatorios_faltantes_en_confirmado` pero
+    leyendo DIRECTO de `session_state` -- para pintar "falta X" y
+    deshabilitar el botón de Confirmar EN VIVO, antes de que Diego pulse
+    nada. Es sólo UX: el bloqueo REAL, con dientes, vive dentro de
+    `_accion_confirmar_ficha` (una defensa que sólo deshabilita un botón
+    del cliente no es una defensa, `decision-making.md` §12). Nota:
+    `titulo`/`descripcion` casi nunca aparecen aquí como "faltantes" en la
+    práctica (la síntesis los rellena con su mejor intento), así que esta
+    vista previa no necesita anticipar la regeneración al confirmar."""
+    faltan: list[str] = []
+    sugerido_estado = st.session_state.get(f"ficha_{pid}_estado_estado", _OPCIONES_ESTADO[0])
+    if sugerido_estado == _OPCIONES_ESTADO[0]:
+        faltan.append(_ETIQUETA_OBLIGATORIO["estado"])
+    sugerido_categoria = st.session_state.get(f"ficha_{pid}_categoria_categoria", _OPCIONES_CATEGORIA[0])
+    if sugerido_categoria == _OPCIONES_CATEGORIA[0]:
+        faltan.append(_ETIQUETA_OBLIGATORIO["categoria"])
+    for campo in ("titulo", "descripcion"):
+        valor = st.session_state.get(f"ficha_{pid}_{campo}_valor", "")
+        if not valor.strip():
+            faltan.append(_ETIQUETA_OBLIGATORIO[campo])
+    return faltan
+
+
+def _accion_confirmar_ficha(store: LoteStore, pid: str, serial: dict, motor: LLMEngine) -> bool:
     """Corre en el mismo script run que el click del botón (no en un
     on_click), así que `st.session_state` ya tiene los valores de los
     widgets y `st.error` es válido — mismo criterio que
     `ui/curar.py::_accion_archivar_foto`."""
     confirmado = _construir_confirmado(pid, serial)
+
+    confirmado, error_redaccion = _regenerar_titulo_descripcion(confirmado, serial, motor, pid)
+    if error_redaccion:
+        st.error(error_redaccion)
+        return False
+
+    faltan = _obligatorios_faltantes_en_confirmado(confirmado)
+    if faltan:
+        st.error(
+            "Faltan campos obligatorios antes de confirmar: " + ", ".join(faltan) + "."
+        )
+        return False
+
     marca = (confirmado.get("campos", {}).get("marca") or {}).get("valor")
     problemas = _problemas_de_texto(confirmado, marca)
     if problemas:
@@ -677,11 +873,12 @@ def _render_producto(
     pid = producto["id"]
     with st.container(border=True):
         st.subheader(f"Producto `{pid[:8]}` — {len(producto['fotos'])} foto(s)")
+        fotos = _paths_producto(producto, fotos_por_id)
+        _render_galeria_fotos(fotos)
 
         if not _esta_extraido(producto):
             st.caption("Atributos sin extraer todavía.")
             if st.button("🔎 Extraer atributos…", key=f"extraer_{pid}"):
-                fotos = _paths_producto(producto, fotos_por_id)
                 _dialog_extraer(store, lote_id, producto, fotos, motor, crear_extractor)
             return
 
@@ -712,12 +909,17 @@ def _render_producto(
         col_conf, col_reextraer = st.columns([2, 1])
         with col_conf:
             etiqueta = "✅ Volver a confirmar" if confirmada else "✅ Confirmar ficha"
-            if st.button(etiqueta, key=f"confirmar_{pid}", type="primary", use_container_width=True):
-                if _accion_confirmar_ficha(store, pid, producto["campos"]):
+            faltan = _obligatorios_faltantes_en_pantalla(pid)
+            if faltan:
+                st.caption("⚠️ obligatorio, falta: " + ", ".join(faltan))
+            if st.button(
+                etiqueta, key=f"confirmar_{pid}", type="primary",
+                use_container_width=True, disabled=bool(faltan),
+            ):
+                if _accion_confirmar_ficha(store, pid, producto["campos"], motor):
                     st.rerun()
         with col_reextraer:
             if st.button("🔁 Re-extraer", key=f"reextraer_{pid}", use_container_width=True):
-                fotos = _paths_producto(producto, fotos_por_id)
                 _dialog_extraer(
                     store, lote_id, producto, fotos, motor, crear_extractor,
                     ya_confirmada=confirmada,

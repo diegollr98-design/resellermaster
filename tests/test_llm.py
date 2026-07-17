@@ -321,3 +321,92 @@ def test_cache_corrupta_se_trata_como_miss_y_no_se_borra(tmp_path, monkeypatch, 
     assert resultado.fuente == "api"
     assert resultado.datos == {"marca": "Adidas"}
     assert cliente_fake.llamadas  # sí tuvo que llamar, la cache no servía
+
+
+# ---------------------------------------------------------------------------
+# `consultar_texto` (2026-07-17, fix del bug de Diego: la descripción se
+# regenera al confirmar, con SOLO los campos de texto confirmados -- nunca
+# una foto). La garantía anti-marca-ajena es estructural: este método no
+# tiene parámetro `imagenes`, así que no hay dónde colar una imagen.
+# ---------------------------------------------------------------------------
+def test_consultar_texto_no_tiene_parametro_imagenes():
+    import inspect
+
+    firma = inspect.signature(LLMEngine.consultar_texto)
+    assert "imagenes" not in firma.parameters
+
+
+def test_consultar_texto_manda_solo_bloque_de_texto_sin_imagen(tmp_path, monkeypatch):
+    cliente_fake = _ClienteFake(respuesta=_mensaje_fake({"titulo": "T", "descripcion": "D"}))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kwargs: cliente_fake)
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake")
+    schema = {"type": "object", "properties": {}}
+
+    resultado = motor.consultar_texto("redacta esto", schema)
+    assert resultado.fuente == "api"
+    assert resultado.datos == {"titulo": "T", "descripcion": "D"}
+
+    contenido = cliente_fake.llamadas[0]["messages"][0]["content"]
+    assert len(contenido) == 1  # SOLO el bloque de texto, cero imágenes
+    assert contenido[0]["type"] == "text"
+    assert contenido[0]["text"] == "redacta esto"
+
+
+def test_consultar_texto_cachea_y_no_repite_llamada(tmp_path, monkeypatch):
+    cliente_fake = _ClienteFake(respuesta=_mensaje_fake({"titulo": "T", "descripcion": "D"}))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kwargs: cliente_fake)
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake")
+    schema = {"type": "object", "properties": {}}
+
+    motor.consultar_texto("mismo prompt", schema, version_prompt="v1")
+    segundo = motor.consultar_texto("mismo prompt", schema, version_prompt="v1")
+
+    assert len(cliente_fake.llamadas) == 1  # la segunda fue HIT de cache
+    assert segundo.fuente == "cache"
+    assert segundo.coste_usd == 0.0
+
+
+def test_consultar_texto_contabiliza_coste_por_producto(tmp_path, monkeypatch):
+    cliente_fake = _ClienteFake(respuesta=_mensaje_fake({"titulo": "T", "descripcion": "D"}, 750, 100))
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kwargs: cliente_fake)
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake")
+    schema = {"type": "object", "properties": {}}
+
+    motor.consultar_texto("redacta", schema, producto_id="prod-redaccion")
+
+    coste = motor.costes_por_producto()["prod-redaccion"]
+    assert coste.llamadas == 1
+    assert coste.tokens_entrada == 750
+    assert coste.tokens_salida == 100
+    precio_entrada, precio_salida = PRECIOS_USD_POR_MTOK["claude-haiku-4-5"]
+    esperado = (750 / 1_000_000) * precio_entrada + (100 / 1_000_000) * precio_salida
+    assert coste.coste_usd == pytest.approx(esperado)
+
+
+def test_consultar_texto_error_de_api_se_propaga(tmp_path, monkeypatch):
+    cliente_fake = _ClienteFake(
+        error=anthropic.APIConnectionError(request=_peticion_httpx())
+    )
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kwargs: cliente_fake)
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake")
+    schema = {"type": "object", "properties": {}}
+
+    with pytest.raises(LLMLlamadaFallidaError):
+        motor.consultar_texto("redacta", schema)
+
+
+def test_consultar_texto_sin_clave_lanza_apikeyfaltanteerror(tmp_path, monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    motor = LLMEngine(cache_dir=tmp_path / "cache")
+    schema = {"type": "object", "properties": {}}
+
+    with pytest.raises(ApiKeyFaltanteError):
+        motor.consultar_texto("redacta esto, nunca visto antes", schema)
+
+
+def test_consultar_con_lista_vacia_sigue_exigiendo_imagen(tmp_path):
+    """El invariante VIEJO de `consultar()` no se relaja por la existencia
+    de `consultar_texto` -- son dos contratos DISTINTOS a propósito."""
+    motor = LLMEngine(cache_dir=tmp_path / "cache")
+    with pytest.raises(ValueError):
+        motor.consultar([], "prompt", {"type": "object", "properties": {}})

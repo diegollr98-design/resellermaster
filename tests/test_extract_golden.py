@@ -556,9 +556,10 @@ def test_medir_alucinacion_con_haiku_real(fotos_reales, capsys):
         coste_real += resultado.coste_usd
         fallos_tecnicos.extend(f"P{pid}: {f}" for f in resultado.fallos)
 
-        # invariante de diseno barato: composicion/material SIEMPRE null
-        # (NO_FOTOGRAFIADO en los 7, legibilidad.json) -- un valor aqui es
-        # invencion pura.
+        # "composicion" ELIMINADA de la ficha entera (Diego, 2026-07-17):
+        # `resultado.campos` ya nunca trae esa clave -- `.get()` degrada a
+        # `None` y el bloque de abajo nunca se dispara. Se deja el chequeo
+        # (barato, defensivo) por si algun dia resucita el campo.
         comp = resultado.campos.get("composicion")
         if comp is not None and comp.valor is not None:
             n_alucinacion += 1

@@ -361,6 +361,21 @@ def test_vinted_si_emite_composicion_sin_traducir():
     assert campo.nota is not None
 
 
+def test_vinted_composicion_ausente_del_todo_degrada_a_null_sin_petar():
+    """Diego quitó "composicion" de la ficha (2026-07-17): `core/extract.py`
+    ya NO produce esa clave -- la ficha confirmada real ya no trae
+    "composicion" en `campos` en absoluto (ni siquiera con `valor=None`).
+    El export debe seguir sin reventar y mostrar el campo vacío (Diego lo
+    rellena a mano si vende un mueble), nunca un `KeyError`."""
+    campos = _campos_confirmados(categoria="hogar")
+    del campos["composicion"]
+    producto = _producto(categoria="hogar")
+    producto["campos"]["campos"] = campos
+    payload = construir_payload(producto, _FOTOS_POR_ID, "vinted")
+    campo = next(c for c in payload.campos if c.nombre == "composicion")
+    assert campo.valor is None
+
+
 # ============================================================================
 # Marca
 # ============================================================================

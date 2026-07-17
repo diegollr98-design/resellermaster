@@ -49,6 +49,7 @@ from core.extract import (
     VERSION_PROMPT_CROP,
     VERSION_PROMPT_ESTADO,
     VERSION_PROMPT_METRO,
+    VERSION_PROMPT_REDACCION,
     VERSION_PROMPT_SINTESIS,
     Candidato,
     ExtractorEngine,
@@ -59,13 +60,14 @@ from core.extract import (
     RespuestaVLMInvalidaError,
     _agregar_campo_desperfectos,
     _agregar_campo_texto,
-    _campo_composicion,
     _color_dominante_rgb,
     _construir_campo_categoria_desde_sintesis,
+    _construir_prompt_redaccion,
     _es_bloque_de_texto_largo,
     _es_repeticion_de_un_campo_ya_resuelto,
     _es_ristra_metro,
     _es_testigo_valido,
+    _formatear_campos_para_redaccion,
     _intentar_atajo_ocr,
     _nombre_color_mas_cercano,
     _parsear_lectura_crop,
@@ -75,11 +77,13 @@ from core.extract import (
     _UBICACIONES_VALIDAS_TALLA,
     _validar_campo_ean,
     _validar_checksum_ean,
+    construir_solicitud_redaccion,
     deserializar_extraccion,
     fusionar_regiones_cercanas,
+    redactar_desde_campos_confirmados,
     serializar_extraccion,
 )
-from core.llm import ApiKeyFaltanteError, LLMLlamadaFallidaError, ResultadoLLM
+from core.llm import ApiKeyFaltanteError, LLMEngine, LLMLlamadaFallidaError, ResultadoLLM
 from core.schema import Campo, Evidencia
 
 
@@ -545,22 +549,22 @@ class TestPapelManuscritoEsNotaDeDiego:
         assert grupo.campo.valor is None
 
 
-class TestComposicionSiempreNull:
-    """Regla dura #4: decision explicita de Diego, ninguna foto del lote
-    fotografia la etiqueta de composicion -- el campo es SIEMPRE null,
-    sin excepcion, y la funcion no recibe argumentos (no puede depender
-    de nada que la haga variar)."""
+class TestComposicionEliminadaDeLaFicha:
+    """Decision de Diego (2026-07-17): "composicion" salio ENTERA de la
+    ficha -- solo aplicaba a ropa y no le aportaba valor. `_campo_composicion`
+    (la funcion PURA de este modulo) ya no existe; `extraer_producto` ya no
+    produce esa clave en absoluto (ni siquiera con `valor=None`)."""
 
-    def test_siempre_none(self):
-        campo = _campo_composicion()
-        assert campo.valor is None
-        assert isinstance(campo, Campo)
+    def test_no_esta_en_campos_producidos(self):
+        from core.extract import CAMPOS_PRODUCIDOS
 
-    def test_no_acepta_argumentos(self):
-        import inspect
+        assert "composicion" not in CAMPOS_PRODUCIDOS
 
-        firma = inspect.signature(_campo_composicion)
-        assert len(firma.parameters) == 0
+    def test_no_esta_en_campos_de_sintesis(self):
+        from core.extract import _CAMPOS_SINTESIS, _CAMPOS_SINTESIS_GAP
+
+        assert "material" not in _CAMPOS_SINTESIS
+        assert "material" not in _CAMPOS_SINTESIS_GAP
 
 
 # ============================================================================
@@ -1013,7 +1017,7 @@ class TestExtraerProductoFelizYAtajos:
         assert resultado.campos["marca"].valor == "Reebok"
         assert resultado.campos["marca"].fuente == "foto"
         assert resultado.campos["marca"].confianza == "media"  # NUNCA "alta"
-        assert resultado.campos["composicion"].valor is None  # regla dura #4, siempre
+        assert "composicion" not in resultado.campos  # ELIMINADA de la ficha (2026-07-17)
 
     def test_ean_por_atajo_ocr_no_gasta_ninguna_llamada_vlm_de_crop(self, tmp_path, monkeypatch):
         foto = _foto_sintetica(tmp_path / "IMG_ean.jpg")
@@ -1496,8 +1500,8 @@ class TestSerializacionRoundTrip:
     `deserializar_extraccion` tiene que devolver, para `ui/ficha.py`
     (todavia sin construir), exactamente lo que el pipeline propuso: el
     conflicto CON sus dos recortes (Trampa 2, UMBRO/RAMI JALAB) y el caso
-    `recorte=None`/`evidencia=None` (composicion, que nunca se fotografia
-    -- regla dura #4 de `core/extract.py`)."""
+    `recorte=None`/`evidencia=None` (talla, que este producto no
+    fotografia)."""
 
     def _resultado_con_conflicto(self, tmp_path, monkeypatch):
         foto_pecho = _foto_sintetica(tmp_path / "IMG_pecho.jpg")
@@ -1569,18 +1573,6 @@ class TestSerializacionRoundTrip:
 
         serializado = serializar_extraccion(resultado)
         recuperado = deserializar_extraccion(json.loads(json.dumps(serializado)))
-
-        # composicion: regla dura #4, SIEMPRE None -- ni recorte ni evidencia
-        # ni alternativas ni lecturas (todas las tuplas llegan vacias).
-        composicion = recuperado["campos"]["composicion"]
-        assert composicion["valor"] is None
-        assert composicion["evidencia"] is None
-        propuesta_composicion = composicion["propuesta"]
-        assert propuesta_composicion is not None
-        assert propuesta_composicion["recorte"] is None
-        assert propuesta_composicion["evidencia"] is None
-        assert propuesta_composicion["alternativas"] == []
-        assert propuesta_composicion["lecturas"] == []
 
         # talla: ninguna foto de este producto trae talla -- NO_FOTOGRAFIADO,
         # mismo patron (recorte=None, evidencia=None, tuplas vacias).
@@ -2003,3 +1995,150 @@ def test_sintesis_fuente_foto_exige_que_el_valor_este_en_el_pixel():
     # valor SUSTITUYE la lectura -> inferido (el crop dice Reebok, el valor Nike)
     campo, _ = _construir_campo_desde_sintesis(decision("Nike"), indice, _UBICACIONES_VALIDAS_MARCA)
     assert campo.fuente == "inferido", "un valor que no esta en el crop no es fuente=foto"
+
+
+# ============================================================================
+# REDACCION DESDE CAMPOS CONFIRMADOS (2026-07-17, fix del bug de Diego:
+# "la descripcion no menciona la CREMALLERA ROTA" -- ver el docstring de la
+# seccion en core/extract.py). CERO fotos, CERO propuestas del modelo: el
+# UNICO input son los valores YA CONFIRMADOS. Estos tests corren SIN
+# ANTHROPIC_API_KEY y SIN tocar la red -- `_MotorTextoFake` sustituye a
+# `LLMEngine` (duck-typing de `consultar_texto`, igual que `_MotorFake`
+# sustituye a `consultar` mas arriba).
+# ============================================================================
+class _MotorTextoFake:
+    """Solo implementa `consultar_texto` -- el contrato exacto que necesita
+    `redactar_desde_campos_confirmados`. Guarda cada prompt real recibido
+    para poder comprobar QUE se le mando (verificacion anti-marca-ajena:
+    que "Umbro" no aparezca cuando Diego confirmo "Reebok")."""
+
+    def __init__(self, titulo: str = "Titulo generado", descripcion: str = "Descripcion generada") -> None:
+        self.titulo = titulo
+        self.descripcion = descripcion
+        self.llamadas: list[dict] = []
+        self.excepcion: Exception | None = None
+        self.respuesta_cruda: dict | None = None  # si se fija, se devuelve TAL CUAL (para probar respuestas incompletas)
+
+    def consultar_texto(self, prompt, json_schema, version_prompt="v1", producto_id=None):
+        self.llamadas.append(
+            {"prompt": prompt, "json_schema": json_schema, "version_prompt": version_prompt, "producto_id": producto_id}
+        )
+        if self.excepcion is not None:
+            raise self.excepcion
+        datos = self.respuesta_cruda if self.respuesta_cruda is not None else {
+            "titulo": self.titulo, "descripcion": self.descripcion,
+        }
+        return ResultadoLLM(datos=datos, fuente="api", coste_usd=0.00005, tokens_entrada=120, tokens_salida=60)
+
+
+class TestConsultarTextoNuncaAceptaImagenes:
+    """La garantia anti-marca-ajena NO es una convencion de llamada ("pasa
+    imagenes=[]"): es que `LLMEngine.consultar_texto` NO TIENE parametro
+    `imagenes` en su firma. Se comprueba contra la clase REAL, no contra
+    el fake -- si algun dia alguien le anade el parametro, este test debe
+    reventar."""
+
+    def test_firma_no_tiene_parametro_imagenes(self):
+        import inspect
+
+        firma = inspect.signature(LLMEngine.consultar_texto)
+        assert "imagenes" not in firma.parameters
+
+    def test_consultar_con_imagenes_sigue_exigiendo_al_menos_una(self, tmp_path):
+        """El invariante VIEJO de `consultar()` (>=1 imagen) no se relaja
+        por la existencia de `consultar_texto` -- son metodos DISTINTOS."""
+        motor = LLMEngine(cache_dir=tmp_path / "cache")
+        with pytest.raises(ValueError):
+            motor.consultar([], "prompt", {"type": "object"})
+
+
+class TestFormatearCamposParaRedaccion:
+    def test_incluye_desperfectos_con_etiqueta_dura(self):
+        texto = _formatear_campos_para_redaccion({"marca": "Reebok", "desperfectos": "CREMALLERA ROTA"})
+        assert "CREMALLERA ROTA" in texto
+        assert "DESPERFECTOS" in texto  # el nombre legible avisa que es obligatorio mencionarlo
+
+    def test_omite_campos_ausentes_o_vacios_nunca_los_inventa(self):
+        texto = _formatear_campos_para_redaccion({"marca": "Reebok", "talla": None, "color": "  "})
+        assert "Reebok" in texto
+        assert "talla" not in texto.lower()
+        assert "color" not in texto.lower()
+
+    def test_sin_ningun_campo_confirmado_lo_dice_explicitamente(self):
+        texto = _formatear_campos_para_redaccion({})
+        assert "aun no ha confirmado" in texto
+
+
+class TestConstruirPromptRedaccion:
+    def test_prompt_contiene_marca_confirmada_y_no_marcas_ajenas(self):
+        texto_campos = _formatear_campos_para_redaccion({"marca": "Reebok"})
+        prompt = _construir_prompt_redaccion(texto_campos)
+        assert "Reebok" in prompt
+        assert "Umbro" not in prompt
+
+    def test_prompt_prohibe_inventar_y_exige_desperfectos(self):
+        prompt = _construir_prompt_redaccion(_formatear_campos_para_redaccion({}))
+        assert "NO inventes" in prompt
+        assert "DESPERFECTOS" in prompt
+
+
+class TestRedactarDesdeCamposConfirmados:
+    def test_devuelve_titulo_y_descripcion(self):
+        motor = _MotorTextoFake(titulo="Bici azul BH", descripcion="Bici de paseo, buen estado.")
+        titulo, descripcion = redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+        assert titulo == "Bici azul BH"
+        assert descripcion == "Bici de paseo, buen estado."
+
+    def test_input_es_texto_puro_ninguna_imagen_ni_propuesta(self):
+        """Verificacion directa (no solo por firma): la llamada real que
+        sale de aqui usa `consultar_texto`, que no tiene donde poner una
+        imagen -- `_MotorTextoFake` ni siquiera define `consultar()`, asi
+        que si este codigo intentara mandar una imagen, reventaria con
+        `AttributeError`, no con un fallo silencioso."""
+        motor = _MotorTextoFake()
+        assert not hasattr(motor, "consultar")  # solo consultar_texto -- por diseno del fake
+        redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+        assert len(motor.llamadas) == 1
+
+    def test_prompt_real_lleva_marca_corregida_y_desperfectos_nunca_la_marca_vieja(self):
+        """Diego corrigio 'Umbro' -> 'Reebok' y confirmo el desperfecto: el
+        dict que se le pasa a la funcion YA NO tiene 'Umbro' en absoluto
+        (lo sobreescribio quien llama, `ui/ficha.py`) -- se comprueba que
+        el prompt REAL enviado al motor reflexa exactamente eso."""
+        motor = _MotorTextoFake()
+        redactar_desde_campos_confirmados(
+            {"marca": "Reebok", "desperfectos": "CREMALLERA ROTA"}, motor, producto_id="p1"
+        )
+        prompt = motor.llamadas[0]["prompt"]
+        assert "Reebok" in prompt
+        assert "Umbro" not in prompt
+        assert "CREMALLERA ROTA" in prompt
+        assert motor.llamadas[0]["producto_id"] == "p1"
+        assert motor.llamadas[0]["version_prompt"] == VERSION_PROMPT_REDACCION
+
+    def test_fallo_de_red_se_propaga_nunca_texto_de_repuesto(self):
+        motor = _MotorTextoFake()
+        motor.excepcion = LLMLlamadaFallidaError("boom")
+        with pytest.raises(LLMLlamadaFallidaError):
+            redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+
+    def test_respuesta_sin_descripcion_lanza_respuestavlminvalida(self):
+        motor = _MotorTextoFake()
+        motor.respuesta_cruda = {"titulo": "solo hay titulo"}
+        with pytest.raises(RespuestaVLMInvalidaError):
+            redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+
+    def test_respuesta_con_titulo_vacio_lanza_respuestavlminvalida(self):
+        motor = _MotorTextoFake()
+        motor.respuesta_cruda = {"titulo": "   ", "descripcion": "algo"}
+        with pytest.raises(RespuestaVLMInvalidaError):
+            redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+
+
+def test_construir_solicitud_redaccion_no_llama_a_nadie():
+    """`(prompt, version_prompt)` sin gastar -- para estimar coste sin
+    tocar la red, mismo contrato que `construir_solicitudes` para crops."""
+    prompt, version_prompt = construir_solicitud_redaccion({"marca": "Reebok", "desperfectos": "CREMALLERA ROTA"})
+    assert "Reebok" in prompt
+    assert "CREMALLERA ROTA" in prompt
+    assert version_prompt == VERSION_PROMPT_REDACCION
