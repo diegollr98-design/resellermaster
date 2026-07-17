@@ -46,6 +46,7 @@ from PIL import Image
 
 from core.extract import (
     ESQUEMA_SINTESIS_FICHA,
+    MARCADOR_DESPERFECTOS,
     MAX_LLAMADAS_VLM_POR_PRODUCTO,
     UMBRAL_SIMILITUD_DUDOSO,
     VERSION_PROMPT_CROP,
@@ -59,6 +60,7 @@ from core.extract import (
     LecturaCrop,
     RegionOCR,
     RespuestaVLMInvalidaError,
+    _agregar_campo_desde_marcador,
     _agregar_campo_desperfectos,
     _agregar_campo_texto,
     _color_dominante_rgb,
@@ -69,6 +71,7 @@ from core.extract import (
     _es_repeticion_de_un_campo_ya_resuelto,
     _es_ristra_metro,
     _es_testigo_valido,
+    _extraer_valor_tras_marcador,
     _formatear_campos_para_redaccion,
     _intentar_atajo_ocr,
     _nombre_color_mas_cercano,
@@ -508,59 +511,297 @@ class TestFondoAjenoNuncaEsAtributo:
         assert ingenuo == "GeForce RTX"
 
 
-class TestPapelManuscritoEsNotaDeDiego:
-    """legibilidad.json producto 7: un PAPEL MANUSCRITO ('CREMALLERA
-    ROTA') junto al producto.
+class TestMarcadorDesperfectosCazaElBugRealDeDiego:
+    """Decision de Diego (2026-07-17), medida sobre 3 fotos REALES de un
+    lote: el pipeline NO PUEDE juzgar si un texto "es" un desperfecto sin
+    alucinar. La version anterior (`ubicacion == "papel_manuscrito"` +
+    `contenido_probable == "desperfecto"` como unica senal) publico:
+      - el texto IMPRESO en la caja de un masajeador ("masajeador LH;
+        Laser Rodilla", foto IMG_20260714_101637) como si fuera un
+        desperfecto -- el VLM clasifico mal su `ubicacion` como
+        "papel_manuscrito".
+      - un NUMERO DE LOTE ("2250028", foto IMG_20260714_101750) escrito a
+        mano de VERDAD en una pegatina -- SI era manuscrito, pero NO era
+        un desperfecto.
+    Ahora `_agregar_campo_desperfectos` (alias de
+    `_agregar_campo_desde_marcador`) no juzga nada: busca la palabra clave
+    "DESPERFECTOS:" que Diego escribe, en CUALQUIER ubicacion. `[INC-012]`
+    sigue vigente para el TECHO de confianza: nunca "alta" salvo EAN con
+    checksum."""
 
-    C7: `fuente="foto"` (es una transcripcion, no algo que Diego tecleara)
-    con su `evidencia`. `[INC-012]`: la via "multi-foto -> alta" de la
-    version anterior MURIO con el resto de la maquinaria de corroboracion
-    -- ahora el techo es SIEMPRE "media", incluso si la MISMA nota
-    aparece en dos fotos distintas (nada que no sea un EAN con checksum
-    llega a "alta" en este modulo)."""
-
-    def test_va_a_desperfectos_con_fuente_foto_y_confianza_media(self):
+    def test_con_marcador_publica_fuente_foto_y_confianza_media(self):
         lecturas = [
             _lectura(
                 fichero="IMG_papel.jpg",
                 bbox=(3, 3, 30, 12),
                 ubicacion="papel_manuscrito",
                 contenido_probable="desperfecto",
-                texto="CREMALLERA ROTA",
+                texto="DESPERFECTOS: CREMALLERA ROTA",
             )
         ]
         grupo = _agregar_campo_desperfectos(lecturas)
 
-        assert grupo.campo.valor == "CREMALLERA ROTA"
-        assert grupo.campo.fuente == "foto"  # C7: es una transcripcion, no un dato tecleado
-        assert grupo.campo.confianza == "media"  # una sola foto de la nota
+        assert grupo.campo.valor == "CREMALLERA ROTA"  # el ruido de OCR se conserva verbatim
+        assert grupo.campo.fuente == "foto"  # es una transcripcion, no un dato tecleado
+        assert grupo.campo.confianza == "media"  # nunca "alta" (salvo EAN con checksum)
         assert grupo.campo.evidencia is not None
         assert grupo.campo.evidencia.fichero == "IMG_papel.jpg"
 
-    def test_la_misma_nota_en_dos_fotos_distintas_SIGUE_en_media_nunca_sube_a_alta(self):
-        """`[INC-012]`: la via "multi-foto -> alta" murio. Antes esto subia
-        a 'alta'; ahora el techo de CUALQUIER lectura de texto (salvo EAN
-        con checksum) es 'media', pase lo que pase."""
-        lecturas = [
-            _lectura(
-                fichero="IMG_papel_a.jpg",
-                ubicacion="papel_manuscrito",
-                contenido_probable="desperfecto",
-                texto="CREMALLERA ROTA",
-            ),
-            _lectura(
-                fichero="IMG_papel_b.jpg",
-                ubicacion="papel_manuscrito",
-                contenido_probable="desperfecto",
-                texto="CREMALLERA ROTA",
-            ),
-        ]
-        grupo = _agregar_campo_desperfectos(lecturas)
-        assert grupo.campo.confianza == "media"
+    def test_EL_BUG_texto_impreso_de_caja_sin_marcador_ya_no_cuela(self):
+        """EL TEST QUE IMPORTA: el nombre del producto, impreso en la
+        caja, NO es un desperfecto -- sin marcador, `valor=None`, pase lo
+        que declare `ubicacion`/`contenido_probable` (la senal vieja)."""
+        grupo = _agregar_campo_desperfectos(
+            [
+                _lectura(
+                    fichero="IMG_20260714_101637_5.jpg",
+                    ubicacion="papel_manuscrito",  # mal clasificado por el VLM, como en el bug real
+                    contenido_probable="otro",
+                    texto="masajeador LH; Laser Rodilla",
+                )
+            ]
+        )
+        assert grupo.campo.valor is None
+        assert grupo.campo.fuente == "inferido"
+
+    def test_numero_de_lote_manuscrito_de_verdad_sin_marcador_tampoco_cuela(self):
+        """El numero de lote SI estaba escrito a mano (a diferencia del
+        caso anterior) pero NO es un desperfecto -- ser manuscrito nunca
+        fue la senal correcta, el marcador si."""
+        grupo = _agregar_campo_desperfectos(
+            [
+                _lectura(
+                    fichero="IMG_20260714_101750_5.jpg",
+                    ubicacion="papel_manuscrito",
+                    contenido_probable="desperfecto",  # el VLM SI lo etiqueto como desperfecto
+                    texto="2250028",
+                )
+            ]
+        )
+        assert grupo.campo.valor is None
+
+    def test_marcador_leido_correctamente_en_nota_real_de_diego(self):
+        """El unico papel manuscrito REAL de este lote SI trae el
+        marcador -- caso feliz."""
+        grupo = _agregar_campo_desperfectos(
+            [_lectura(ubicacion="papel_manuscrito", texto="DESPERFECTOS: CKENAUERA ROTA")]
+        )
+        assert grupo.campo.valor == "CKENAUERA ROTA"  # el ruido de OCR ("CKENAUERA") NO se corrige
+        assert grupo.campo.fuente == "foto"
+
+    def test_marcador_funciona_en_cualquier_ubicacion_no_solo_papel_manuscrito(self):
+        """La `ubicacion` ya NO filtra -- una pegatina de la caja con el
+        marcador escrito a boli tambien cuenta."""
+        grupo = _agregar_campo_desperfectos(
+            [_lectura(ubicacion="codigo_o_modelo_impreso", texto="DESPERFECTOS: mancha en la base")]
+        )
+        assert grupo.campo.valor == "mancha en la base"
+        assert grupo.campo.fuente == "foto"
+
+    @pytest.mark.parametrize("variante", ["DESPERFECT0S:", "DESPERFECTQS:", "DESPERFECT05:", "Desperfect0s:"])
+    def test_marcador_con_ruido_de_ocr_se_caza_fuzzy(self, variante):
+        grupo = _agregar_campo_desperfectos(
+            [_lectura(ubicacion="papel_manuscrito", texto=f"{variante} cremallera rota")]
+        )
+        assert grupo.campo.valor == "cremallera rota", variante
+
+    def test_pertenece_al_producto_false_no_cuela_aunque_tenga_marcador(self):
+        grupo = _agregar_campo_desperfectos(
+            [_lectura(pertenece_al_producto=False, texto="DESPERFECTOS: mancha de fondo ajena")]
+        )
+        assert grupo.campo.valor is None
+
+    def test_marcador_sin_nada_detras_no_es_un_desperfecto(self):
+        grupo = _agregar_campo_desperfectos([_lectura(texto="DESPERFECTOS:")])
+        assert grupo.campo.valor is None
+
+    def test_sin_ningun_texto_el_campo_es_null_sin_reventar(self):
+        grupo = _agregar_campo_desperfectos([])
+        assert grupo.campo.valor is None
+        assert "DESPERFECTOS" in grupo.motivo  # motivo explicito: escribelo en el papel
 
     def test_sin_papel_el_campo_es_null(self):
-        grupo = _agregar_campo_desperfectos([_lectura(ubicacion="etiqueta_interior")])
+        grupo = _agregar_campo_desperfectos([_lectura(ubicacion="etiqueta_interior", texto="Reebok")])
         assert grupo.campo.valor is None
+
+
+class TestMedidasYaNoUsaElMarcador:
+    """`[listing-audit] SERIO, 2026-07-17 (2a ronda)`: `medidas` PROBO un
+    camino por marcador ("MEDIDAS:") y se QUITO -- "MEDIDA:" (singular)
+    seguia colisionando a distancia 1, y una caja imprimiendo SUS PROPIAS
+    dimensiones de embalaje bajo "Medidas:" no se podia distinguir de
+    forma fiable de la nota de Diego (no hay senal estructural). Decision
+    de Diego: `medidas` vuelve a salir UNICAMENTE del metro fotografiado
+    (regla dura #5, `_evaluar_medidas`) -- por la regla anti-loop
+    (`decision-making.md` SS6: 2 rondas del mismo campo sin converger ->
+    replantear, no un 3er parche). El bug de la caja es ahora
+    INEXPRESABLE: no hay NINGUN camino de codigo por el que un texto
+    leido (con o sin marcador) pueda llegar a `campos["medidas"]`."""
+
+    def test_una_nota_con_MEDIDAS_no_rellena_medidas_sin_foto_de_metro(self, tmp_path, monkeypatch):
+        foto = _foto_sintetica(tmp_path / "IMG_nota.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(3, 3, 30, 12), texto_ocr="MEDIDAS: 80x60", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple(
+            "otro", True, "MEDIDAS: 80x60", ubicacion="papel_manuscrito"
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        # sin foto de metro, "medidas" se queda NO_FOTOGRAFIADO -- el
+        # marcador ya no se mira EN ABSOLUTO para este campo.
+        assert resultado.campos["medidas"].valor is None
+
+    def test_medida_de_caja_ya_no_puede_contaminar_medidas_del_producto(self, tmp_path, monkeypatch):
+        """EL BUG REAL del audit ('MEDIDAS: 30 x 20 x 10 cm' de una caja)
+        es ahora INEXPRESABLE, no solo mitigado: no hay ningun camino de
+        codigo por el que este texto pueda llegar a `campos['medidas']`."""
+        foto = _foto_sintetica(tmp_path / "IMG_caja.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(3, 3, 30, 12), texto_ocr="MEDIDA: 30 x 20 x 10 cm", score=0.7)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple(
+            "otro", True, "MEDIDA: 30 x 20 x 10 cm", ubicacion="codigo_o_modelo_impreso"
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["medidas"].valor is None
+
+    def test_el_metro_sigue_siendo_la_unica_fuente_real_de_medidas(self, tmp_path, monkeypatch):
+        """Confirmacion positiva: CON foto de metro valida, `medidas` SI
+        se rellena -- el camino del metro no se toco, solo se quito el
+        atajo del marcador."""
+        foto = _foto_sintetica(tmp_path / "IMG_metro.jpg")
+        region_metro = RegionOCR(
+            fichero=foto.name, bbox=(10, 10, 5, 500),
+            texto_ocr="69899995999291909698925959556575", score=0.66,
+        )
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region_metro])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_METRO] = {
+            "cero_visible": True, "borde_prenda_visible": True, "medida_cm": 45.0,
+        }
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["medidas"].valor == 45.0
+        assert resultado.campos["medidas"].fuente == "foto"
+
+    def test_medidas_ya_no_esta_en_los_marcadores_de_nota(self):
+        """El propio mapa `_MARCADORES_NOTA` ya no conoce "medidas" --
+        pedirselo a `_agregar_campo_desde_marcador` debe reventar (KeyError),
+        no devolver `None` en silencio (eso seria un fallback disfrazado)."""
+        from core.extract import _MARCADORES_NOTA
+
+        assert "medidas" not in _MARCADORES_NOTA
+        assert "desperfectos" in _MARCADORES_NOTA
+        with pytest.raises(KeyError):
+            _agregar_campo_desde_marcador([_lectura(texto="MEDIDAS: 80x60")], "medidas")
+
+
+class TestMedidasYDesperfectosFueraDeLaSintesis:
+    """Regla dura #6 (Diego, 2026-07-17): el modelo NO PUEDE rellenar
+    `desperfectos`/`medidas` con su "mejor intento" -- se aserta contra el
+    `json_schema`/gap-filler REAL, no contra el docstring."""
+
+    def test_medidas_no_esta_en_los_campos_de_sintesis(self):
+        from core.extract import _CAMPOS_SINTESIS, _CAMPOS_SINTESIS_GAP
+
+        assert "medidas" not in _CAMPOS_SINTESIS
+        assert "medidas" not in _CAMPOS_SINTESIS_GAP
+
+    def test_desperfectos_no_esta_en_los_campos_de_sintesis(self):
+        from core.extract import _CAMPOS_SINTESIS, _CAMPOS_SINTESIS_GAP
+
+        assert "desperfectos" not in _CAMPOS_SINTESIS
+        assert "desperfectos" not in _CAMPOS_SINTESIS_GAP
+
+    def test_medidas_no_esta_en_el_json_schema_de_la_sintesis(self):
+        assert "medidas" not in ESQUEMA_SINTESIS_FICHA["properties"]
+        assert "medidas" not in ESQUEMA_SINTESIS_FICHA["required"]
+
+
+# Palabras REALES de packaging espanol contra las que se MIDIO el umbral
+# fuzzy del marcador (no elegido a ojo) -- ver el comentario de
+# `_UMBRALES_DISTANCIA_MARCADOR` en `core/extract.py`. Solo `desperfectos`
+# usa marcador hoy (`medidas` se quito, `TestMedidasYaNoUsaElMarcador`).
+_PALABRAS_PACKAGING_DESPERFECTOS = ("PERFECTOS", "IMPERFECTOS", "DEFECTOS")
+
+
+class TestUmbralMarcadorMedidoContraPalabrasReales:
+    """`[listing-audit] BLOQUEANTE, 2026-07-17`, REPRODUCIDO EJECUTANDO
+    (no de oidas): la primera version de este match usaba un umbral fuzzy
+    GLOBAL (distancia <=3), calibrado a ojo, que dejaba entrar "acabados
+    PERFECTOS" como si fuera el marcador.
+
+    EL TEST QUE IMPORTA: NINGUNA palabra de esta lista, en una frase SIN
+    el separador pegado (como aparece de verdad en un texto de caja),
+    debe matchear el marcador."""
+
+    @pytest.mark.parametrize("palabra", _PALABRAS_PACKAGING_DESPERFECTOS)
+    def test_ninguna_palabra_de_packaging_matchea_desperfectos(self, palabra):
+        texto = f"acabados {palabra} garantizados de fabrica"
+        assert _extraer_valor_tras_marcador(texto, MARCADOR_DESPERFECTOS) is None, palabra
+
+    def test_acabados_perfectos_no_es_desperfecto(self):
+        assert _extraer_valor_tras_marcador("acabados PERFECTOS", MARCADOR_DESPERFECTOS) is None
+
+    def test_productos_imperfectos_no_es_desperfecto(self):
+        valor = _extraer_valor_tras_marcador("PRODUCTOS IMPERFECTOS", MARCADOR_DESPERFECTOS)
+        assert valor is None
+
+    def test_desperfectos_no_se_trunca_por_una_palabra_parecida_a_otro_marcador(self):
+        """FIX 5 (mecanismo generico, se conserva aunque hoy solo haya un
+        marcador real): 'media' (dentro de 'media manga') no lleva ningun
+        separador pegado -- no debe truncar la frase."""
+        valor = _extraer_valor_tras_marcador("DESPERFECTOS: mancha en media manga", MARCADOR_DESPERFECTOS)
+        assert valor == "mancha en media manga"
+
+    def test_separador_no_pegado_no_matchea(self):
+        """FIX 2: un espacio entre el token y el separador NO cuenta como
+        'pegado'."""
+        assert _extraer_valor_tras_marcador("DESPERFECTOS : algo", MARCADOR_DESPERFECTOS) is None
+
+    @pytest.mark.parametrize("variante", ["DESPERFECT0S:", "DESPERFECTQS:", "DESPERFECT05:"])
+    def test_ruido_ocr_real_de_desperfectos_sigue_cazandose(self, variante):
+        valor = _extraer_valor_tras_marcador(f"{variante} cremallera rota", MARCADOR_DESPERFECTOS)
+        assert valor == "cremallera rota", variante
+
+
+class TestFix7EvidenciaIntegraNuncaConcatenaASiegas:
+    """`[listing-audit] BLOQUEANTE, 2026-07-17`, FIX 7 (`[INC-011]` en otro
+    disfraz): concatenar el valor de dos lecturas DISTINTAS en un solo
+    `Campo.valor` pero ensenar la `evidencia`/`recorte` de UNA SOLA de
+    ellas publica un dato con `fuente="foto"` sin que el pixel que lo
+    prueba este a la vista. Ahora solo la PRIMERA se publica como valor;
+    el resto viaja en `alternativas`, cada una con su PROPIO recorte
+    (mismo mecanismo que ya usan marca/talla en conflicto)."""
+
+    def test_dos_notas_en_fotos_distintas_no_se_concatenan_con_evidencia_de_una_sola(self):
+        grupo = _agregar_campo_desde_marcador(
+            [
+                _lectura(fichero="a.jpg", bbox=(1, 1, 5, 5), texto="DESPERFECTOS: cremallera rota"),
+                _lectura(fichero="b.jpg", bbox=(2, 2, 6, 6), texto="DESPERFECTOS: mancha lejia"),
+            ],
+            "desperfectos",
+        )
+        assert grupo.campo.valor == "cremallera rota"
+        assert grupo.campo.evidencia.fichero == "a.jpg"
+        assert len(grupo.alternativas) == 1
+        assert grupo.alternativas[0].texto == "mancha lejia"
+        assert grupo.alternativas[0].fichero == "b.jpg"
+
+    def test_una_sola_nota_no_genera_alternativas(self):
+        grupo = _agregar_campo_desde_marcador(
+            [_lectura(fichero="a.jpg", texto="DESPERFECTOS: cremallera rota")], "desperfectos"
+        )
+        assert grupo.campo.valor == "cremallera rota"
+        assert grupo.alternativas == ()
 
 
 class TestComposicionEliminadaDeLaFicha:
@@ -2231,3 +2472,13 @@ def test_construir_solicitud_redaccion_no_llama_a_nadie():
     assert "Reebok" in prompt
     assert "CREMALLERA ROTA" in prompt
     assert version_prompt == VERSION_PROMPT_REDACCION
+
+
+# `test_el_papel_manda_sobre_el_metro_en_medidas` / `test_metro_gana_si_
+# no_hay_marcador_valido` -- ELIMINADOS (Diego, 2026-07-17, 2a ronda de
+# listing-audit): probaban el override "el papel manda sobre el metro"
+# para `medidas`, que se QUITO por completo (ver `_evaluar_medidas` en
+# `core/extract.py` y `TestMedidasYaNoUsaElMarcador` en este archivo).
+# `medidas` vuelve a salir UNICAMENTE del metro -- los tests de ese
+# camino en solitario son `TestCasosDeFallo`/los que ejercitan
+# `_evaluar_medidas` directamente, mas arriba en este archivo.

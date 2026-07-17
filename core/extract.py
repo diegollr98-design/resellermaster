@@ -143,12 +143,58 @@ golden set (`tests/golden/legibilidad.json`) se enfrentan ASI:
      candidata a metro, se hace UNA llamada VLM sobre la foto COMPLETA
      preguntando explicitamente si el 0 Y el borde de la prenda son
      visibles -- si cualquiera de los dos falta, `medidas=None`.
-  6. Un papel manuscrito en el grupo (`ubicacion="papel_manuscrito"`) nunca
-     entra en ningun campo del producto: va a `desperfectos` con
-     `fuente="foto"` (es una transcripcion de un pixel real, no un dato
-     tecleado por Diego), techo `confianza="media"` SIEMPRE (la version
-     anterior subia a "alta" si la misma nota aparecia en 2+ fotos -- esa
-     via murio con el resto de la maquinaria de corroboracion, regla 1).
+  6. `desperfectos` (2026-07-17, decision de Diego, medida sobre 3 fotos
+     REALES del masajeador): NO sale ya de que el pipeline JUZGUE que un
+     texto "es" un desperfecto -- ese juicio fallo: el texto IMPRESO en la
+     caja ("masajeador LH; Laser Rodilla") se publico como desperfecto
+     porque el VLM clasifico mal su `ubicacion` como "papel_manuscrito"
+     (pedirle al modelo que distinga "hoja suelta" de "pegatina en la
+     caja" es OTRO juicio visual imposible, mismo patron que `[INC-007]`),
+     y un NUMERO DE LOTE SI manuscrito de verdad ("2250028") se publico
+     igual porque estaba escrito a mano pero NO era un defecto. Ahora el
+     pipeline no juzga nada: busca la PALABRA CLAVE que Diego escribe en
+     su nota ("DESPERFECTOS:", `_extraer_valor_tras_marcador`) en
+     CUALQUIER texto legible del producto que `pertenece_al_producto`
+     (regla dura #7) -- SIN filtrar por `ubicacion`, esa senal ya
+     demostro no ser fiable -- y transcribe VERBATIM lo que va detras.
+     Sin marcador -> `valor=None` + un motivo que le dice a Diego que lo
+     escriba (nunca un valor plausible).
+
+     `[listing-audit] BLOQUEANTE, 2026-07-17` (reproducido ejecutando):
+     la primera version de este match -- fuzzy a distancia <=3, sin exigir
+     el separador pegado -- REABRIA el mismo bug que esto viene a matar:
+     "acabados PERFECTOS" publicaba un desperfecto falso. Causa: un umbral
+     GLOBAL, calibrado a ojo, aplicado sin medir. El match real tiene DOS
+     capas, verificadas contra una lista de palabras REALES de packaging
+     (ver `_UMBRALES_DISTANCIA_MARCADOR` y el test que las mide):
+       (a) distancia de edicion <= el umbral MEDIDO para "DESPERFECTOS"
+           (2, 12 letras -- excluye PERFECTOS/IMPERFECTOS/DEFECTOS, todas
+           a 3+);
+       (b) el separador (":"/"-") PEGADO justo despues del token -- una
+           palabra suelta de packaging real casi nunca lo lleva pegado,
+           y esto es lo que MAS colisiones elimina.
+     El VALOR que va detras del marcador NUNCA se toca (ni se corrige el
+     ruido de OCR): "CKENAUERA ROTA" se queda tal cual, Diego lo corrige
+     en la UI -- es una transcripcion de un pixel real, no un dato
+     tecleado.
+
+     `[listing-audit] SERIO, 2026-07-17 (2a ronda)` -- medidas SALIO DEL
+     MARCADOR, decision de Diego: la 1a ronda de audit ya habia obligado
+     a exigir digito + excluir cajas para `medidas`; la 2a ronda encontro
+     QUE AUN ASI "MEDIDA:" (singular) colisionaba a distancia 1, y una
+     caja imprimiendo SUS PROPIAS dimensiones de embalaje bajo "Medidas:"
+     seguia colandose -- no hay senal estructural que distinga "dimension
+     de la caja" de "dimension del producto" (mismo limite de
+     `truth-loop.md` SS E, "el OCR no clasifica tipo de foto"). Por la
+     regla anti-loop (`decision-making.md` SS6: 2 rondas del MISMO campo
+     sin converger -> replantear, no parchear una 3a vez), esto se llevo a
+     Diego en vez de intentar un tercer ajuste. Decision: `medidas` vuelve
+     a salir UNICAMENTE del metro fotografiado (regla dura #5,
+     `_evaluar_medidas`, sin cambios) -- su catalogo es sobre todo ropa, y
+     Wallapop ni siquiera pide medidas en moda (`product.md`). El marcador
+     se queda SOLO para `desperfectos`, que audito limpio en las dos
+     rondas (ninguna palabra de packaging colisiona con una palabra de 12
+     letras a distancia <=2 + separador pegado).
   7. `pertenece_al_producto=False` descarta la lectura ENTERA, pase lo que
      sea `ubicacion`/`contenido_probable` -- el texto de fondo (un
      portatil ajeno en el encuadre) no es un atributo del producto.
@@ -218,12 +264,15 @@ foto general reescalada a 1568px, asi que la sintesis NUNCA pisa un valor
 que la agregacion ya resolvio con solidez (ni siquiera para "corroborar":
 esa via ya murio una vez, `[INC-010]`/`[INC-012]`, no se reintenta aqui).
 `ean` (unico camino a `confianza="alta"`, via checksum matematico),
-`desperfectos` (regla dura #6, transcripcion literal de una nota
-manuscrita) y `composicion`/`material` (ELIMINADO de la ficha entera,
-Diego 2026-07-17: solo aplicaba a ropa y no aportaba valor a su flujo)
-quedan ESTRUCTURALMENTE fuera de la sintesis -- no estan en su
-`json_schema`, no hay ningun camino en este archivo por el que la sintesis
-pueda tocarlos.
+`desperfectos` Y `medidas` (2026-07-17, decision de Diego, regla dura #6:
+AMBOS salen UNICAMENTE del marcador que Diego escribe en su nota -- nunca
+del "mejor intento" de la sintesis sobre una foto general; `medidas`
+conserva ADEMAS su camino propio del metro fotografiado, regla dura #5,
+que TAMPOCO es la sintesis) y `composicion`/`material` (ELIMINADO de la
+ficha entera, Diego 2026-07-17: solo aplicaba a ropa y no aportaba valor a
+su flujo) quedan ESTRUCTURALMENTE fuera de la sintesis -- no estan en su
+`json_schema` (`_CAMPOS_SINTESIS`), no hay ningun camino en este archivo
+por el que la sintesis pueda tocarlos.
 
 La ley de procedencia (`truth-loop.md` SS A) sigue intacta: `visible_en_foto`
 decide `fuente` -- "foto" SOLO si hay un candidato REAL que lo respalde
@@ -290,6 +339,7 @@ from __future__ import annotations
 import difflib
 import logging
 import re
+import unicodedata
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Literal, Mapping, Sequence
@@ -402,6 +452,56 @@ _LONGITUDES_EAN_VALIDAS: frozenset[int] = frozenset({8, 12, 13, 14})
 # dispararse en escenas patologicamente ruidosas.
 MAX_LLAMADAS_VLM_POR_PRODUCTO: int = 20
 
+# MARCADORES DE NOTA -- decision de Diego (2026-07-17), medida sobre sus 3
+# fotos reales del masajeador (una nota manuscrita real, el nombre IMPRESO
+# del producto en la caja, y un numero de lote manuscrito): el pipeline NO
+# PUEDE juzgar si un texto "es" un desperfecto o una medida sin alucinar
+# (la version anterior publico el nombre del producto y un numero de lote
+# como si fueran desperfectos). Diego escribe la palabra clave EL MISMO;
+# el pipeline solo busca el marcador -- ver `_agregar_campo_desde_marcador`
+# y la regla dura #6 del docstring del modulo.
+MARCADOR_DESPERFECTOS = "DESPERFECTOS"
+# `MARCADOR_MEDIDAS` EXISTIO y se QUITO (Diego, 2026-07-17, 2a ronda de
+# listing-audit): "MEDIDA:" (singular) seguia colisionando a distancia 1
+# y una caja imprimiendo SUS PROPIAS dimensiones de embalaje bajo
+# "Medidas:" no se podia distinguir de forma fiable de la nota de Diego
+# -- no hay senal estructural (mismo limite de `truth-loop.md` SS E). Por
+# la regla anti-loop (`decision-making.md` SS6: 2 rondas del MISMO campo
+# sin converger -> replantear, no un 3er parche), `medidas` volvio a salir
+# UNICAMENTE del metro fotografiado (`_evaluar_medidas`, regla dura #5) --
+# ver la regla dura #6 del docstring del modulo. El marcador se queda
+# SOLO para `desperfectos`, que audito limpio en las dos rondas.
+_MARCADORES_NOTA: dict[str, str] = {
+    "desperfectos": MARCADOR_DESPERFECTOS,
+}
+
+# `[listing-audit] BLOQUEANTE, 2026-07-17` (reproducido ejecutando, no de
+# oidas): "un falso positivo es PRACTICAMENTE IMPOSIBLE" (el comentario
+# que estaba aqui) era FALSO -- un umbral GLOBAL de 3, calibrado a ojo,
+# dejaba entrar "acabados PERFECTOS" como si fuera el marcador.
+#
+# MEDIDO contra una lista de palabras REALES de packaging espanol
+# (`tests/test_extract.py::TestUmbralMarcadorMedidoContraPalabrasReales`,
+# el test que importa):
+#   DESPERFECTOS (12) vs PERFECTOS=3 IMPERFECTOS=3 DEFECTOS=4
+# Ruido de OCR real que SI debe seguir cazandose (nunca hay que perderlo):
+#   DESPERFECTOS vs DESPERFECT0S=1 DESPERFECTQS=1 DESPERFECT05=2
+#
+# DESPERFECTOS=2 excluye PERFECTOS/IMPERFECTOS/DEFECTOS (3+) y sigue
+# cazando su ruido real (<=2).
+_UMBRALES_DISTANCIA_MARCADOR: dict[str, int] = {
+    MARCADOR_DESPERFECTOS: 2,
+}
+
+# Separadores que el listing-audit exige PEGADOS justo despues del token
+# del marcador (FIX 2): el marcador de Diego SIEMPRE lleva ":" (o "-")
+# inmediatamente detras ("DESPERFECTOS:") -- una palabra suelta de
+# packaging real casi nunca lleva ese separador PEGADO (sin espacio de
+# por medio). Exigirlo es lo que MAS compra: elimina la inmensa mayoria
+# de colisiones fuzzy sin apretar el umbral hasta perder el ruido real de
+# OCR.
+_SEPARADORES_MARCADOR = ":-"
+
 _EAN_OCR_RE = re.compile(r"EAN\w*\W*\*?(\d{8,14})\*?", re.IGNORECASE)
 _MODELO_OCR_RE = re.compile(r"\bmodel\w*\s*[:\-]?\s*([A-Za-z0-9][A-Za-z0-9\-]{2,20})\b", re.IGNORECASE)
 
@@ -448,7 +548,10 @@ NOMBRE_CARPETA_CROPS = "crops"
 Ubicacion = Literal[
     "etiqueta_interior",  # etiqueta de cuello/costura interior -- fuente de marca/talla/modelo validos
     "estampado_o_grafico",  # texto grande impreso/bordado en el frontal/espalda -- NUNCA marca
-    "papel_manuscrito",  # nota escrita a mano por Diego -- va a desperfectos, fuente=foto
+    "papel_manuscrito",  # nota escrita a mano por Diego -- NO es la senal que decide
+    # `desperfectos` (esa clasificacion demostro no ser fiable, ver regla dura #6 del
+    # docstring del modulo): busca el marcador "DESPERFECTOS:" en CUALQUIER ubicacion,
+    # no solo esta. `medidas` NO usa este mecanismo -- sale solo del metro fotografiado.
     "codigo_o_modelo_impreso",  # texto plano impreso (caja, EAN, modelo) -- no es etiqueta de prenda
     "otro",
 ]
@@ -1391,20 +1494,32 @@ ESQUEMA_MEDIDA_METRO: dict = {
 # EAN y desperfectos quedan fuera a proposito -- no estan en este esquema.
 # ============================================================================
 
-# Los 5 campos de identidad/atributo de TEXTO LIBRE que la sintesis puede
+# Los 4 campos de identidad/atributo de TEXTO LIBRE que la sintesis puede
 # rellenar (valor/visible_en_foto/de_texto_detectado/confianza). "estado"
 # y "categoria" NO estan aqui -- son ENUM CERRADO, con su PROPIO esquema
 # (`_esquema_estado_sintesis`/enum de `CATEGORIAS`), nunca texto libre.
 # "material" (-> "composicion") ELIMINADO de este esquema (Diego,
-# 2026-07-17): solo aplicaba a ropa y no aportaba valor a su flujo. Un
-# campo menos que pedir al modelo, pero el numero de LLAMADAS no cambia
-# (sigue siendo UNA sintesis) -- `LLMEngine.estimar_coste_lote` usa un
-# coste FIJO por imagen/llamada, no por tamano del json_schema, asi que
-# el coste ESTIMADO que ve Diego antes de gastar no varia; lo que baja es
-# el coste REAL (prompt mas corto, un objeto menos en la respuesta JSON),
-# demasiado pequeno para verse en la cifra redondeada que muestra la UI.
+# 2026-07-17): solo aplicaba a ropa y no aportaba valor a su flujo.
+# "medidas" TAMBIEN SALIO de aqui (Diego, 2026-07-17, regla dura #6): la
+# version anterior le pedia al modelo su "mejor estimacion" de una medida
+# mirando la foto GENERAL -- el mismo patron de "mejor intento" que
+# produjo el bug de `desperfectos` (ver docstring del modulo): para un
+# campo que NUNCA se puede verificar sin un metro, un "mejor intento" no
+# es un intento, es ruido. `medidas` ahora sale UNICAMENTE del metro
+# fotografiado con las 2 condiciones duras (regla 5, `_evaluar_medidas`)
+# -- probo un camino por marcador ("MEDIDAS:") y se QUITO (2a ronda de
+# listing-audit, `decision-making.md` SS6: 2 rondas del mismo campo sin
+# converger -> replantear, no parchear una 3a vez): no hay senal
+# estructural que distinga la nota de Diego de la etiqueta de dimensiones
+# de una caja. Un campo menos que pedir al modelo, pero el numero
+# de LLAMADAS no cambia (sigue siendo UNA sintesis) -- `LLMEngine.
+# estimar_coste_lote` usa un coste FIJO por imagen/llamada, no por tamano
+# del json_schema, asi que el coste ESTIMADO que ve Diego antes de gastar
+# no varia; lo que baja es el coste REAL (prompt mas corto, un objeto
+# menos en la respuesta JSON), demasiado pequeno para verse en la cifra
+# redondeada que muestra la UI.
 _CAMPOS_SINTESIS: tuple[str, ...] = (
-    "marca", "modelo", "talla", "color", "medidas"
+    "marca", "modelo", "talla", "color"
 )
 
 PROMPT_SINTESIS_FICHA = """Estas viendo UN producto de segunda mano (varias fotos
@@ -1425,8 +1540,8 @@ usas, cita el texto EXACTO):
 
 {texto_candidatos}
 
-Para cada uno de estos 5 campos -- marca, modelo, talla, color,
-medidas -- responde un objeto con:
+Para cada uno de estos 4 campos -- marca, modelo, talla, color --
+responde un objeto con:
   - valor: tu mejor estimacion en texto corto, o null SOLO si no tienes
     ninguna base razonable ni siquiera para inferir (esto debe ser RARO:
     se prefiere un valor con confianza=baja a un null, porque Diego lo
@@ -1450,11 +1565,10 @@ medidas -- responde un objeto con:
 NUNCA propongas un valor que CONTRADIGA algo visible (si un texto
 detectado dice claramente "Nike", no propongas "Adidas").
 
-UN campo con reglas ESPECIALES (no des una frase libre en el):
-  - medidas: SOLO una dimension real en cm que puedas ver medida con un
-    metro/regla en la foto (p.ej. "largo 70 cm"). Si no hay ninguna medida
-    tomada a la vista, pon null -- NO metas aqui una descripcion del
-    producto ni una medida inventada.
+NO propongas ninguna medida (largo/ancho/etc.) -- ese campo NO forma parte
+de esta lista: "medidas" solo sale de una foto de un metro con el 0 y el
+borde de la prenda visibles, o de una nota escrita por el vendedor, nunca
+de tu estimacion sobre una foto general.
 
 Ademas, clasifica el TIPO de producto (decide que campos estructurados le
 va a pedir la plataforma -- Moda pide talla, Electronica pide capacidad,
@@ -1926,45 +2040,187 @@ def _filtrar_ean_checksum_valido(lecturas: Sequence[LecturaCrop]) -> list[Lectur
     return resultado
 
 
-def _agregar_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> _GrupoCampo:
-    """Regla dura #6: un papel manuscrito en el grupo es una NOTA que Diego
-    puso junto al producto -- pero el texto SI esta en el pixel (es una
-    transcripcion, no algo que Diego tecleara en la app), asi que
-    `fuente="foto"` con su `evidencia`.
+def _distancia_edicion(a: str, b: str) -> int:
+    """Levenshtein simple, sin dependencia externa (los marcadores son
+    palabras cortas, O(n*m) sobra). Usada UNICAMENTE para el MATCH DEL
+    MARCADOR (`_extraer_valor_tras_marcador`) contra una CONSTANTE
+    CONOCIDA Y LARGA (`MARCADOR_DESPERFECTOS`) -- nunca para comparar dos
+    lecturas RUIDOSAS entre si (esa via, la "corroboracion" OCR<->VLM,
+    murio como fuente de confianza hace tiempo, `[INC-012]`: alli el
+    fuzzy fallaba porque los dos lados eran ruidosos; aqui un lado es una
+    constante fija)."""
+    if a == b:
+        return 0
+    if not a:
+        return len(b)
+    if not b:
+        return len(a)
+    fila_anterior = list(range(len(b) + 1))
+    for i, ca in enumerate(a, start=1):
+        fila_actual = [i] + [0] * len(b)
+        for j, cb in enumerate(b, start=1):
+            coste = 0 if ca == cb else 1
+            fila_actual[j] = min(
+                fila_anterior[j] + 1,  # borrar de a
+                fila_actual[j - 1] + 1,  # insertar en a
+                fila_anterior[j - 1] + coste,  # sustituir
+            )
+        fila_anterior = fila_actual
+    return fila_anterior[-1]
 
-    Confianza: SIEMPRE "media", incluso si la MISMA nota aparece en varias
-    fotos distintas -- la via "multi-foto -> alta" murio con el resto de
-    la maquinaria de corroboracion (ver docstring del modulo, ley 1: nada
-    que no sea EAN con checksum llega a "alta"). Varias notas DISTINTAS se
-    concatenan (defectos reales pueden coexistir), no compiten como
-    conflicto."""
-    candidatas = [
-        lectura
-        for lectura in lecturas
-        if lectura.pertenece_al_producto
-        and lectura.ubicacion == "papel_manuscrito"
-        and lectura.legible
-        and lectura.texto
-    ]
-    if not candidatas:
+
+_PATRON_TOKEN_MARCADOR = re.compile(r"[^\s:;,]+")
+
+
+def _normalizar_token_marcador(token: str) -> str:
+    """Mayusculas, sin acentos, sin puntuacion de borde -- SOLO para
+    comparar un token del OCR/VLM contra la constante del marcador. Nunca
+    se aplica al VALOR que va detras del marcador: ese se transcribe
+    verbatim, ruido de OCR incluido."""
+    sin_acentos = unicodedata.normalize("NFKD", token).encode("ascii", "ignore").decode("ascii")
+    return sin_acentos.upper().strip(".,;:-")
+
+
+def _localizar_marcador(texto: str, marcador: str) -> tuple[int, int] | None:
+    """Busca la PRIMERA aparicion VALIDA de `marcador` como TOKEN dentro
+    de `texto`. `[listing-audit] BLOQUEANTE, 2026-07-17` (FIX 1+2): valida
+    solo si se cumplen LAS DOS condiciones a la vez --
+      (a) distancia de edicion <= el umbral DE ESE MARCADOR
+          (`_UMBRALES_DISTANCIA_MARCADOR`, medido por palabra, no global);
+      (b) el separador (":"/"-", `_SEPARADORES_MARCADOR`) esta PEGADO
+          justo despues del token -- SIN espacio de por medio. Una
+          palabra suelta de packaging real ("MEDIAS", "MEDICAL") casi
+          nunca lleva ese separador pegado; exigirlo es lo que MAS
+          colisiones elimina (ver el docstring de la regla dura #6).
+
+    Devuelve `(inicio_del_token, fin_del_separador)` -- el segundo valor
+    es el indice justo DESPUES del separador, listo para recortar el
+    valor. `None` si no hay ninguna aparicion valida."""
+    umbral = _UMBRALES_DISTANCIA_MARCADOR[marcador]
+    for coincidencia in _PATRON_TOKEN_MARCADOR.finditer(texto):
+        inicio, fin_token = coincidencia.span()
+        if fin_token >= len(texto) or texto[fin_token] not in _SEPARADORES_MARCADOR:
+            continue  # FIX 2: sin separador PEGADO, no es un marcador valido
+        token = _normalizar_token_marcador(coincidencia.group(0))
+        if token and _distancia_edicion(token, marcador) <= umbral:
+            return inicio, fin_token + 1
+    return None
+
+
+def _extraer_valor_tras_marcador(
+    texto: str, marcador: str, otros_marcadores: Sequence[str] = ()
+) -> str | None:
+    """Busca `marcador` (fuzzy Y con separador pegado, `_localizar_marcador`)
+    como TOKEN dentro de `texto`, y devuelve TODO lo que va detras --
+    recortado ANTES del siguiente marcador conocido (`otros_marcadores`,
+    misma regla del separador pegado -- por si el mismo recorte trae mas
+    de un marcador en una sola cadena, porque `_unir_regiones` junta
+    lineas cercanas de la misma foto con un espacio) o hasta el final del
+    texto si no hay otro. Hoy solo existe UN marcador (`MARCADOR_
+    DESPERFECTOS` -- `MARCADOR_MEDIDAS` se quito, ver el comentario junto
+    a `_MARCADORES_NOTA`), asi que `otros_marcadores` normalmente llega
+    vacio; la funcion queda generica por si algun dia vuelve a hacer
+    falta un segundo marcador.
+
+    `None` si el marcador no aparece (con separador valido), o si no
+    queda nada legible detras (una nota "DESPERFECTOS:" vacia no es un
+    desperfecto).
+
+    El VALOR se transcribe VERBATIM -- nunca se corrige el ruido de OCR
+    ("CKENAUERA ROTA" se queda tal cual; Diego lo corrige en la UI, es una
+    transcripcion de un pixel real, no un dato tecleado)."""
+    ubicacion = _localizar_marcador(texto, marcador)
+    if ubicacion is None:
+        return None
+    _, fin_separador = ubicacion
+
+    resto = texto[fin_separador:].lstrip(" \t")
+
+    fin_valor = len(resto)
+    for otro in otros_marcadores:
+        otra_ubicacion = _localizar_marcador(resto, otro)
+        if otra_ubicacion is not None:
+            inicio_otro, _ = otra_ubicacion
+            fin_valor = min(fin_valor, inicio_otro)
+
+    valor = resto[:fin_valor].strip(" \t")
+    return valor or None
+
+
+def _agregar_campo_desde_marcador(lecturas: Sequence[LecturaCrop], campo: str) -> _GrupoCampo:
+    """`desperfectos` (regla dura #6, decision de Diego, 2026-07-17): el
+    pipeline YA NO JUZGA si un texto es un desperfecto -- eso fallo,
+    medido sobre 3 fotos reales (el nombre IMPRESO del producto en su
+    caja y un numero de lote manuscrito se publicaron como desperfectos
+    porque el pipeline intentaba DECIDIR que contaba como nota de
+    defecto). Ahora busca la PALABRA CLAVE que Diego escribe en su nota
+    ("DESPERFECTOS:") en CUALQUIER lectura legible del producto que
+    `pertenece_al_producto` (regla dura #7) -- SIN filtrar por
+    `ubicacion` (esa senal ya demostro no ser fiable).
+
+    Nota: esta funcion recibe `campo` de forma generica (hoy solo se
+    llama con `"desperfectos"` -- `"medidas"` SE QUITO, ver el comentario
+    junto a `_MARCADORES_NOTA`) por si algun dia hace falta un segundo
+    marcador; no hay ninguna logica especifica de un campo aqui.
+
+    `[listing-audit] BLOQUEANTE, 2026-07-17` (FIX 7, `[INC-011]` en otro
+    disfraz): la version anterior CONCATENABA todas las lecturas que
+    traian el marcador en un unico `valor` ("nota A; nota B"), pero la
+    `evidencia`/`recorte` que se ensenaba era SIEMPRE de la PRIMERA -- si
+    la segunda nota venia de OTRA foto/recorte, ese texto viajaba como
+    `fuente="foto"` SIN que el pixel que lo prueba estuviera a la vista.
+    Es exactamente el fallo de `[INC-011]` (la FICHA FRANKENSTEIN): un
+    valor con evidencia real pero de la parte EQUIVOCADA. Ahora SOLO la
+    PRIMERA lectura con marcador valido se publica como `campo.valor` (con
+    SU recorte); cualquier OTRA se guarda en `alternativas` -- el MISMO
+    mecanismo que ya usa `_agregar_campo_texto` para marca/talla en
+    conflicto, cada una con su PROPIO recorte via `_propuesta_desde_grupo`.
+    Diego decide si la segunda nota tambien aplica; el pipeline nunca la
+    funde con la primera en silencio."""
+    marcador = _MARCADORES_NOTA[campo]
+    otros_marcadores = [valor for nombre, valor in _MARCADORES_NOTA.items() if nombre != campo]
+
+    coincidencias: list[LecturaCrop] = []
+    for lectura in lecturas:
+        if not (lectura.pertenece_al_producto and lectura.legible and lectura.texto):
+            continue
+        valor = _extraer_valor_tras_marcador(lectura.texto, marcador, otros_marcadores)
+        if valor is None:
+            continue
+        coincidencias.append(replace(lectura, texto=valor))  # `texto` pasa a ser el VALOR ya recortado
+
+    if not coincidencias:
         return _GrupoCampo(
             campo=Campo(valor=None, fuente="inferido", confianza="baja"),
             representante=None, alternativas=(),
-            motivo="sin papel manuscrito en el grupo",
+            motivo=(
+                f"no se encontro ninguna nota con '{marcador}:' -- escribelo en el papel "
+                "junto al producto o teclealo aqui"
+            ),
         )
 
-    notas_unicas = list(dict.fromkeys(lectura.texto for lectura in candidatas))  # dedup preservando orden
-    valor = "; ".join(notas_unicas)
-    primera = candidatas[0]
-    campo = Campo(
-        valor=valor, fuente="foto", confianza="media",
+    primera, *resto = coincidencias
+    campo_obj = Campo(
+        valor=primera.texto, fuente="foto", confianza="media",
         evidencia=Evidencia(fichero=primera.fichero, bbox=primera.bbox),
     )
     motivo = (
-        "nota manuscrita transcrita de una foto -- es la transcripcion de un "
-        "pixel real, no un dato tecleado; confirmala siempre"
+        f"transcrito tras el marcador '{marcador}:' de tu nota -- es la "
+        "transcripcion de un pixel real, no un dato tecleado; confirmalo"
     )
-    return _GrupoCampo(campo=campo, representante=primera, alternativas=(), motivo=motivo)
+    if resto:
+        motivo += (
+            f" (se encontraron {len(resto)} nota(s) mas con el mismo marcador -- "
+            "revisalas en alternativas, el pipeline no las fusiona a ciegas)"
+        )
+    return _GrupoCampo(campo=campo_obj, representante=primera, alternativas=tuple(resto), motivo=motivo)
+
+
+def _agregar_campo_desperfectos(lecturas: Sequence[LecturaCrop]) -> _GrupoCampo:
+    """Nombre conservado (`extraer_producto` y los tests lo referencian
+    asi) sobre `_agregar_campo_desde_marcador` -- ver esa funcion y la
+    regla dura #6 del docstring del modulo."""
+    return _agregar_campo_desde_marcador(lecturas, "desperfectos")
 
 
 # `_campo_composicion()` ELIMINADA (Diego, 2026-07-17): el campo
@@ -2153,12 +2409,17 @@ def _construir_campo_estado_desde_sintesis(decision: dict[str, Any]) -> Campo | 
 # fuera A PROPOSITO -- no estan en `_CAMPOS_SINTESIS`. "estado" TAMBIEN
 # queda fuera -- ya no es gap-filler generico, tiene su PROPIO camino
 # (`_construir_campo_estado_desde_sintesis`, mismo patron que "categoria").
+# "medidas" SALIO de aqui el 2026-07-17 (regla dura #6, decision de Diego):
+# ya no es "mejor intento" de la sintesis -- sale UNICAMENTE del metro
+# fotografiado (regla 5, `_evaluar_medidas`, aplicado directamente en
+# `extraer_producto`). Probo tambien un camino por marcador ("MEDIDAS:")
+# y se QUITO en la 2a ronda de listing-audit (ver el comentario junto a
+# `_MARCADORES_NOTA`).
 _CAMPOS_SINTESIS_GAP: dict[str, tuple[str, frozenset[str] | None]] = {
     "marca": ("marca", _UBICACIONES_VALIDAS_MARCA),
     "modelo": ("modelo", _UBICACIONES_VALIDAS_MODELO),
     "talla": ("talla", _UBICACIONES_VALIDAS_TALLA),
     "color": ("color", None),  # sin restriccion de ubicacion -- el color no viene de un texto
-    "medidas": ("medidas", None),
 }
 
 
@@ -2563,15 +2824,16 @@ class ExtractorEngine:
         `propuestas` EN SITIO (mismo patron que el resto del pipeline, que
         ya construyo esos dicts antes de llamar aqui).
 
-        GAP-FILLER: para marca/modelo/talla/color/estado/medidas, solo
-        sobreescribe si `campos[nombre].valor` YA es `None` -- una lectura
-        de una etiqueta a resolucion NATIVA (o un histograma de pixeles)
-        es mas fiable que una opinion sobre la foto general, asi que nunca
-        se pisa un valor solido. `ean`, `desperfectos` y "composicion"
-        (ELIMINADA de la ficha, Diego 2026-07-17) quedan fuera a proposito
-        -- no estan en `_CAMPOS_SINTESIS_GAP`. `titulo`/`descripcion` SON campos nuevos
-        (no habia nada previo que preservar): se toman de la sintesis
-        siempre, sin gap-filler.
+        GAP-FILLER: para marca/modelo/talla/color, solo sobreescribe si
+        `campos[nombre].valor` YA es `None` -- una lectura de una etiqueta
+        a resolucion NATIVA (o un histograma de pixeles) es mas fiable que
+        una opinion sobre la foto general, asi que nunca se pisa un valor
+        solido. `ean`, `desperfectos`, `medidas` (2026-07-17, regla dura
+        #6: solo marcador o metro, NUNCA el "mejor intento" de esta
+        llamada) y "composicion" (ELIMINADA de la ficha, Diego 2026-07-17)
+        quedan fuera a proposito -- no estan en `_CAMPOS_SINTESIS_GAP`.
+        `titulo`/`descripcion` SON campos nuevos (no habia nada previo que
+        preservar): se toman de la sintesis siempre, sin gap-filler.
 
         Fallo tecnico (rate limit, sin API key, JSON invalido): se loguea +
         se anota en `fallos` (nunca fallback silencioso) y NINGUN campo
@@ -2808,6 +3070,19 @@ class ExtractorEngine:
             grupo_desperfectos, "desperfectos", rutas_por_nombre, carpeta_crops_efectiva, fallos
         )
 
+        # `medidas` (regla dura #6): sale UNICAMENTE del metro fotografiado
+        # con las 2 condiciones duras (0 Y borde visibles) -- ver
+        # `_evaluar_medidas`. `medidas` tambien tuvo un camino por marcador
+        # ("MEDIDAS:") durante el 2026-07-17, QUITADO en la 2a ronda de
+        # listing-audit: "MEDIDA:" (singular) seguia colisionando a
+        # distancia 1, y una caja imprimiendo SUS PROPIAS dimensiones de
+        # embalaje bajo "Medidas:" no se podia distinguir de forma fiable
+        # de la nota de Diego -- no hay senal estructural (mismo limite de
+        # `truth-loop.md` SS E). Decision de Diego: volver al metro, sin
+        # mas parches (`decision-making.md` SS6, 2 rondas del MISMO campo
+        # sin converger -> replantear). El marcador se queda SOLO para
+        # `desperfectos` (ver `grupo_desperfectos` arriba), que audito
+        # limpio en las dos rondas.
         campo_medidas, propuesta_medidas, fallos_medidas = self._evaluar_medidas(producto_id)
         # El color excluye el bbox de un estampado ya localizado en la MISMA
         # foto (si lo hay) -- pasa las lecturas VLM, no llama al VLM.
@@ -3114,7 +3389,7 @@ _NOMBRE_CAMPO_LEGIBLE: dict[str, str] = {
     "color": "color",
     "estado": "estado de conservacion",
     "medidas": "medidas",
-    "desperfectos": "DESPERFECTOS (nota manuscrita del vendedor)",
+    "desperfectos": "DESPERFECTOS (nota del vendedor)",
 }
 
 PROMPT_REDACCION_FICHA = """Vas a redactar el TITULO y la DESCRIPCION de venta
