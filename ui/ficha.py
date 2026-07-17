@@ -127,6 +127,54 @@ _ETIQUETA_OBLIGATORIO: dict[str, str] = {
     "descripcion": "descripción",
 }
 
+
+def _con_obligatorios(campos: dict) -> dict:
+    """`campos` + un hueco vacío por cada obligatorio que la extracción NO
+    produjo. Es el invariante que hace que el gate sea una defensa y no un
+    callejón sin salida.
+
+    Lo cazó Diego (2026-07-17) con una ficha real: su producto `eea6b292` se
+    extrajo ANTES de que existiera `categoria`, así que su dict de campos no
+    tiene esa clave. La pantalla sólo pintaba `[c for c in _ORDEN_CAMPOS if
+    c in campos]` y la siembra sólo iteraba `campos.items()` → la categoría
+    no se pintaba NI se sembraba, pero seguía siendo obligatoria → **la
+    ficha quedaba imposible de confirmar, sin ningún campo donde arreglarlo**.
+    Un gate que bloquea por un campo que no se puede rellenar no es una
+    defensa con dientes: es una puerta cerrada con la llave dentro.
+
+    La regla, y por eso vive aquí y no en un `if` del render: **todo campo
+    obligatorio se pinta SIEMPRE**, lo haya producido la extracción o no. Se
+    aplica en el render, en la siembra y en la confirmación (los tres parten
+    de aquí), así que no pueden divergir (`change-loop.md` §C3).
+
+    El hueco es `valor=None` + `fuente="inferido"` + `confianza="baja"`: NO
+    se inventa nada (`decision-making.md` §13) — es un campo vacío que Diego
+    rellena, que es exactamente lo que un obligatorio ausente ES.
+    """
+    completos = dict(campos)
+    for campo in _CAMPOS_OBLIGATORIOS:
+        if campo not in completos:
+            completos[campo] = {
+                "valor": None,
+                "fuente": "inferido",
+                "confianza": "baja",
+                "evidencia": None,
+                "propuesta": {
+                    "campo": campo,
+                    "valor": None,
+                    "recorte": None,
+                    "evidencia": None,
+                    "lecturas": [],
+                    "alternativas": [],
+                    "motivo": (
+                        "esta ficha se extrajo con una versión anterior de la app, "
+                        "que todavía no tenía este campo — rellénalo a mano, o "
+                        "re-extrae el producto para que lo proponga el modelo"
+                    ),
+                },
+            }
+    return completos
+
 _KEY_ERROR = "_ficha_error"
 
 
@@ -758,7 +806,10 @@ def _construir_confirmado(pid: str, serial: dict, *, modo_bloque: bool = False) 
     hay_aviso_coherencia = bool(serial.get("aviso_coherencia"))
 
     campos_confirmados: dict[str, Any] = {}
-    for campo, datos_campo in serial.get("campos", {}).items():
+    # Mismo invariante que el render (`_con_obligatorios`): si la extracción
+    # no produjo un obligatorio, aquí existe igual como hueco, así que el
+    # valor que Diego teclea en pantalla SE PERSISTE en vez de perderse.
+    for campo, datos_campo in _con_obligatorios(serial.get("campos", {})).items():
         if campo == "estado":
             elegido = _estado_actual_o_defecto(pid, datos_campo)
             valor = None if elegido == _OPCIONES_ESTADO[0] else elegido
@@ -1260,7 +1311,10 @@ def _render_producto(
         for fallo in datos.get("fallos", []):
             st.caption(f"· fallo técnico durante la extracción: {fallo}")
 
-        campos = datos.get("campos", {})
+        # `_con_obligatorios`: un obligatorio que la extracción no produjo
+        # (ficha de una versión anterior) DEBE pintarse igual, o el gate se
+        # vuelve un callejón sin salida. Ver su docstring.
+        campos = _con_obligatorios(datos.get("campos", {}))
         _sembrar_valores_iniciales(pid, campos)
         orden = [c for c in _ORDEN_CAMPOS if c in campos] + [
             c for c in campos if c not in _ORDEN_CAMPOS

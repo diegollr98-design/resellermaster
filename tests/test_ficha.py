@@ -696,15 +696,30 @@ def test_categoria_se_pinta_como_selectbox_y_preselecciona_el_mejor_intento(tmp_
     assert selebox.value == "electronica"
 
 
-def test_categoria_ausente_no_pinta_selectbox_ni_revienta(tmp_path):
-    """`_marca_leida_no_publicada` no incluye 'categoria' en `campos` (el
-    modelo violó el enum, o el test simplemente no la configuró) — la
-    pantalla no debe reventar, y no debe inventarse un selectbox para un
-    campo que no existe."""
+def test_categoria_ausente_SI_pinta_selectbox_porque_es_obligatoria(tmp_path):
+    """REESCRITO (2026-07-17). Antes se llamaba `test_categoria_ausente_no_
+    pinta_selectbox_ni_revienta` y asertaba lo CONTRARIO: "no debe inventarse
+    un selectbox para un campo que no existe". Sonaba prudente, pasaba en
+    verde, y **consagraba un callejón sin salida**: `categoria` es
+    OBLIGATORIA, así que no pintarla dejaba la ficha bloqueada para siempre
+    ("obligatorio, falta: categoría" y ningún sitio donde rellenarla). Lo
+    cazó Diego con su producto real `eea6b292`, extraído antes de que el
+    campo existiera.
+
+    Es `[INC-018]` otra vez: un test escrito por quien escribió el código
+    puede estar de acuerdo con él en el error. La distinción que faltaba:
+    para un campo OPCIONAL, no pintar lo ausente es correcto; para uno
+    OBLIGATORIO, es encerrar al usuario.
+
+    `_marca_leida_no_publicada` no incluye 'categoria' en `campos` (el modelo
+    violó el enum, o la ficha es de una versión anterior de la app)."""
     lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada)
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     assert not at.exception
-    assert not any(s.key == f"ficha_{pid}_categoria_categoria" for s in at.selectbox)
+    assert any(s.key == f"ficha_{pid}_categoria_categoria" for s in at.selectbox), (
+        "un obligatorio ausente TIENE que pintarse: si no, el gate que lo "
+        "exige no se puede satisfacer nunca"
+    )
 
 
 def test_categoria_confirmar_deja_fuente_diego(tmp_path):
@@ -726,6 +741,65 @@ def test_categoria_confirmar_deja_fuente_diego(tmp_path):
 # deshabilitado del lado del cliente NO es una defensa por sí solo --
 # comprobado ejecutando: `AppTest` SÍ puede pulsar un botón `disabled=True`).
 # ============================================================================
+def _ficha_de_version_vieja_sin_categoria(crops: Path) -> ResultadoExtraccion:
+    """La ficha REAL de Diego (`eea6b292`): extraída ANTES de que `categoria`
+    existiera, así que su dict de campos NO tiene esa clave."""
+    resultado = _ficha_completa(crops)
+    campos = {c: v for c, v in resultado.campos.items() if c != "categoria"}
+    propuestas = {c: v for c, v in resultado.propuestas.items() if c != "categoria"}
+    return ResultadoExtraccion(campos=campos, propuestas=propuestas)
+
+
+def test_obligatorio_que_la_extraccion_no_produjo_se_pinta_igual(tmp_path):
+    """EL CALLEJÓN SIN SALIDA que cazó Diego (2026-07-17) con su producto
+    `eea6b292`: se extrajo con una versión anterior de la app, sin
+    `categoria`. La pantalla sólo pintaba los campos PRESENTES en la
+    extracción → la categoría no se pintaba, pero seguía siendo obligatoria
+    → "obligatorio, falta: categoría" y NINGÚN sitio donde rellenarla. La
+    ficha quedaba imposible de confirmar para siempre.
+
+    Un gate que bloquea por un campo que no se puede rellenar no es una
+    defensa con dientes: es una puerta cerrada con la llave dentro."""
+    lote_id, pid = _preparar(tmp_path, _ficha_de_version_vieja_sin_categoria)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    # El selectbox EXISTE aunque la extracción no produjo el campo.
+    selector = next(
+        (s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria"), None
+    )
+    assert selector is not None, (
+        "la categoría es obligatoria y la extracción no la produjo: si no se "
+        "pinta, la ficha es IMPOSIBLE de confirmar (callejón sin salida)"
+    )
+    assert selector.value == "(sin elegir)"
+    assert at.button(key=f"confirmar_{pid}").proto.disabled is True
+
+
+def test_obligatorio_ausente_se_puede_rellenar_y_se_persiste(tmp_path):
+    """La otra mitad: no basta con PINTARLO -- lo que Diego teclee tiene que
+    llegar al store. Si `_construir_confirmado` iterase sólo los campos de la
+    extracción, el valor se pintaría y se perdería en silencio."""
+    lote_id, pid = _preparar(tmp_path, _ficha_de_version_vieja_sin_categoria)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+
+    next(
+        s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria"
+    ).set_value("electronica").run()
+    assert at.button(key=f"confirmar_{pid}").proto.disabled is False
+
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    store = LoteStore(data_dir=tmp_path)
+    producto = next(
+        p for p in store.cargar_lote(lote_id)["productos"] if p["id"] == pid
+    )
+    assert producto["campos"]["confirmada"] is True
+    assert producto["campos"]["campos"]["categoria"]["valor"] == "electronica"
+    assert producto["campos"]["campos"]["categoria"]["fuente"] == "diego"
+
+
 def test_categoria_sin_elegir_bloquea_confirmar(tmp_path):
     """DECISIÓN NUEVA DE DIEGO (revierte `test_categoria_sin_elegir_se_
     confirma_como_null`, que existía antes de que `categoria` fuera
