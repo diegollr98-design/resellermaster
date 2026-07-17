@@ -61,6 +61,7 @@ from core.extract import (
     _agregar_campo_texto,
     _campo_composicion,
     _color_dominante_rgb,
+    _construir_campo_categoria_desde_sintesis,
     _es_bloque_de_texto_largo,
     _es_repeticion_de_un_campo_ya_resuelto,
     _es_ristra_metro,
@@ -174,6 +175,7 @@ def _respuesta_sintesis(
     estado: dict | None = None,
     material: dict | None = None,
     medidas: dict | None = None,
+    categoria: str = "otros",
     titulo: str = "",
     descripcion: str = "",
 ) -> dict:
@@ -183,7 +185,12 @@ def _respuesta_sintesis(
     None, confianza="baja") -- asi `_MotorFake` puede usarlo como respuesta
     por defecto (la sintesis no opina -> gap-filler no pisa nada) y los
     tests de este archivo que NO les interesa la sintesis siguen viendo el
-    comportamiento de la agregacion vieja intacto."""
+    comportamiento de la agregacion vieja intacto.
+
+    `categoria` default "otros" (valido, dentro del enum) -- para los
+    tests que no les interesa este campo, la sintesis "opina" pero con un
+    valor SIEMPRE aceptable, y no revientan la clave requerida por
+    `_parsear_respuesta_sintesis`."""
 
     def _campo(override: dict | None) -> dict:
         base = {"valor": None, "visible_en_foto": False, "de_texto_detectado": None, "confianza": "baja"}
@@ -199,6 +206,7 @@ def _respuesta_sintesis(
         "estado": _campo(estado),
         "material": _campo(material),
         "medidas": _campo(medidas),
+        "categoria": categoria,
         "titulo": titulo,
         "descripcion": descripcion,
     }
@@ -1875,6 +1883,89 @@ class TestSintesisComprometida:
         assert len(imagenes_sintesis) == 1  # una sola foto en este producto
         assert imagenes_sintesis[0].fichero == foto.name
         assert isinstance(prompt_sintesis, str) and len(prompt_sintesis) > 0
+
+
+# ============================================================================
+# `categoria` (Fase 3, 2026-07-17): ENUM CERRADO, SIEMPRE fuente="inferido"
+# -- NUNCA "foto" (una categoria no es texto legible en un pixel). Misma
+# llamada de sintesis, 0 llamadas extra. Regla dura: fuera del enum ->
+# la clave "categoria" NO se anade a `campos` (nunca "otros" como comodin
+# silencioso, decision-making.md SS13).
+# ============================================================================
+
+
+class TestSintesisCategoria:
+    def test_categoria_valida_se_publica_inferido_baja(self, tmp_path, monkeypatch):
+        foto = _foto_sintetica(tmp_path / "IMG_cat.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(categoria="moda")
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["categoria"].valor == "moda"
+        assert resultado.campos["categoria"].fuente == "inferido"
+        assert resultado.campos["categoria"].confianza == "baja"
+        assert resultado.campos["categoria"].evidencia is None
+        assert resultado.propuestas["categoria"].motivo == "clasificacion del modelo, confirmala"
+        assert resultado.propuestas["categoria"].recorte is None
+
+    def test_categoria_fuera_del_enum_no_se_anade_a_campos(self, tmp_path, monkeypatch):
+        """Ninguna categoria plausible-pero-inventada ("vehiculos", que ni
+        siquiera existe en `CATEGORIAS`) puede colarse como si fuera un
+        dato real -- la clave se queda AUSENTE, y el fallo TECNICO queda
+        anotado (nunca se disfraza de "no legible")."""
+        foto = _foto_sintetica(tmp_path / "IMG_cat_mal.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(categoria="vehiculos")
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "categoria" not in resultado.campos
+        assert "categoria" not in resultado.propuestas
+        assert any("categoria" in f for f in resultado.fallos)
+
+    def test_categoria_fuera_del_enum_no_toca_otros_campos(self, tmp_path, monkeypatch):
+        """Un `categoria` invalido NO puede abortar el resto de la
+        sintesis (marca/talla/titulo/descripcion siguen publicandose):
+        eso seria justo el fallo que exige NO validar el enum dentro de
+        `_parsear_respuesta_sintesis` (ver su docstring)."""
+        foto = _foto_sintetica(tmp_path / "IMG_cat_mal2.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            categoria="no_es_una_categoria_real",
+            titulo="Titulo de prueba",
+            descripcion="Descripcion de prueba",
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "categoria" not in resultado.campos
+        assert resultado.campos["titulo"].valor == "Titulo de prueba"
+        assert resultado.campos["descripcion"].valor == "Descripcion de prueba"
+
+
+class TestConstruirCampoCategoriaDesdeSintesis:
+    """Unidad directa de `_construir_campo_categoria_desde_sintesis` --
+    sin pasar por una llamada VLM ni por `extraer_producto`."""
+
+    @pytest.mark.parametrize("valor", ["moda", "electronica", "hogar", "libros", "otros"])
+    def test_las_cinco_categorias_validas_construyen_campo_inferido_baja(self, valor):
+        campo = _construir_campo_categoria_desde_sintesis(valor)
+        assert campo is not None
+        assert campo.valor == valor
+        assert campo.fuente == "inferido"
+        assert campo.confianza == "baja"
+        assert campo.evidencia is None
+
+    @pytest.mark.parametrize("valor", [None, "", "Moda", "ropa", "vehiculos", 42, ["moda"]])
+    def test_valores_invalidos_devuelven_none_nunca_un_campo_inventado(self, valor):
+        assert _construir_campo_categoria_desde_sintesis(valor) is None
 
 
 def test_sintesis_fuente_foto_exige_que_el_valor_este_en_el_pixel():

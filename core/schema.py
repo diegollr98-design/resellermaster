@@ -223,6 +223,58 @@ _WALLAPOP_RESTO: dict[EstadoCanonico, str] = {
 }
 
 
+# --- Parseo: lo que Diego ELIGE en la UI -> el enum canonico ----------------
+# `ui/ficha.py::_OPCIONES_ESTADO` ofrece los seis literales de abajo (mas
+# "(sin elegir)"). NO son `EstadoCanonico` ni son literales de Wallapop: son
+# los nombres de Vinted, que es la escala que Diego tiene en la cabeza. El
+# puente entre lo que el elige y el enum interno es esta tabla, y es un
+# diccionario a proposito: un `getattr`/normalizacion por texto adivinaria
+# ante un valor desconocido, y aqui adivinar es exactamente el fallo.
+#
+# Dos ausencias deliberadas:
+# - `PRECINTADO` no es alcanzable desde la UI: distinguir "sin abrir" de
+#   "nuevo" por una foto no es fiable (mismo motivo que _WALLAPOP_MODA).
+# - "Para reparar" es el literal de la UI; el de Vinted es "Necesita
+#   reparación" (product.md) y lo produce `mapear_estado_vinted`. No
+#   "corregir" esta asimetria: son dos vocabularios distintos y este es el
+#   punto donde se traducen.
+
+ESTADO_UI_A_CANONICO: dict[str, EstadoCanonico] = {
+    "Nuevo": EstadoCanonico.NUEVO,
+    "Como nuevo": EstadoCanonico.COMO_NUEVO,
+    "Muy bueno": EstadoCanonico.MUY_BUENO,
+    "Bueno": EstadoCanonico.BUENO,
+    "Satisfactorio": EstadoCanonico.ACEPTABLE,
+    "Para reparar": EstadoCanonico.PARA_REPARAR,
+}
+
+
+def parsear_estado(valor: str | None) -> EstadoCanonico | None:
+    """Lo que Diego eligio en la UI -> `EstadoCanonico`, o `None`.
+
+    Devuelve `None` para `None`, `"(sin elegir)"`, cadena vacia o
+    cualquier valor no reconocido — **nunca adivina un nivel**. Un
+    estado ausente le cuesta a Diego elegirlo en la plataforma (2 s);
+    un estado adivinado es la causa numero uno de devoluciones y puede
+    hacer que Vinted OCULTE el anuncio (product.md, help/50). Quien
+    llama decide que hacer con el `None`; lo que no puede es recibir un
+    nivel inventado.
+    """
+
+    if valor is None:
+        return None
+    return ESTADO_UI_A_CANONICO.get(valor.strip())
+
+
+CATEGORIAS: tuple[CategoriaTipo, ...] = ("moda", "electronica", "hogar", "libros", "otros")
+
+
+def es_categoria_valida(valor: object) -> bool:
+    """`True` solo si `valor` es uno de los `CategoriaTipo` conocidos."""
+
+    return isinstance(valor, str) and valor in CATEGORIAS
+
+
 def mapear_estado_wallapop(estado: EstadoCanonico, categoria: CategoriaTipo) -> str:
     """Estado canonico -> literal EXACTO de Wallapop para esa categoria.
 
@@ -264,6 +316,86 @@ def mapear_estado_vinted(estado: EstadoCanonico, categoria: CategoriaTipo) -> st
     if categoria == "electronica" and estado == EstadoCanonico.PARA_REPARAR:
         return "Necesita reparación"
     return _VINTED_GENERAL[estado]
+
+
+# --- Fidelidad del mapeo: ¿el literal comunica un nivel MEJOR que el real? --
+# `[listing-audit] BLOQUEANTE, 2026-07-17`: una sudadera ROTA (PARA_REPARAR)
+# se publicaba en Wallapop/moda y en Vinted (fuera de electronica) con el
+# MISMO literal que un producto simplemente "usado pero aceptable" -- y
+# `core/export.py` lo marcaba `traducido=True` ("no re-decidas"), la
+# insignia de MAS confianza justo en el output MAS peligroso. Quinta vez que
+# la confianza sale anti-correlacionada con el riesgo en este repo
+# (`[INC-005]/[INC-009]/[INC-010]`, `decision-making.md` SS16).
+#
+# La regla NO es ordinal a secas (un peldano de diferencia SIEMPRE seria
+# "peor" en terminos estrictos: "Nuevo" tambien cubre PRECINTADO Y NUEVO;
+# "Buen estado" tambien cubre MUY_BUENO Y BUENO -- y esos son ambiguedades
+# de VOCABULARIO de la plataforma, no mentiras: todos los niveles que
+# comparten esos literales son FUNCIONALES, un comprador no sale perdiendo
+# nada que le importe). La regla que SI importa es funcional: `PARA_REPARAR`
+# es el UNICO nivel de `EstadoCanonico` que documenta "no funciona
+# correctamente" (ver su propio docstring). Un mapeo es peligroso
+# exactamente cuando ese nivel comparte literal con un nivel que SI
+# funciona -- ese es el eje que le importa a un comprador y el que genera
+# devoluciones garantizadas.
+#
+# Generico y no caso-a-caso a proposito: si algun dia se anade OTRO nivel
+# no funcional a `EstadoCanonico`, basta con anadirlo a este frozenset --
+# `fidelidad_estado()` lo detecta solo en CUALQUIER tabla/categoria/
+# plataforma nueva, sin que nadie tenga que acordarse de este incidente.
+_ES_NO_FUNCIONAL: frozenset[EstadoCanonico] = frozenset({EstadoCanonico.PARA_REPARAR})
+
+
+def _tabla_efectiva(categoria: CategoriaTipo, plataforma: Plataforma) -> dict[EstadoCanonico, str]:
+    """Literal EXACTO de `plataforma`/`categoria` para CADA `EstadoCanonico`,
+    construido llamando a los mapeos REALES (`mapear_estado_vinted`/
+    `mapear_estado_wallapop`) -- nunca se re-implementa la tabla aparte, así
+    que no puede divergir de lo que de verdad se publica."""
+    if plataforma == "vinted":
+        return {estado: mapear_estado_vinted(estado, categoria) for estado in EstadoCanonico}
+    if plataforma == "wallapop":
+        return {estado: mapear_estado_wallapop(estado, categoria) for estado in EstadoCanonico}
+    raise ValueError(f"plataforma desconocida: {plataforma!r}")
+
+
+def fidelidad_estado(
+    estado: EstadoCanonico, categoria: CategoriaTipo, plataforma: Plataforma
+) -> str | None:
+    """`None` si el literal que se publicaría para `estado` en
+    `plataforma`/`categoria` es SEGURO: comunica un nivel igual o peor que
+    el real, nunca mejor. Devuelve una NOTA (str) cuando no lo es -- hoy,
+    el único caso medido es un `estado` NO FUNCIONAL (`_ES_NO_FUNCIONAL`)
+    cuyo literal también se usa para un nivel que SÍ funciona: el literal
+    elegido (el más bajo disponible, correcto según el sesgo oficial de
+    Vinted) igualmente se LEE como "funciona", y un comprador que sólo mire
+    el estado no se entera del defecto.
+
+    Quien llama (`core/export.py`) NO cambia el literal por esto -- sigue
+    siendo el correcto y forzado por el vocabulario de la plataforma --
+    sólo baja `traducido` a `False` y añade la nota como aviso, para que
+    Diego sepa que tiene que declarar el defecto a mano (en la descripción,
+    en `desperfectos`) porque el estado solo no lo va a comunicar.
+    """
+    tabla = _tabla_efectiva(categoria, plataforma)
+    if estado not in _ES_NO_FUNCIONAL:
+        return None
+
+    literal = tabla[estado]
+    comparte_con_funcional = any(
+        otro != estado and tabla[otro] == literal
+        for otro in tabla
+        if otro not in _ES_NO_FUNCIONAL
+    )
+    if not comparte_con_funcional:
+        return None
+
+    return (
+        f'el nivel real es NO FUNCIONAL ("{estado.name}"), pero {plataforma} no tiene '
+        f"un literal propio para eso en la categoría '{categoria}': el literal que se "
+        f'publica ("{literal}") es correcto (el más bajo disponible) pero TAMBIÉN se '
+        "usa para un nivel que sí funciona -- un comprador que sólo lea el estado no "
+        "se entera del defecto. Declara el desperfecto en la descripción."
+    )
 
 
 # ============================================================================

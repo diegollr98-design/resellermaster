@@ -23,6 +23,7 @@ from core.schema import (
     TallaWallapop,
     Violacion,
     es_exportable,
+    fidelidad_estado,
     mapear_estado_vinted,
     mapear_estado_wallapop,
     mapear_talla_a_vinted,
@@ -206,6 +207,78 @@ class TestMapeoVinted:
 
     def test_precintado_es_techo_nuevo_no_algo_mejor(self):
         assert mapear_estado_vinted(EstadoCanonico.PRECINTADO, "moda") == "Nuevo"
+
+
+class TestFidelidadEstado:
+    """`schema.fidelidad_estado` -- `[listing-audit] BLOQUEANTE, 2026-07-17`:
+    el literal más bajo disponible puede ser CORRECTO (sesgo oficial de
+    Vinted) y AUN ASÍ comunicar un nivel mejor que el real cuando comparte
+    literal con un estado FUNCIONAL. El caso de fallo (`decision-making.md`
+    §16) es el que importa: una sudadera ROTA presentada como "usada pero
+    aceptable", en silencio.
+    """
+
+    # -- el caso de fallo: PARA_REPARAR compartiendo literal con un nivel
+    #    funcional -- es INFIEL, debe devolver una nota, no `None`.
+    def test_para_reparar_moda_wallapop_es_infiel(self):
+        nota = fidelidad_estado(EstadoCanonico.PARA_REPARAR, "moda", "wallapop")
+        assert nota is not None
+        assert "NO FUNCIONAL" in nota
+
+    def test_para_reparar_moda_vinted_es_infiel(self):
+        nota = fidelidad_estado(EstadoCanonico.PARA_REPARAR, "moda", "vinted")
+        assert nota is not None
+
+    @pytest.mark.parametrize("categoria", ["hogar", "libros", "otros"])
+    def test_para_reparar_fuera_de_moda_vinted_tambien_infiel(self, categoria):
+        # Sólo electronica tiene literal PROPIO ("Necesita reparación") en
+        # Vinted; el resto cae a la escala general compartida con ACEPTABLE.
+        nota = fidelidad_estado(EstadoCanonico.PARA_REPARAR, categoria, "vinted")
+        assert nota is not None
+
+    # -- el caso seguro: cuando la plataforma SÍ tiene un literal propio para
+    #    "no funciona", no se marca -- si no, el aviso se vuelve ruido y
+    #    entrena a ignorarlo.
+    def test_para_reparar_electronica_vinted_es_fiel(self):
+        assert fidelidad_estado(EstadoCanonico.PARA_REPARAR, "electronica", "vinted") is None
+
+    def test_para_reparar_otros_wallapop_es_fiel(self):
+        # `_WALLAPOP_RESTO` tiene "Lo ha dado todo", literal propio.
+        assert fidelidad_estado(EstadoCanonico.PARA_REPARAR, "otros", "wallapop") is None
+
+    def test_para_reparar_hogar_wallapop_es_fiel(self):
+        assert fidelidad_estado(EstadoCanonico.PARA_REPARAR, "hogar", "wallapop") is None
+
+    # -- ambigüedades de VOCABULARIO (no de veracidad): dos niveles
+    #    funcionales comparten literal -- eso es seguro, nunca se marca.
+    @pytest.mark.parametrize("categoria", ["moda", "electronica", "hogar", "libros", "otros"])
+    @pytest.mark.parametrize("plataforma", ["wallapop", "vinted"])
+    def test_precintado_nunca_es_infiel(self, categoria, plataforma):
+        assert fidelidad_estado(EstadoCanonico.PRECINTADO, categoria, plataforma) is None
+
+    @pytest.mark.parametrize("categoria", ["moda", "electronica", "hogar", "libros", "otros"])
+    @pytest.mark.parametrize("plataforma", ["wallapop", "vinted"])
+    def test_muy_bueno_nunca_es_infiel(self, categoria, plataforma):
+        assert fidelidad_estado(EstadoCanonico.MUY_BUENO, categoria, plataforma) is None
+
+    @pytest.mark.parametrize("categoria", ["moda", "electronica", "hogar", "libros", "otros"])
+    @pytest.mark.parametrize("plataforma", ["wallapop", "vinted"])
+    def test_bueno_nunca_es_infiel(self, categoria, plataforma):
+        # BUENO comparte "Buen estado" con MUY_BUENO en Wallapop, pero ambos
+        # son FUNCIONALES: es una ambigüedad de vocabulario, no una mentira.
+        assert fidelidad_estado(EstadoCanonico.BUENO, categoria, plataforma) is None
+
+    @pytest.mark.parametrize("categoria", ["moda", "electronica", "hogar", "libros", "otros"])
+    @pytest.mark.parametrize("plataforma", ["wallapop", "vinted"])
+    def test_solo_para_reparar_puede_ser_infiel(self, categoria, plataforma):
+        for estado in EstadoCanonico:
+            if estado == EstadoCanonico.PARA_REPARAR:
+                continue
+            assert fidelidad_estado(estado, categoria, plataforma) is None
+
+    def test_plataforma_desconocida_lanza(self):
+        with pytest.raises(ValueError):
+            fidelidad_estado(EstadoCanonico.PARA_REPARAR, "moda", "ebay")  # type: ignore[arg-type]
 
 
 class TestTallaNoImplementada:

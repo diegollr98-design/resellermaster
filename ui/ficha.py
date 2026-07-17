@@ -56,11 +56,15 @@ from core.store import LoteStore, StoreError
 logger = logging.getLogger(__name__)
 
 # Orden de presentación de los campos. Los que no aparezcan aquí se pintan
-# después, en el orden en que vengan. `estado` va al final: SIEMPRE lo pone
-# Diego (`truth-loop.md` §A.4), no es una lectura del modelo.
+# después, en el orden en que vengan. `categoria` va PRIMERO: es lo que
+# decide qué campos estructurados pide cada plataforma (`core.schema.
+# WALLAPOP_ATRIBUTOS_POR_CATEGORIA`), tiene sentido confirmarla antes que
+# el resto. `estado` va al final: SIEMPRE lo pone Diego (`truth-loop.md`
+# §A.4), no es una lectura del modelo. `categoria` puede faltar de
+# `campos` (el modelo violó el enum) — el filtro de abajo ya lo tolera.
 _ORDEN_CAMPOS = (
-    "marca", "modelo", "ean", "talla", "color", "composicion", "medidas",
-    "estado", "desperfectos", "titulo", "descripcion",
+    "categoria", "marca", "modelo", "ean", "talla", "color", "composicion",
+    "medidas", "estado", "desperfectos", "titulo", "descripcion",
 )
 
 # Escala de estado (interna, friendly). El mapeo exacto a los literales de
@@ -76,6 +80,20 @@ _OPCIONES_ESTADO = (
     "Bueno",
     "Satisfactorio",
     "Para reparar",
+)
+
+# `categoria` (`core.schema.CategoriaTipo`/`CATEGORIAS`): SIEMPRE lo
+# confirma Diego con un selectbox, igual que `estado` — es un juicio del
+# modelo (`fuente="inferido"` siempre, nunca "foto"), no una lectura.
+# "(sin elegir)" es un resultado válido, nunca un valor por defecto
+# plausible (mismo criterio que `_OPCIONES_ESTADO`).
+_OPCIONES_CATEGORIA = (
+    "(sin elegir)",
+    "moda",
+    "electronica",
+    "hogar",
+    "libros",
+    "otros",
 )
 
 _KEY_ERROR = "_ficha_error"
@@ -289,6 +307,11 @@ def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
             st.session_state[f"ficha_{pid}_estado_estado"] = (
                 sugerido if sugerido in _OPCIONES_ESTADO else _OPCIONES_ESTADO[0]
             )
+        elif campo == "categoria":
+            sugerido = dc.get("valor")
+            st.session_state[f"ficha_{pid}_categoria_categoria"] = (
+                sugerido if sugerido in _OPCIONES_CATEGORIA else _OPCIONES_CATEGORIA[0]
+            )
         else:
             st.session_state[f"ficha_{pid}_{campo}_valor"] = _valor_por_defecto(campo, dc)
     st.session_state[marcador] = firma
@@ -365,6 +388,20 @@ def _render_campo(pid: str, campo: str, datos_campo: dict) -> None:
                 key=f"ficha_{pid}_{campo}_estado",
                 label_visibility="collapsed",
             )
+        elif campo == "categoria":
+            # Igual que `estado`: es un juicio del modelo (`fuente=
+            # "inferido"` siempre, `[INC-013]`-style — nunca "foto", una
+            # categoría no es texto legible en un píxel), lo cierra Diego.
+            # La key ya está sembrada por `_sembrar_valores_iniciales`.
+            sugerido = datos_campo.get("valor")
+            if sugerido and sugerido not in _OPCIONES_CATEGORIA:
+                st.caption(f"El modelo propuso: _{str(sugerido)[:140]}_ — elige la categoría:")
+            st.selectbox(
+                "categoría (la confirmas tú)",
+                _OPCIONES_CATEGORIA,
+                key=f"ficha_{pid}_{campo}_categoria",
+                label_visibility="collapsed",
+            )
         else:
             # Sin `value=`: el valor por defecto ya está sembrado en
             # session_state (ver `_sembrar_valores_iniciales`). Pasar `value=`
@@ -401,6 +438,9 @@ def _construir_confirmado(pid: str, serial: dict) -> dict[str, Any]:
         if campo == "estado":
             elegido = st.session_state.get(f"ficha_{pid}_{campo}_estado", _OPCIONES_ESTADO[0])
             valor = None if elegido == _OPCIONES_ESTADO[0] else elegido
+        elif campo == "categoria":
+            elegido = st.session_state.get(f"ficha_{pid}_{campo}_categoria", _OPCIONES_CATEGORIA[0])
+            valor = None if elegido == _OPCIONES_CATEGORIA[0] else elegido
         else:
             crudo = st.session_state.get(f"ficha_{pid}_{campo}_valor", "")
             valor = crudo.strip() or None

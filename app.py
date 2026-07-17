@@ -19,7 +19,7 @@ from pathlib import Path
 import streamlit as st
 
 from core.store import DEFAULT_DATA_DIR, LoteStore
-from ui import curar, ficha, ingesta
+from ui import curar, export, ficha, ingesta
 
 
 def _cargar_env() -> None:
@@ -56,6 +56,7 @@ st.set_page_config(page_title="RESELLERMASTER", layout="wide")
 _PANTALLA_INGESTA = "1. Ingesta"
 _PANTALLA_CONFIRMACION = "2. Curar agrupación"
 _PANTALLA_FICHA = "3. Ficha"
+_PANTALLA_EXPORT = "4. Export"
 
 
 @st.cache_resource
@@ -94,7 +95,7 @@ def main() -> None:
     st.sidebar.title("RESELLERMASTER")
     pantalla = st.sidebar.radio(
         "Pantalla",
-        [_PANTALLA_INGESTA, _PANTALLA_CONFIRMACION, _PANTALLA_FICHA],
+        [_PANTALLA_INGESTA, _PANTALLA_CONFIRMACION, _PANTALLA_FICHA, _PANTALLA_EXPORT],
         key="sb_pantalla",
     )
 
@@ -138,11 +139,16 @@ def main() -> None:
             st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
         else:
             curar.render(store, lote_id)
-    else:
+    elif pantalla == _PANTALLA_FICHA:
         if lote_id is None:
             st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
         else:
             ficha.render(store, lote_id)
+    else:
+        if lote_id is None:
+            st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
+        else:
+            export.render(store, lote_id)
 
 
 if __name__ == "__main__":

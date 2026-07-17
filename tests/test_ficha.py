@@ -194,6 +194,7 @@ def _ficha_completa(crops: Path) -> ResultadoExtraccion:
         "marca": Campo(valor="lufthous", fuente="inferido", confianza="baja"),
         "modelo": Campo(valor="LLLT-200", fuente="foto", confianza="media", evidencia=ev),
         "ean": Campo(valor="8445061029720", fuente="foto", confianza="alta", evidencia=ev),
+        "categoria": Campo(valor="electronica", fuente="inferido", confianza="baja"),
         "estado": Campo(valor="Como nuevo", fuente="inferido", confianza="baja"),
         "titulo": Campo(valor="Masajeador lufthous LLLT-200", fuente="inferido", confianza="baja"),
         "descripcion": Campo(valor="Masajeador de rodilla lufthous, como nuevo.", fuente="inferido", confianza="baja"),
@@ -202,6 +203,10 @@ def _ficha_completa(crops: Path) -> ResultadoExtraccion:
         "marca": Propuesta(campo="marca", valor="lufthous", recorte=None, evidencia=None, motivo="mejor intento"),
         "modelo": Propuesta(campo="modelo", valor="LLLT-200", recorte=rc, evidencia=ev, motivo="leído"),
         "ean": Propuesta(campo="ean", valor="8445061029720", recorte=rc, evidencia=ev, motivo="checksum"),
+        "categoria": Propuesta(
+            campo="categoria", valor="electronica", recorte=None, evidencia=None,
+            motivo="clasificacion del modelo, confirmala",
+        ),
         "estado": Propuesta(campo="estado", valor="Como nuevo", recorte=None, evidencia=None, motivo="estímalo"),
         "titulo": Propuesta(campo="titulo", valor="Masajeador lufthous LLLT-200", recorte=None, evidencia=None, motivo="borrador"),
         "descripcion": Propuesta(campo="descripcion", valor="Masajeador de rodilla lufthous, como nuevo.", recorte=None, evidencia=None, motivo="borrador"),
@@ -296,6 +301,54 @@ def test_estado_es_selectbox_sin_preelegir(tmp_path):
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     selebox = next(s for s in at.selectbox if s.key == f"ficha_{pid}_estado_estado")
     assert selebox.value == "(sin elegir)"
+
+
+# ============================================================================
+# `categoria` (Fase 3, 2026-07-17): selectbox como `estado` — SIEMPRE la
+# confirma Diego (fuente="inferido" del extractor, "diego" tras confirmar).
+# ============================================================================
+def test_categoria_se_pinta_como_selectbox_y_preselecciona_el_mejor_intento(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)  # categoria="electronica"
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    selebox = next(s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria")
+    assert selebox.value == "electronica"
+
+
+def test_categoria_ausente_no_pinta_selectbox_ni_revienta(tmp_path):
+    """`_marca_leida_no_publicada` no incluye 'categoria' en `campos` (el
+    modelo violó el enum, o el test simplemente no la configuró) — la
+    pantalla no debe reventar, y no debe inventarse un selectbox para un
+    campo que no existe."""
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    assert not any(s.key == f"ficha_{pid}_categoria_categoria" for s in at.selectbox)
+
+
+def test_categoria_confirmar_deja_fuente_diego(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    categoria = _producto(tmp_path, lote_id, pid)["campos"]["campos"]["categoria"]
+    assert categoria["valor"] == "electronica"
+    assert categoria["fuente"] == "diego"
+
+
+def test_categoria_sin_elegir_se_confirma_como_null(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_completa)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    next(
+        s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria"
+    ).set_value("(sin elegir)").run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    categoria = _producto(tmp_path, lote_id, pid)["campos"]["campos"]["categoria"]
+    assert categoria["valor"] is None
+    assert categoria["fuente"] == "diego"
 
 
 # ============================================================================
