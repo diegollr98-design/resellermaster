@@ -35,7 +35,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from core import export, images, schema
+from core import export, images, pricing, schema
 from core.store import LoteStore
 
 logger = logging.getLogger(__name__)
@@ -234,6 +234,63 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
 
 
 # --------------------------------------------------------------------------
+# Precio: MEDIANA de comparables PARECIDOS (core/pricing.py tasar). Nunca "el
+# precio de tu producto": Diego abre los enlaces y decide. Bajo demanda (un
+# botón), no en cada render -- leer la búsqueda pública es una llamada de red.
+# `Campo`/`Evidencia` se reconstruyen en `pricing.atributos_desde_campos`.
+# --------------------------------------------------------------------------
+# Un buscador por sesión (cachea por términos; no machaca el endpoint).
+def _buscador() -> pricing.BuscadorWallapop:
+    if "_buscador_precio" not in st.session_state:
+        st.session_state["_buscador_precio"] = pricing.BuscadorWallapop()
+    return st.session_state["_buscador_precio"]
+
+
+def _render_precio(producto: dict) -> None:
+    st.subheader("Precio — mediana de parecidos")
+    campos = producto.get("campos", {}).get("campos", {})
+    atributos = pricing.atributos_desde_campos(campos)
+
+    key_tas = f"tasacion_{producto['id']}"
+    if st.button("🔎 Buscar comparables en Wallapop", key=f"btn_precio_{producto['id']}"):
+        with st.spinner("Leyendo la búsqueda pública de Wallapop…"):
+            try:
+                st.session_state[key_tas] = pricing.tasar(atributos, _buscador())
+            except Exception as exc:  # noqa: BLE001 — la red nunca tumba la pantalla
+                logger.exception("Fallo al tasar el producto %s", producto["id"])
+                st.error(f"No se pudo leer la búsqueda: {exc}")
+
+    tas: pricing.Tasacion | None = st.session_state.get(key_tas)
+    if tas is None:
+        st.caption(
+            "El precio nunca sale de un modelo: sale de comparables reales que "
+            "puedes abrir y comprobar. Pulsa para leer la búsqueda pública."
+        )
+        return
+
+    if tas.terminos:
+        st.caption(f"Búsqueda: «{tas.terminos}»")
+    if tas.mediana is not None:
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.metric("Mediana de parecidos", f"{tas.mediana:.0f} €")
+        with c2:
+            st.caption(f"Rango observado: {tas.minimo:.0f} – {tas.maximo:.0f} € · "
+                       f"{tas.n} anuncios parecidos")
+        st.caption(f"⚠️ {tas.motivo}")
+    else:
+        st.warning(f"Sin mediana: {tas.motivo}")
+
+    if tas.url_busqueda:
+        st.caption("Ábrela entera para verlos todos:")
+        st.code(tas.url_busqueda, language=None)
+    if tas.comparables:
+        with st.expander(f"Ver los {tas.n} comparables usados (ábrelos y compruébalo)"):
+            for comp in tas.comparables:
+                st.markdown(f"- **{comp.precio:.0f} €** — [{comp.titulo or comp.url}]({comp.url})")
+
+
+# --------------------------------------------------------------------------
 # Entrada de la pantalla.
 # --------------------------------------------------------------------------
 def render(store: LoteStore, lote_id: str) -> None:
@@ -280,6 +337,9 @@ def render(store: LoteStore, lote_id: str) -> None:
             "(truth-loop.md §A.2). No hay atajo para saltarse esto."
         )
         return
+
+    _render_precio(producto)
+    st.divider()
 
     tabs = st.tabs([_ETIQUETA_PLATAFORMA[p] for p in _PLATAFORMAS])
     for plataforma, tab in zip(_PLATAFORMAS, tabs):

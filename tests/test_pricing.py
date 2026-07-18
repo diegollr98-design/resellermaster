@@ -20,12 +20,34 @@ import pytest
 
 from core.pricing import (
     CAMPO_EAN,
+    LIMITE_COMPARABLES,
+    N_MINIMO_COMPARABLES,
     Comparable,
     ConsultaPrecio,
+    Tasacion,
     buscar,
     buscar_comparables_por_imagen,
+    tasar,
 )
 from core.schema import Campo, Evidencia, TallaWallapop
+
+
+# ----------------------------------------------------------------------------
+# Doble de `Buscador` -- los tests de `tasar` NUNCA tocan la red.
+# ----------------------------------------------------------------------------
+class _BuscadorFake:
+    def __init__(self, comparables: list[Comparable]):
+        self._comparables = comparables
+        self.llamado_con: list[str] = []
+
+    def buscar_comparables(self, terminos: str) -> list[Comparable]:
+        self.llamado_con.append(terminos)
+        return list(self._comparables)
+
+
+def _comps(precios: list[float]) -> list[Comparable]:
+    return [Comparable(url=f"https://es.wallapop.com/item/x{i}", precio=p, titulo=f"item {i}")
+            for i, p in enumerate(precios)]
 
 # ============================================================================
 # Helpers
@@ -326,3 +348,163 @@ class TestV2NoImplementado:
     def test_comparable_dataclass_existe_y_es_tipada(self):
         c = Comparable(url="https://es.wallapop.com/item/x", precio=12.5, similitud_visual=0.9)
         assert c.precio == 12.5
+
+
+# ============================================================================
+# v2 -- `tasar()`: mediana de PARECIDOS, sin red, con el gate n>=5 y el
+# conjunto inmutable (sin muestra suficiente -> None + motivo).
+# ============================================================================
+
+
+class TestTasar:
+    def _producto(self):
+        return {"marca": _diego("Reebok"), "tipo": _diego("sudadera"), "talla": _foto("XXL")}
+
+    def test_mediana_rango_y_urls_con_comparables_suficientes(self):
+        buscador = _BuscadorFake(_comps([7, 10, 22, 20, 9, 17.5, 4, 30]))
+        t = tasar(self._producto(), buscador)
+        assert isinstance(t, Tasacion)
+        assert t.n == 8
+        assert t.mediana == 13.75  # mediana de los 8
+        assert t.minimo == 4.0 and t.maximo == 30.0
+        assert t.tipo_match == "aproximado"  # SIEMPRE parecidos, nunca "el mismo"
+        assert t.url_busqueda.startswith("https://")
+        assert all(c.url.startswith("https://") for c in t.comparables)
+        # Buscó por TEXTO (marca+tipo+talla), nunca por EAN.
+        assert buscador.llamado_con == ["Reebok sudadera XXL"]
+
+    def test_conjunto_inmutable_pocos_comparables_no_da_numero(self):
+        buscador = _BuscadorFake(_comps([10, 12, 15]))  # 3 < 5
+        t = tasar(self._producto(), buscador)
+        assert t.mediana is None and t.minimo is None and t.maximo is None
+        assert str(N_MINIMO_COMPARABLES) in t.motivo or "comparable" in t.motivo
+        assert t.n == 3  # los enseña igual, pero sin mediana
+
+    def test_cero_comparables_no_da_numero(self):
+        t = tasar(self._producto(), _BuscadorFake([]))
+        assert t.mediana is None
+        assert t.n == 0
+
+    def test_sin_identificativo_no_busca_ni_tasa(self):
+        # Solo talla (modificador): no identifica el producto -> ni se llama al
+        # buscador. Mismo criterio que `buscar()` v1.
+        buscador = _BuscadorFake(_comps([10, 12, 15, 18, 20]))
+        t = tasar({"talla": _foto("M")}, buscador)
+        assert t.mediana is None
+        assert t.terminos == ""
+        assert buscador.llamado_con == []  # nunca tocó el buscador
+
+    def test_nunca_usa_datos_inferidos_para_buscar(self):
+        # marca inferida NO entra en la búsqueda (mismo filtro de procedencia
+        # que v1): con solo una marca inferida no hay identificativo válido.
+        buscador = _BuscadorFake(_comps([10, 12, 15, 18, 20, 25]))
+        t = tasar({"marca": _inferido("Nike"), "talla": _foto("M")}, buscador)
+        assert t.mediana is None
+        assert buscador.llamado_con == []
+
+    def test_ean_no_se_usa_para_la_busqueda_de_precio(self):
+        # Aunque haya EAN, la tasación busca por TEXTO (nadie pone el EAN en
+        # los anuncios -- decisión de Diego, seed fase-4).
+        buscador = _BuscadorFake(_comps([10, 12, 15, 18, 20, 25]))
+        prod = {"marca": _diego("Reebok"), "tipo": _diego("sudadera"),
+                CAMPO_EAN: _foto("8445061029720")}
+        tasar(prod, buscador)
+        assert "8445061029720" not in buscador.llamado_con[0]
+        assert buscador.llamado_con == ["Reebok sudadera"]
+
+    def test_respeta_el_limite_de_comparables(self):
+        muchos = _comps([float(i) for i in range(1, 40)])  # 39
+        t = tasar(self._producto(), _BuscadorFake(muchos))
+        assert t.n == LIMITE_COMPARABLES  # se queda con los primeros 15
+
+    def test_motivo_dice_precio_pedido_no_de_venta(self):
+        t = tasar(self._producto(), _BuscadorFake(_comps([10, 12, 15, 18, 20, 25])))
+        assert "PIDEN" in t.motivo or "vend" in t.motivo.lower()
+
+    def test_tasacion_es_frozen(self):
+        t = tasar(self._producto(), _BuscadorFake(_comps([10, 12, 15, 18, 20])))
+        with pytest.raises(Exception):
+            t.mediana = 999  # type: ignore[misc]
+
+
+class TestAtributosDesdeCampos:
+    def _campos(self, **extra):
+        base = {
+            "marca": {"valor": "Reebok", "fuente": "diego", "confianza": "alta", "evidencia": None},
+            "titulo": {"valor": "Sudadera Reebok gris talla XXL", "fuente": "inferido",
+                       "confianza": "baja", "evidencia": None},
+        }
+        base.update(extra)
+        return base
+
+    def test_deriva_tipo_del_titulo_confirmado(self):
+        from core.pricing import atributos_desde_campos
+        attrs = atributos_desde_campos(self._campos())
+        assert attrs["tipo"].valor == "sudadera"
+        assert attrs["tipo"].fuente == "diego"
+        assert attrs["marca"].valor == "Reebok"
+
+    def test_no_usa_campos_inferidos(self):
+        from core.pricing import atributos_desde_campos
+        campos = self._campos(
+            marca={"valor": "Nike", "fuente": "inferido", "confianza": "baja", "evidencia": None}
+        )
+        attrs = atributos_desde_campos(campos)
+        assert "marca" not in attrs  # marca inferida NO entra
+
+    def test_titulo_sin_tipo_reconocible_no_inventa_tipo(self):
+        from core.pricing import atributos_desde_campos
+        campos = self._campos(
+            titulo={"valor": "Cosa rara sin nombre de prenda", "fuente": "inferido",
+                    "confianza": "baja", "evidencia": None}
+        )
+        attrs = atributos_desde_campos(campos)
+        assert "tipo" not in attrs
+
+    def test_reconstruye_evidencia_de_campo_foto(self):
+        from core.pricing import atributos_desde_campos
+        campos = self._campos(
+            talla={"valor": "XXL", "fuente": "foto", "confianza": "baja",
+                   "evidencia": {"fichero": "IMG.jpg", "bbox": [1, 2, 3, 4]}}
+        )
+        attrs = atributos_desde_campos(campos)
+        assert attrs["talla"].valor == "XXL"
+        assert attrs["talla"].evidencia.fichero == "IMG.jpg"
+
+
+class TestTasarHallazgosAudit:
+    """`[listing-audit] 2026-07-17`: los 3 hallazgos del audit del precio."""
+
+    def test_serio_tipo_generico_solo_no_tasa(self):
+        # Sin marca ni modelo, solo un tipo genérico ("sudadera") -> la cohorte
+        # sería el catálogo entero: NO se da número (truth-loop §D.2).
+        from core.pricing import tasar
+        buscador = _BuscadorFake(_comps([5, 8, 10, 12, 15, 20, 25]))
+        t = tasar({"tipo": _diego("sudadera")}, buscador)
+        assert t.mediana is None
+        assert "cohorte" in t.motivo.lower() or "catálogo" in t.motivo.lower()
+        assert buscador.llamado_con == []  # ni se molesta en buscar
+
+    def test_con_marca_si_tasa(self):
+        # Con marca (identificativo fuerte) sí se tasa.
+        from core.pricing import tasar
+        t = tasar({"marca": _diego("Reebok"), "tipo": _diego("sudadera")},
+                  _BuscadorFake(_comps([5, 8, 10, 12, 15])))
+        assert t.mediana is not None
+
+    def test_serio_parsear_items_forma_inesperada_devuelve_vacio(self):
+        from core.pricing import BuscadorWallapop
+        b = BuscadorWallapop()
+        for items in ("una cadena", None, [None, "x", 3], 42):
+            datos = {"data": {"section": {"payload": {"items": items}}}}
+            assert b._parsear(datos) == [], items  # nunca lanza, siempre []
+        # estructura totalmente ausente
+        assert b._parsear({}) == []
+        assert b._parsear({"data": None}) == []
+
+    def test_menor_bool_no_es_un_precio(self):
+        from core.pricing import BuscadorWallapop
+        assert BuscadorWallapop._precio(True) is None
+        assert BuscadorWallapop._precio(False) is None
+        assert BuscadorWallapop._precio({"amount": True}) is None
+        assert BuscadorWallapop._precio(12) == 12.0
