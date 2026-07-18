@@ -508,3 +508,55 @@ class TestTasarHallazgosAudit:
         assert BuscadorWallapop._precio(False) is None
         assert BuscadorWallapop._precio({"amount": True}) is None
         assert BuscadorWallapop._precio(12) == 12.0
+
+
+class TestVariantesDeBusqueda:
+    """Idea de Diego (2026-07-18): varias combinaciones de palabras clave para
+    triangular el precio -- cada una con identificativo FUERTE, de específica a
+    amplia, sin duplicados."""
+
+    def test_ropa_da_varias_combinaciones_ordenadas(self):
+        from core.pricing import variantes_de_busqueda
+        v = variantes_de_busqueda(
+            {"marca": _diego("Reebok"), "tipo": _diego("sudadera"), "talla": _foto("XXL")}
+        )
+        assert v == ["Reebok sudadera XXL", "Reebok sudadera", "Reebok XXL", "Reebok"]
+
+    def test_todos_los_atributos_dan_hasta_siete(self):
+        from core.pricing import variantes_de_busqueda
+        v = variantes_de_busqueda(
+            {"marca": _diego("Nike"), "modelo": _foto("AB1"), "tipo": _diego("zapatillas"),
+             "talla": _foto("42")}
+        )
+        assert len(v) == 7
+        assert v[0] == "Nike AB1 zapatillas 42"  # la más específica primero
+        assert v[-1] == "Nike"                    # la más amplia al final
+
+    def test_cada_variante_tiene_identificativo_fuerte(self):
+        from core.pricing import variantes_de_busqueda
+        v = variantes_de_busqueda(
+            {"marca": _diego("Reebok"), "tipo": _diego("sudadera"), "talla": _foto("XXL")}
+        )
+        assert all(("reebok" in t.lower()) for t in v)  # todas llevan la marca
+
+    def test_solo_tipo_generico_no_da_variantes(self):
+        from core.pricing import variantes_de_busqueda
+        assert variantes_de_busqueda({"tipo": _diego("sudadera"), "talla": _foto("M")}) == []
+
+    def test_marca_inferida_no_da_variantes(self):
+        from core.pricing import variantes_de_busqueda
+        assert variantes_de_busqueda({"marca": _inferido("Nike"), "tipo": _diego("sudadera")}) == []
+
+    def test_tasar_variantes_una_tasacion_por_variante(self):
+        from core.pricing import tasar_variantes
+        prod = {"marca": _diego("Reebok"), "tipo": _diego("sudadera"), "talla": _foto("XXL")}
+        buscador = _BuscadorFake(_comps([5, 8, 10, 12, 15]))
+        tas = tasar_variantes(prod, buscador)
+        assert len(tas) == 4  # una por variante
+        assert all(t.mediana == 10.0 for t in tas)  # el fake devuelve lo mismo
+        # cada variante buscó su propio término
+        assert buscador.llamado_con == ["Reebok sudadera XXL", "Reebok sudadera", "Reebok XXL", "Reebok"]
+
+    def test_tasar_variantes_vacio_si_no_hay_fuerte(self):
+        from core.pricing import tasar_variantes
+        assert tasar_variantes({"tipo": _diego("sudadera")}, _BuscadorFake(_comps([1, 2, 3, 4, 5]))) == []

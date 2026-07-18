@@ -313,7 +313,7 @@ def buscar(producto: AtributosProducto) -> ConsultaPrecio:
 N_MINIMO_COMPARABLES: int = 5
 LIMITE_COMPARABLES: int = 15
 
-_NOTA_PRECIO_PEDIDO: str = (
+NOTA_PRECIO_PEDIDO: str = (
     "Es la mediana de lo que OTROS PIDEN por artículos parecidos, no de lo que "
     "se VENDIÓ (los precios de venta no son públicos). El óptimo lo dice el "
     "mercado: si no se vende en ~2 semanas, baja."
@@ -564,7 +564,14 @@ def tasar(
             motivo=_MOTIVO_COHORTE_AMPLIA.format(tipo=tipo),
         )
 
-    terminos = " ".join(partes)
+    return _tasar_query(" ".join(partes), buscador, plataforma)
+
+
+def _tasar_query(terminos: str, buscador: Buscador, plataforma: str) -> Tasacion:
+    """Busca UN termino ya construido y calcula la mediana. Fuente unica del
+    gate `n >= N_MINIMO_COMPARABLES` + el etiquetado -- la usan `tasar` (una
+    consulta) y `tasar_variantes` (varias). El identificativo fuerte ya se
+    garantizo antes (en `tasar`/`variantes_de_busqueda`)."""
     url_busqueda = _urls_para_termino(terminos).get(plataforma, "")
     comparables = tuple(buscador.buscar_comparables(terminos)[:LIMITE_COMPARABLES])
 
@@ -580,8 +587,60 @@ def tasar(
         plataforma=plataforma, terminos=terminos, comparables=comparables,
         mediana=round(statistics.median(precios), 2),
         minimo=round(min(precios), 2), maximo=round(max(precios), 2),
-        url_busqueda=url_busqueda, tipo_match="aproximado", motivo=_NOTA_PRECIO_PEDIDO,
+        url_busqueda=url_busqueda, tipo_match="aproximado", motivo=NOTA_PRECIO_PEDIDO,
     )
+
+
+def variantes_de_busqueda(producto: AtributosProducto) -> list[str]:
+    """Distintas combinaciones de palabras clave para tasar el MISMO producto,
+    de la mas especifica a la mas amplia. Idea de Diego (2026-07-18): una sola
+    palabra clave a veces no pesca el producto (un modelo raro devuelve ruido,
+    una marca sola devuelve de todo) -- con varias, Diego compara las medianas
+    y se queda con la cohorte que de verdad casa, abriendo los comparables.
+
+    CADA variante contiene un identificativo FUERTE (marca o modelo) -- misma
+    regla que `tasar` (`[INC-027]`): un `tipo` generico solo seria el catalogo
+    entero. Ordenadas de mas rica a mas amplia, sin duplicados. Vacia si no hay
+    ni marca ni modelo observados (nada con que tasar de forma honesta)."""
+    marca = _valor_buscable(producto.get("marca"))
+    modelo = _valor_buscable(producto.get("modelo"))
+    tipo = _valor_buscable(producto.get("tipo"))
+    talla = _valor_buscable(producto.get("talla"))
+
+    # Combos construidos condicionalmente para que el orden sea siempre
+    # especifica -> amplia (sin que un modelo/talla ausente cuele la marca sola
+    # antes de tiempo). Cada uno incluye marca o modelo (identificativo fuerte).
+    combos: list[list[str | None]] = []
+    if marca and modelo:
+        combos += [[marca, modelo, tipo, talla], [marca, modelo]]
+    if modelo:
+        combos += [[modelo]]  # modelo solo YA es fuerte
+    if marca:
+        combos += [[marca, tipo, talla], [marca, tipo], [marca, talla], [marca]]
+    vistos: set[str] = set()
+    out: list[str] = []
+    for combo in combos:
+        partes = [p for p in combo if p]
+        if not partes:
+            continue
+        if not (marca in partes or modelo in partes):
+            continue  # sin identificativo fuerte -> fuera (catalogo entero)
+        termino = " ".join(partes)
+        if termino not in vistos:
+            vistos.add(termino)
+            out.append(termino)
+    return out
+
+
+def tasar_variantes(
+    producto: AtributosProducto,
+    buscador: Buscador,
+    plataforma: str = "wallapop",
+) -> list[Tasacion]:
+    """Una `Tasacion` por cada variante de `variantes_de_busqueda` -- para que
+    Diego compare medianas entre combinaciones de palabras clave y triangule el
+    precio real. Lista vacia si no hay con que tasar (sin marca ni modelo)."""
+    return [_tasar_query(t, buscador, plataforma) for t in variantes_de_busqueda(producto)]
 
 
 # ============================================================================
@@ -604,7 +663,7 @@ class Comparable:
     `url`: el anuncio concreto (Diego puede abrirlo y comprobarlo -- eso es
         lo que hace honesta la mediana, `truth-loop.md` SS D.2).
     `precio`: el precio que el anuncio PIDE (nunca el de venta: los precios
-        de venta no son publicos -- ver `_NOTA_PRECIO_PEDIDO`).
+        de venta no son publicos -- ver `NOTA_PRECIO_PEDIDO`).
     `titulo`: el titulo del anuncio, para que Diego vea de un vistazo si el
         comparable es del mismo tipo de prenda o coló otra cosa.
     `similitud_visual`: score de match por imagen -- SOLO lo usaria la via

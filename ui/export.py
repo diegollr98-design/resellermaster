@@ -246,48 +246,66 @@ def _buscador() -> pricing.BuscadorWallapop:
     return st.session_state["_buscador_precio"]
 
 
+def _render_una_tasacion(tas: pricing.Tasacion) -> None:
+    """Un bloque de resultado para UNA combinación de palabras clave."""
+    st.markdown(f"**«{tas.terminos}»**")
+    if tas.mediana is not None:
+        c1, c2 = st.columns([1, 2])
+        with c1:
+            st.metric("Mediana", f"{tas.mediana:.0f} €", label_visibility="collapsed")
+        with c2:
+            st.caption(f"**{tas.mediana:.0f} €** · rango {tas.minimo:.0f}–{tas.maximo:.0f} € · "
+                       f"{tas.n} parecidos")
+    else:
+        st.caption(f"— {tas.motivo}")
+    if tas.url_busqueda:
+        st.caption("Abrir la búsqueda entera:")
+        st.code(tas.url_busqueda, language=None)
+    if tas.comparables:
+        with st.expander(f"Ver los {tas.n} comparables (ábrelos y compruébalo)"):
+            for comp in tas.comparables:
+                st.markdown(f"- **{comp.precio:.0f} €** — [{comp.titulo or comp.url}]({comp.url})")
+
+
 def _render_precio(producto: dict) -> None:
     st.subheader("Precio — mediana de parecidos")
     campos = producto.get("campos", {}).get("campos", {})
     atributos = pricing.atributos_desde_campos(campos)
+    variantes = pricing.variantes_de_busqueda(atributos)
 
-    key_tas = f"tasacion_{producto['id']}"
+    if not variantes:
+        st.caption(
+            "No hay marca ni modelo confirmados con que buscar comparables de "
+            "forma honesta (buscar sólo por tipo daría el catálogo entero). "
+            "Confirma la marca/modelo en la ficha, o mira el precio a mano."
+        )
+        return
+
+    st.caption(
+        f"{len(variantes)} combinaciones de palabras clave para triangular el "
+        "precio: compara las medianas y quédate con la que de verdad casa con tu "
+        "producto (abre sus comparables para verificar). El precio nunca sale de "
+        "un modelo — sale de anuncios reales que puedes abrir."
+    )
+
+    key_tas = f"tasaciones_{producto['id']}"
     if st.button("🔎 Buscar comparables en Wallapop", key=f"btn_precio_{producto['id']}"):
-        with st.spinner("Leyendo la búsqueda pública de Wallapop…"):
+        with st.spinner(f"Leyendo {len(variantes)} búsquedas públicas de Wallapop…"):
             try:
-                st.session_state[key_tas] = pricing.tasar(atributos, _buscador())
+                st.session_state[key_tas] = pricing.tasar_variantes(atributos, _buscador())
             except Exception as exc:  # noqa: BLE001 — la red nunca tumba la pantalla
                 logger.exception("Fallo al tasar el producto %s", producto["id"])
                 st.error(f"No se pudo leer la búsqueda: {exc}")
 
-    tas: pricing.Tasacion | None = st.session_state.get(key_tas)
-    if tas is None:
-        st.caption(
-            "El precio nunca sale de un modelo: sale de comparables reales que "
-            "puedes abrir y comprobar. Pulsa para leer la búsqueda pública."
-        )
+    tasaciones: list[pricing.Tasacion] | None = st.session_state.get(key_tas)
+    if tasaciones is None:
+        st.caption("Combinaciones que se probarán: " + " · ".join(f"«{v}»" for v in variantes))
         return
 
-    if tas.terminos:
-        st.caption(f"Búsqueda: «{tas.terminos}»")
-    if tas.mediana is not None:
-        c1, c2 = st.columns([1, 2])
-        with c1:
-            st.metric("Mediana de parecidos", f"{tas.mediana:.0f} €")
-        with c2:
-            st.caption(f"Rango observado: {tas.minimo:.0f} – {tas.maximo:.0f} € · "
-                       f"{tas.n} anuncios parecidos")
-        st.caption(f"⚠️ {tas.motivo}")
-    else:
-        st.warning(f"Sin mediana: {tas.motivo}")
-
-    if tas.url_busqueda:
-        st.caption("Ábrela entera para verlos todos:")
-        st.code(tas.url_busqueda, language=None)
-    if tas.comparables:
-        with st.expander(f"Ver los {tas.n} comparables usados (ábrelos y compruébalo)"):
-            for comp in tas.comparables:
-                st.markdown(f"- **{comp.precio:.0f} €** — [{comp.titulo or comp.url}]({comp.url})")
+    st.caption(f"⚠️ {pricing._NOTA_PRECIO_PEDIDO}")
+    for tas in tasaciones:
+        st.divider()
+        _render_una_tasacion(tas)
 
 
 # --------------------------------------------------------------------------
