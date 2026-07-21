@@ -39,4 +39,6 @@ Si el seed de una fase futura no existe, genéralo con la plantilla de abajo ant
 ## Estado
 - `fase-1.md`, `fase-1b.md` — **consumidos** (ingesta + agrupación + curado; Fase 1 cerrada).
 - `fase-2.md`, `fase-2-continuacion.md` — **consumidos** (las 3 costuras + extracción + `ui/ficha.py`; Fase 2 cerrada).
-- **`fase-3-export.md` — EL SIGUIENTE.** El export (66% del tiempo de Diego, coste 0 €). Incluye la sección **"DECISIONES DE DIEGO QUE CONTRADICEN LAS REGLAS ESCRITAS"**: léela antes de auditar nada, o marcarás como violación lo que está bien a propósito.
+- `fase-3-export.md` — **consumido** (el export, 66% del tiempo de Diego; Fase 3 cerrada).
+- `fase-4-precio-y-pulido-export.md`, `fase-4-tipo-producto.md` — **consumidos** (categoría + precio v2 + `tipo` + `género`; Fase 4 cerrada).
+- **`fase-5-finanzas.md` — EL SIGUIENTE.** Registro de ventas + beneficio + Excel (5ª pantalla). Es un seed de **planificación con RE-AUDITORÍA**: lleva los requisitos de Diego (fijos) + los hallazgos de un panel previo (candidatos), e instruye reauditarlos con un panel multi-agente (PASO 0, mínimo sesgo) antes de tocar nada. Superficie SENSIBLE de persistencia.
