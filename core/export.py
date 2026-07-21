@@ -306,6 +306,23 @@ _NOTA_COMPOSICION = (
 )
 
 
+def _campo_color(campos: dict[str, Any]) -> CampoExportado | None:
+    """El color se muestrea de los píxeles (`extract`), fuente="inferido" -- una
+    SUGERENCIA que Diego confirma eligiendo el/los color(es) exactos de la lista
+    de la plataforma (Vinted: máx 2). `None` si no hay color."""
+    valor = _valor_campo(campos, "color")
+    if valor is None:
+        return None
+    return CampoExportado(
+        nombre="color",
+        etiqueta="color(es)",
+        valor=valor,
+        traducido=False,
+        nota="🧠 detectado de los píxeles -- elige el/los color(es) exactos de la "
+        "lista de la plataforma (Vinted admite hasta 2).",
+    )
+
+
 def _campo_composicion(
     campos: dict[str, Any], plataforma: str, categoria: str
 ) -> CampoExportado | None:
@@ -382,16 +399,23 @@ def _campo_envio(texto: str, plataforma: str) -> CampoExportado:
             f"corto: sub-dimensionar te cuesta un recargo). Opciones: {tramos} kg. "
             "Confírmalo en Wallapop.",
         )
-    # Vinted: tamaño en palabras (literal del enum NO verificado -> no se inventa).
-    tam = {"ligero": "pequeño", "normal": "mediano", "pesado": "grande"}[clase]
+    # Vinted: labels VERIFICADOS por Diego contra el formulario real (2026-07-21):
+    # Pequeño (sobre grande) / Mediano (caja de zapatos, RECOMENDADO) / Grande
+    # (caja de mudanza). Sesgo hacia arriba: ligero->Pequeño, normal->Mediano,
+    # pesado->Grande.
+    tam, ref = {
+        "ligero": ("Pequeño", "cabe en un sobre grande"),
+        "normal": ("Mediano", "cabe en una caja de zapatos"),
+        "pesado": ("Grande", "cabe en una caja de mudanza"),
+    }[clase]
     return CampoExportado(
         nombre="package_size",
         etiqueta="tamaño del paquete",
         valor=tam,
         traducido=False,
-        nota="🧠 SUGERENCIA de tamaño (sesgada hacia arriba). Las etiquetas exactas "
-        "de Vinted no están verificadas en el repo -- elige la opción que te muestre "
-        "Vinted que más se acerque a este tamaño.",
+        nota=f"🧠 SUGERENCIA sesgada hacia arriba ({ref}). Opciones de Vinted: "
+        "Pequeño (sobre grande) · Mediano (caja de zapatos) · Grande (caja de "
+        "mudanza). Confírmalo en Vinted.",
     )
 
 
@@ -555,10 +579,13 @@ def construir_payload(
     campo_talla = _campo_talla(campos, plataforma, avisos)
     campo_estado = _campo_estado(campos, plataforma, categoria, avisos)
     campo_envio = _campo_envio(f"{titulo} {descripcion}", plataforma)
+    campo_color = _campo_color(campos)
     campo_composicion = _campo_composicion(campos, plataforma, categoria)
     campo_desperfectos = _campo_desperfectos(campos, avisos)
 
     campos_exportados = [campo_marca, campo_talla, campo_estado, campo_envio]
+    if campo_color is not None:
+        campos_exportados.append(campo_color)
     if campo_composicion is not None:
         campos_exportados.append(campo_composicion)
     if campo_desperfectos is not None:

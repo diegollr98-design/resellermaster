@@ -580,12 +580,13 @@ def test_envio_wallapop_sesgado_hacia_arriba(titulo, kg_esperado):
     assert not envio.traducido  # es una sugerencia, no un valor traducido/final
 
 
-def test_envio_vinted_no_inventa_literal_de_enum():
-    # El enum de package_size de Vinted NO esta verificado: se sugiere un
-    # tamaño en palabras, nunca un literal inventado (`truth-loop.md`).
+def test_envio_vinted_usa_los_labels_confirmados_por_diego():
+    # Labels VERIFICADOS por Diego contra el formulario real de Vinted
+    # (2026-07-21): Pequeño/Mediano/Grande. Es una SUGERENCIA sesgada hacia
+    # arriba que Diego confirma -> traducido=False.
     payload = construir_payload(_producto(), _FOTOS_POR_ID, "vinted")
     envio = next(c for c in payload.campos if c.nombre == "package_size")
-    assert envio.valor in ("pequeño", "mediano", "grande")
+    assert envio.valor in ("Pequeño", "Mediano", "Grande")
     assert not envio.traducido
 
 
@@ -612,3 +613,19 @@ def test_snapshot_de_categorias_ausente_no_tumba_el_export(monkeypatch):
     assert payload.candidatas_categoria == ()
     assert payload.categoria_snapshot is None
     assert any("árbol de categorías no está disponible" in a for a in payload.avisos)
+
+
+def test_color_se_exporta_como_sugerencia_para_vinted():
+    # Vinted pide Color -> si la ficha lo tiene, sale como CampoExportado
+    # (sugerencia cruda que Diego confirma; Vinted admite máx 2 colores).
+    producto = _producto(color="Blanco y gris")
+    payload = construir_payload(producto, _FOTOS_POR_ID, "vinted")
+    color = next((c for c in payload.campos if c.nombre == "color"), None)
+    assert color is not None
+    assert color.valor == "Blanco y gris"
+    assert not color.traducido  # cruda -- Diego elige el color exacto
+
+
+def test_sin_color_no_hay_campo_color():
+    payload = construir_payload(_producto(color=None), _FOTOS_POR_ID, "vinted")
+    assert not any(c.nombre == "color" for c in payload.campos)

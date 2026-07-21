@@ -43,6 +43,28 @@ logger = logging.getLogger(__name__)
 _PLATAFORMAS: tuple[str, ...] = ("wallapop", "vinted")
 _ETIQUETA_PLATAFORMA: dict[str, str] = {"wallapop": "Wallapop", "vinted": "Vinted"}
 
+# ORDEN de los bloques = el del FORMULARIO de cada plataforma (verbatim de
+# Diego, 2026-07-21), para rellenar de arriba abajo en paralelo con la web sin
+# scrollear. Los tokens especiales: "resumen"/"fotos"/"categoria"/"titulo_desc"/
+# "precio"; el resto son nombres de `CampoExportado` (envío = "tramo_peso_kg" en
+# Wallapop, "package_size" en Vinted; "desperfectos" ≈ el campo "Medidas" del
+# formulario, que no producimos como dimensiones). Un campo ausente no pinta nada.
+_ORDEN_BLOQUES: dict[str, tuple[str, ...]] = {
+    # Resumen -> Fotos -> Categoría -> Título -> Descripción -> Marca/Talla ->
+    # Estado -> Precio -> Medidas -> Tamaño.
+    "wallapop": (
+        "resumen", "fotos", "categoria", "titulo_desc",
+        "marca", "talla", "estado", "precio", "desperfectos", "tramo_peso_kg",
+    ),
+    # Fotos -> Título -> Descripción -> Categoría -> Marca -> Talla -> Medidas ->
+    # Estado -> Color -> Material -> Precio -> Envío.
+    "vinted": (
+        "fotos", "titulo_desc", "categoria",
+        "marca", "talla", "desperfectos", "estado", "color", "composicion",
+        "precio", "package_size",
+    ),
+}
+
 
 # --------------------------------------------------------------------------
 # Estado de "extraído" / "confirmado" — mismas comprobaciones que
@@ -184,84 +206,77 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
     for aviso in payload.avisos:
         st.warning(f"⚠️ {aviso}")
 
-    # ORDEN = EL DEL FORMULARIO DE WALLAPOP, verbatim de Diego (2026-07-21),
-    # para rellenar de arriba abajo en paralelo con la web sin scrollear:
-    #   Fotos -> Categoría -> Título -> Descripción -> (Marca/Talla) -> Estado
-    #   -> PRECIO -> Medidas(desperfectos) -> Tamaño(envío).
-    # (El "Resumen del producto" de arriba de Wallapop es el mismo título.)
-    # El orden de Vinted lo afinará Diego; por ahora usa el mismo.
     campos_por_nombre = {c.nombre: c for c in payload.campos}
 
-    def _campo(nombre: str) -> None:
-        campo = campos_por_nombre.get(nombre)
-        if campo is not None:
-            _render_campo_exportado(campo)
-            st.divider()
-
-    # 0. RESUMEN DEL PRODUCTO -- Wallapop lo pide ARRIBA DEL TODO (máx 50
-    # chars); es el mismo título, se repite aquí para pegarlo primero sin
-    # scrollear (Diego, 2026-07-21). Vinted no tiene "Resumen".
-    if plataforma == "wallapop":
+    def _resumen() -> None:
+        # Wallapop pide el "Resumen del producto" arriba del todo (máx 50 chars);
+        # es el mismo título, repetido para pegarlo primero sin scrollear.
         st.subheader("Resumen del producto")
         st.caption(_contador(payload.titulo, schema.LimiteTexto(maximo=50)))
         st.code(payload.titulo, language=None)
         st.divider()
 
-    # 1. FOTOS (+ preparar) -- van arriba en el formulario de Wallapop.
-    st.subheader("Fotos")
-    if payload.fotos:
-        columnas = st.columns(min(len(payload.fotos), 5))
-        for i, ruta in enumerate(payload.fotos):
-            with columnas[i % len(columnas)]:
-                _render_foto_export(ruta, i + 1)
-    else:
-        st.caption("— sin fotos —")
-    if payload.fotos_excluidas:
-        st.caption(
-            f"{len(payload.fotos_excluidas)} foto(s) no caben en el límite de "
-            f"{_ETIQUETA_PLATAFORMA[plataforma]} — no se incluyen."
-        )
-    key_boton = f"export_fotos_{producto['id']}_{plataforma}"
-    key_ruta = f"export_ruta_{producto['id']}_{plataforma}"
-    if st.button(
-        f"📁 Preparar fotos para {_ETIQUETA_PLATAFORMA[plataforma]}",
-        key=key_boton,
-        use_container_width=True,
-    ):
-        ruta = _accion_preparar_fotos(store, lote_id, producto["id"], plataforma, payload)
-        if ruta is not None:
-            st.session_state[key_ruta] = str(ruta)
-    ruta_preparada = st.session_state.get(key_ruta)
-    if ruta_preparada:
-        st.success(f"Fotos copiadas — ábrela y arrástralas a {_ETIQUETA_PLATAFORMA[plataforma]}:")
-        st.code(ruta_preparada, language=None)
+    def _fotos() -> None:
+        st.subheader("Fotos")
+        if payload.fotos:
+            columnas = st.columns(min(len(payload.fotos), 5))
+            for i, ruta in enumerate(payload.fotos):
+                with columnas[i % len(columnas)]:
+                    _render_foto_export(ruta, i + 1)
+        else:
+            st.caption("— sin fotos —")
+        if payload.fotos_excluidas:
+            st.caption(
+                f"{len(payload.fotos_excluidas)} foto(s) no caben en el límite de "
+                f"{_ETIQUETA_PLATAFORMA[plataforma]} — no se incluyen."
+            )
+        key_boton = f"export_fotos_{producto['id']}_{plataforma}"
+        key_ruta = f"export_ruta_{producto['id']}_{plataforma}"
+        if st.button(
+            f"📁 Preparar fotos para {_ETIQUETA_PLATAFORMA[plataforma]}",
+            key=key_boton,
+            use_container_width=True,
+        ):
+            ruta = _accion_preparar_fotos(store, lote_id, producto["id"], plataforma, payload)
+            if ruta is not None:
+                st.session_state[key_ruta] = str(ruta)
+        ruta_preparada = st.session_state.get(key_ruta)
+        if ruta_preparada:
+            st.success(f"Fotos copiadas — ábrela y arrástralas a {_ETIQUETA_PLATAFORMA[plataforma]}:")
+            st.code(ruta_preparada, language=None)
+        st.divider()
 
-    # 2. CATEGORÍA
-    st.divider()
-    _render_candidatas_categoria(payload)
+    def _titulo_desc() -> None:
+        st.subheader("Título + descripción")
+        st.caption(_contador(payload.titulo, _limite_texto(plataforma, "title")))
+        st.code(payload.titulo, language=None)
+        st.caption(_contador(payload.descripcion, _limite_texto(plataforma, "description")))
+        st.code(payload.descripcion, language=None)
+        st.caption("Título + descripción juntos, para pegar de una vez:")
+        st.code(f"{payload.titulo}\n\n{payload.descripcion}", language=None)
+        st.divider()
 
-    # 3-4. TÍTULO + DESCRIPCIÓN (el título sirve también para el "Resumen").
-    st.divider()
-    st.subheader("Título + descripción")
-    st.caption(_contador(payload.titulo, _limite_texto(plataforma, "title")))
-    st.code(payload.titulo, language=None)
-    st.caption(_contador(payload.descripcion, _limite_texto(plataforma, "description")))
-    st.code(payload.descripcion, language=None)
-    st.caption("Título + descripción juntos, para pegar de una vez:")
-    st.code(f"{payload.titulo}\n\n{payload.descripcion}", language=None)
+    def _paso(token: str) -> None:
+        if token == "resumen":
+            _resumen()
+        elif token == "fotos":
+            _fotos()
+        elif token == "categoria":
+            _render_candidatas_categoria(payload)
+            st.divider()
+        elif token == "titulo_desc":
+            _titulo_desc()
+        elif token == "precio":
+            _render_precio(producto, plataforma)
+            st.divider()
+        else:  # un CampoExportado por nombre (marca/talla/estado/color/…/envío)
+            campo = campos_por_nombre.get(token)
+            if campo is not None:
+                _render_campo_exportado(campo)
+                st.divider()
 
-    # 5. (MARCA/TALLA, atributos de moda), 6. ESTADO
-    st.divider()
-    for nombre in ("marca", "talla", "estado"):
-        _campo(nombre)
-
-    # 7. PRECIO
-    _render_precio(producto, plataforma)
-
-    # 8. MEDIDAS (desperfectos), 9. TAMAÑO (envío)
-    st.divider()
-    for nombre in ("desperfectos", "composicion", "tramo_peso_kg", "package_size"):
-        _campo(nombre)
+    for token in _ORDEN_BLOQUES[plataforma]:
+        _paso(token)
 
 
 # --------------------------------------------------------------------------
