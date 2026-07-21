@@ -502,29 +502,56 @@ def _campo_desde_dict(datos: Any) -> Campo | None:
         return None
 
 
+def _tipo_para_busqueda(campos: dict[str, Any]) -> Campo | None:
+    """El `tipo` a usar en la búsqueda -- fuente ÚNICA compartida por
+    `atributos_desde_campos` (vía estricta) y `sugerir_terminos` (vía
+    editable), para no bifurcar el criterio en dos sitios.
+
+    PREFIERE el campo `tipo` EXPLÍCITO (`core/extract.py`, "qué ES el
+    producto": "masajeador de rodilla", "sudadera"...) cuando existe y su
+    `fuente` es buscable (`_campo_desde_dict` ya filtra por
+    `_FUENTES_BUSCABLES`: un `tipo` todavía "inferido" -- no confirmado por
+    Diego -- NO es buscable y esto devuelve `None` para él, cayendo al
+    fallback). Cubre no-ropa (el escaneo de `_TIPOS_PRENDA` de abajo es solo
+    28 prendas y nunca iba a encontrar "masajeador de rodilla").
+
+    Si no hay `tipo` explícito buscable, cae al ESCANEO del título confirmado
+    contra `_TIPOS_PRENDA` (fallback para fichas viejas sin el campo `tipo`,
+    o con un `tipo` aún no confirmado) -- comportamiento sin cambios respecto
+    a antes de que `tipo` existiera como campo propio."""
+    explicito = _campo_desde_dict(campos.get("tipo"))
+    if explicito is not None:
+        return explicito
+
+    titulo = _texto_campo(campos, "titulo")
+    if titulo is None:
+        return None
+    t = _sin_acentos(titulo.lower())
+    for tipo in _TIPOS_PRENDA:
+        if tipo in t:
+            return Campo(valor=tipo, fuente="diego", confianza="media")
+    return None
+
+
 def atributos_desde_campos(campos: dict[str, Any]) -> AtributosProducto:
     """Arma la consulta de precio desde una ficha CONFIRMADA (el dict
     `producto["campos"]["campos"]` que persiste `store`). Toma marca/modelo/
-    talla/ean con su procedencia REAL (nunca "inferido"), y DERIVA `tipo` del
-    título confirmado (un término de búsqueda, marcado `fuente="diego"` porque
-    Diego confirmó el título). No inventa nada: si el título no trae un tipo de
-    prenda reconocible, no hay `tipo` y se busca solo por marca."""
+    talla/ean con su procedencia REAL (nunca "inferido"). Para `tipo`: ver
+    `_tipo_para_busqueda` -- PREFIERE el campo `tipo` explícito confirmado por
+    Diego, y solo si no existe (buscable) cae a derivarlo del título. No
+    inventa nada: si no hay tipo explícito ni el título trae uno reconocible,
+    no hay `tipo` y se busca solo por marca."""
     atributos: AtributosProducto = {}
     for nombre in (*CAMPOS_IDENTIFICATIVOS, *CAMPOS_MODIFICADORES, CAMPO_EAN):
         if nombre == "tipo":
-            continue  # se deriva del título abajo, no viene como campo propio
+            continue  # se resuelve abajo via `_tipo_para_busqueda`, no aqui
         campo = _campo_desde_dict(campos.get(nombre))
         if campo is not None:
             atributos[nombre] = campo
 
-    titulo_campo = campos.get("titulo")
-    titulo = titulo_campo.get("valor") if isinstance(titulo_campo, dict) else None
-    if isinstance(titulo, str):
-        t = _sin_acentos(titulo.lower())
-        for tipo in _TIPOS_PRENDA:
-            if tipo in t:
-                atributos["tipo"] = Campo(valor=tipo, fuente="diego", confianza="media")
-                break
+    tipo_campo = _tipo_para_busqueda(campos)
+    if tipo_campo is not None:
+        atributos["tipo"] = tipo_campo
     return atributos
 
 
@@ -672,7 +699,8 @@ def _texto_campo(campos: dict[str, Any], nombre: str) -> str | None:
 def sugerir_terminos(campos: dict[str, Any]) -> list[str]:
     """Combinaciones de palabras clave SUGERIDAS (editables en la UI) a partir
     de una ficha confirmada. Usa marca/modelo/talla con CUALQUIER fuente (son
-    sugerencias que Diego edita) + el tipo derivado del título. Reusa
+    sugerencias que Diego edita) + `tipo` via `_tipo_para_busqueda` (el campo
+    `tipo` explícito buscable si existe, si no el derivado del título). Reusa
     `variantes_de_busqueda` relabelando a "diego" (el filtro de procedencia no
     aplica a un término que Diego va a revisar). Vacía si no hay ni marca ni
     modelo -- entonces la UI arranca con el título como única línea editable."""
@@ -681,13 +709,10 @@ def sugerir_terminos(campos: dict[str, Any]) -> list[str]:
         v = _texto_campo(campos, nombre)
         if v:
             loose[nombre] = Campo(valor=v, fuente="diego", confianza="media")
+    tipo_campo = _tipo_para_busqueda(campos)  # explicito (buscable) o del titulo
+    if tipo_campo is not None:
+        loose["tipo"] = tipo_campo
     titulo = _texto_campo(campos, "titulo")
-    if titulo:
-        t = _sin_acentos(titulo.lower())
-        for tipo in _TIPOS_PRENDA:
-            if tipo in t:
-                loose["tipo"] = Campo(valor=tipo, fuente="diego", confianza="media")
-                break
     variantes = variantes_de_busqueda(loose)
     # Fallback: sin marca ni modelo no hay variantes, pero el título confirmado
     # es la mejor semilla editable que queda (Diego la recorta).

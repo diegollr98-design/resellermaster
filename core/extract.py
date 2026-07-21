@@ -308,8 +308,9 @@ ENUM CERRADO (`core.schema.CATEGORIAS`), no un texto legible, asi que NO
 tiene camino a `fuente="foto"` -- sale SIEMPRE "inferido"/"baja". Regla
 dura nueva: si el modelo devuelve algo fuera del enum, la clave
 "categoria" NO se anade a `campos` (nunca "otros" como comodin silencioso,
-decision-making.md SS13) -- unica excepcion a que `campos` siempre traiga
-las mismas claves de `CAMPOS_PRODUCIDOS`.
+decision-making.md SS13) -- una de las dos excepciones (la otra es
+"tipo", ver mas abajo) a que `campos` siempre traiga las mismas claves
+de `CAMPOS_PRODUCIDOS`.
 
 `estado` (2026-07-17, fix de un bug real de Diego, no un hallazgo de
 auditoria): hasta aqui `estado` lo rellenaba una llamada VLM SEPARADA
@@ -332,6 +333,25 @@ anterior. Mismo camino de fallo no-fatal que `categoria`: si el modelo
 viola el enum, la clave "estado" NO se rellena con un valor inventado
 (nunca "Bueno" como comodin) -- se anota en `fallos` y el campo queda en
 su placeholder `valor=None`.
+
+`tipo` (2026-07-21, decision de Diego, campo NUEVO): que ES el producto
+("masajeador de rodilla", "sudadera", "jersey") -- el hueco que la
+sintesis NO llenaba: marca/talla/color/estado/categoria/titulo salian,
+pero nunca la CLASIFICACION de que cosa es. Es fundamental para el
+TITULO (que ahora debe LIDERAR con el tipo), el termino de busqueda de
+PRECIO (`core/pricing.py`) y las CANDIDATAS de categoria. A diferencia
+de `categoria`/`estado`, `tipo` es TEXTO LIBRE -- no hay un enum cerrado
+de "tipos de producto" (seria una taxonomia infinita), asi que su
+esquema es MAS simple (`valor` + `confianza`, sin `motivo`). Pero
+comparte con `categoria`/`estado` lo esencial: es SIEMPRE un JUICIO del
+modelo sobre el producto entero, nunca un texto legible en un pixel --
+por eso NO tiene `visible_en_foto`/`de_texto_detectado`, sale SIEMPRE
+`fuente="inferido"`, techo `confianza="baja"/"media"` (nunca "alta"). Sin
+llamada VLM extra: vive DENTRO de la MISMA sintesis. Mismo camino de
+fallo no-fatal: si la sintesis no opina (`valor=None`), la clave "tipo"
+se queda AUSENTE de `campos` -- aqui NO es una "violacion de enum" (no
+hay enum que violar), asi que tampoco se anota en `fallos`: simplemente
+no hubo opinion, igual que un gap-filler que no encontro nada.
 """
 
 from __future__ import annotations
@@ -394,7 +414,7 @@ class RespuestaVLMInvalidaError(ExtractorError):
 
 VERSION_PROMPT_CROP = "extract-crop-v2"  # v2: hallazgos como LISTA (regla 4)
 VERSION_PROMPT_METRO = "extract-metro-v1"
-VERSION_PROMPT_SINTESIS = "extract-sintesis-v4"  # v4: + estado (enum cerrado, SIEMPRE inferido) -- v3: + categoria
+VERSION_PROMPT_SINTESIS = "extract-sintesis-v5"  # v5: + tipo (texto libre, SIEMPRE inferido) -- v4: + estado (enum cerrado, SIEMPRE inferido) -- v3: + categoria
 # NO existe VERSION_PROMPT_COLOR: el color sale de pixeles
 # (`architecture.md` Costura 1, tabla de proveedores: "color por pixeles"),
 # nunca del VLM -- ver `_color_dominante_rgb` mas abajo. La sintesis SI
@@ -694,10 +714,12 @@ class ResultadoExtraccion:
 
     `campos`: nombre_campo -> `Campo` (la estructura de procedencia de
         `core/schema.py`) -- LA COSTURA para exportar a Wallapop/Vinted.
-        Siempre incluye las mismas claves (`CAMPOS_PRODUCIDOS`), CON UNA
-        EXCEPCION: "categoria" falta si el modelo violo su enum cerrado
-        (nunca se rellena con un comodin silencioso) -- quien consuma
-        `campos` debe usar `.get("categoria")`, nunca asumir que esta.
+        Siempre incluye las mismas claves (`CAMPOS_PRODUCIDOS`), CON DOS
+        EXCEPCIONES: "categoria" falta si el modelo violo su enum cerrado
+        (nunca se rellena con un comodin silencioso), y "tipo" falta si la
+        sintesis no tuvo opinion (`valor=None` -- no hay enum que violar,
+        asi que esto no es un fallo) -- quien consuma `campos` debe usar
+        `.get("categoria")`/`.get("tipo")`, nunca asumir que estan.
     `propuestas`: nombre_campo -> `Propuesta` -- LA ENTREGA para la UI de
         revision de Diego: el recorte, todas las lecturas, las alternativas
         en conflicto (cada una con su recorte) y el motivo. Mismas claves
@@ -736,6 +758,13 @@ CAMPOS_PRODUCIDOS: tuple[str, ...] = (
     "color",
     "estado",
     "desperfectos",
+    "tipo",  # NUEVO (2026-07-21, decision de Diego): que ES el producto
+    # ("masajeador de rodilla", "sudadera") -- TEXTO LIBRE (sin enum), SIEMPRE
+    # fuente="inferido" (juicio sobre el producto entero, nunca texto legible
+    # en un pixel: sin camino a "foto"). Alimenta titulo/precio/categoria.
+    # Igual que "categoria", puede faltar de `campos` si la sintesis no
+    # opino (`valor=None`) -- aqui NO es un fallo (no hay enum que violar),
+    # asi que tampoco se anota en `ResultadoExtraccion.fallos`.
     "categoria",  # NUEVO (LA SINTESIS COMPROMETIDA): clasificacion moda/electronica/
     # hogar/libros/otros, fuente="inferido" SIEMPRE -- NUNCA "foto" (no es texto
     # legible en un pixel, es un juicio). UNICA excepcion a "siempre las mismas
@@ -1570,7 +1599,18 @@ de esta lista: "medidas" solo sale de una foto de un metro con el 0 y el
 borde de la prenda visibles, o de una nota escrita por el vendedor, nunca
 de tu estimacion sobre una foto general.
 
-Ademas, clasifica el TIPO de producto (decide que campos estructurados le
+Ademas, indica el TIPO de producto -- que ES la cosa, en pocas palabras
+("masajeador de rodilla", "sudadera", "jersey", "camiseta",
+"electroestimulador"). Este campo tiene estructura propia (solo valor +
+confianza, sin visible_en_foto):
+  - tipo: un objeto con:
+      - valor: en pocas palabras QUE ES el producto (texto corto, en
+        espanol, singular). Da tu mejor estimacion; null solo si de
+        verdad no puedes decir que es. Es un JUICIO tuyo, no un texto que
+        se lea en una etiqueta.
+      - confianza: "media" o "baja". NUNCA "alta".
+
+Ademas, clasifica la CATEGORIA de producto (decide que campos estructurados le
 va a pedir la plataforma -- Moda pide talla, Electronica pide capacidad,
 etc.):
   - categoria: EXACTAMENTE uno de estos cinco valores, ninguno mas:
@@ -1599,7 +1639,10 @@ PROPIA (no uses valor/visible_en_foto/de_texto_detectado aqui):
 Ademas, redacta:
   - titulo: un titulo de venta corto y honesto para Wallapop/Vinted (maximo
     100 caracteres), sin mayusculas excesivas, sin emojis en ristra, sin
-    mencionar ninguna marca distinta de la que propusiste.
+    mencionar ninguna marca distinta de la que propusiste. El titulo debe
+    LIDERAR con el tipo de producto cuando lo tengas (p.ej. "Masajeador de
+    rodilla Lufthous LLLT-200", no "Lufthous LLLT-200" a secas) -- el tipo
+    es lo primero que el comprador necesita saber que ES la cosa.
   - descripcion: una descripcion de venta corta (maximo 600 caracteres),
     en espanol, sin emails, sin enlaces, sin mayusculas excesivas, sin
     ristras de simbolos/emojis, mencionando solo la marca que propusiste
@@ -1662,23 +1705,44 @@ def _esquema_estado_sintesis() -> dict:
     }
 
 
+def _esquema_tipo_sintesis() -> dict:
+    """`tipo` en el `json_schema` de la sintesis -- TEXTO LIBRE (a
+    diferencia de `categoria`/`estado`, no hay enum cerrado: "que ES el
+    producto" no es una lista finita), pero comparte con ellos que NO es
+    un texto legible en un pixel (sin `visible_en_foto`/
+    `de_texto_detectado`): es SIEMPRE un juicio del modelo, techo
+    `confianza="media"/"baja"` (nunca "alta"). Mas simple que `estado`:
+    sin `motivo` (no hace falta justificar que ES la cosa)."""
+    return {
+        "type": "object",
+        "properties": {
+            "valor": {"type": ["string", "null"]},
+            "confianza": {"type": "string", "enum": ["media", "baja"]},  # NUNCA "alta"
+        },
+        "required": ["valor", "confianza"],
+        "additionalProperties": False,
+    }
+
+
 ESQUEMA_SINTESIS_FICHA: dict = {
     "type": "object",
     "properties": {
         **{campo: _esquema_campo_sintesis() for campo in _CAMPOS_SINTESIS},
-        # "categoria"/"estado" NO usan `_esquema_campo_sintesis()` -- no son
-        # texto legible con visible_en_foto/de_texto_detectado, son ENUM
-        # CERRADO. El enum en el json_schema ya restringe la respuesta a
+        # "categoria"/"estado"/"tipo" NO usan `_esquema_campo_sintesis()` --
+        # no son texto legible con visible_en_foto/de_texto_detectado, son
+        # JUICIOS del modelo (dos de ellos ENUM CERRADO, "tipo" texto
+        # libre). El enum en el json_schema ya restringe la respuesta a
         # nivel de API; el codigo (`_construir_campo_categoria_desde_
         # sintesis`/`_construir_campo_estado_desde_sintesis`) NUNCA confia
         # solo en eso -- revalida contra `es_categoria_valida`/
         # `ESTADO_UI_A_CANONICO`.
         "categoria": {"type": "string", "enum": list(CATEGORIAS)},
         "estado": _esquema_estado_sintesis(),
+        "tipo": _esquema_tipo_sintesis(),
         "titulo": {"type": "string"},
         "descripcion": {"type": "string"},
     },
-    "required": [*_CAMPOS_SINTESIS, "categoria", "estado", "titulo", "descripcion"],
+    "required": [*_CAMPOS_SINTESIS, "categoria", "estado", "tipo", "titulo", "descripcion"],
     "additionalProperties": False,
 }
 
@@ -1768,8 +1832,11 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
     (marca/talla/color/... y titulo/descripcion con ella) por culpa de un
     campo que tiene su propio camino de fallo no-fatal (decision-making.md
     SS13: la clave simplemente no se anade a `campos`, nunca aborta el
-    resto)."""
-    claves_requeridas = (*_CAMPOS_SINTESIS, "categoria", "estado", "titulo", "descripcion")
+    resto). `tipo` tambien se exige PRESENTE (estructura minima: valor +
+    confianza), pero NO tiene enum que validar -- es texto libre; su
+    unico camino de fallo no-fatal es "sin opinion" (`valor=None`), ver
+    `_construir_campo_tipo_desde_sintesis`."""
+    claves_requeridas = (*_CAMPOS_SINTESIS, "categoria", "estado", "tipo", "titulo", "descripcion")
     for clave in claves_requeridas:
         if clave not in datos:
             raise RespuestaVLMInvalidaError(
@@ -1829,6 +1896,29 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
         "valor": bloque_estado["valor"],  # crudo -- el ENUM se valida despues
         "motivo": str(bloque_estado["motivo"]).strip(),
         "confianza": bloque_estado["confianza"],
+    }
+
+    # "tipo" tiene su ESTRUCTURA PROPIA, MAS simple que "estado" (solo valor
+    # + confianza -- sin motivo): a diferencia de "categoria"/"estado", su
+    # `valor` es TEXTO LIBRE (no hay enum que validar aqui ni mas abajo) --
+    # `_construir_campo_tipo_desde_sintesis` solo decide si el texto es
+    # utilizable (no vacio/None).
+    bloque_tipo = datos["tipo"]
+    if not isinstance(bloque_tipo, dict):
+        raise RespuestaVLMInvalidaError(f"el campo 'tipo' de la sintesis no es un objeto: {bloque_tipo!r}")
+    for clave in ("valor", "confianza"):
+        if clave not in bloque_tipo:
+            raise RespuestaVLMInvalidaError(
+                f"falta la clave {clave!r} en el campo 'tipo' de la sintesis: {bloque_tipo!r}"
+            )
+    if bloque_tipo["confianza"] not in ("media", "baja"):
+        raise RespuestaVLMInvalidaError(
+            f"confianza invalida en el campo 'tipo' de la sintesis: {bloque_tipo['confianza']!r}"
+        )
+    valor_tipo = bloque_tipo["valor"]
+    resultado["tipo"] = {
+        "valor": str(valor_tipo).strip() if valor_tipo is not None and str(valor_tipo).strip() else None,
+        "confianza": bloque_tipo["confianza"],
     }
 
     resultado["titulo"] = str(datos["titulo"]).strip()
@@ -2361,8 +2451,9 @@ def _construir_campo_categoria_desde_sintesis(valor: Any) -> Campo | None:
     inventar un valor de relleno (p.ej. "otros" como comodin) -- eso seria
     exactamente el fallback silencioso que `decision-making.md` SS13
     prohibe. Debe anotar el fallo en `ResultadoExtraccion.fallos` y dejar
-    la clave "categoria" AUSENTE de `campos` (unica excepcion documentada
-    a "CAMPOS_PRODUCIDOS siempre presente")."""
+    la clave "categoria" AUSENTE de `campos` (una de las dos excepciones
+    documentadas a "CAMPOS_PRODUCIDOS siempre presente" -- la otra es
+    "tipo", ver `_construir_campo_tipo_desde_sintesis")."""
     if not es_categoria_valida(valor):
         return None
     return Campo(valor=valor, fuente="inferido", confianza="baja")
@@ -2402,6 +2493,35 @@ def _construir_campo_estado_desde_sintesis(decision: dict[str, Any]) -> Campo | 
     if valor not in ESTADO_UI_A_CANONICO:
         return None
     return Campo(valor=valor, fuente="inferido", confianza=decision["confianza"])
+
+
+def _construir_campo_tipo_desde_sintesis(decision: dict[str, Any]) -> Campo | None:
+    """Traduce el `tipo` crudo de la síntesis a un `Campo`, o `None` si no hay
+    valor (la síntesis no tuvo opinión) -- quien llama deja la clave AUSENTE.
+
+    `tipo` = qué ES el producto ("masajeador de rodilla", "sudadera"). Es texto
+    libre (a diferencia de `categoria`/`estado`, enum cerrado) pero comparte con
+    ellos que NO es un texto legible en un píxel -- es una CLASIFICACIÓN/NOMBRE
+    del producto entero, así que NO tiene `visible_en_foto`/`de_texto_detectado`
+    y sale SIEMPRE `fuente="inferido"`, techo `confianza="baja"/"media"` (nunca
+    "alta"). No se publica como afirmación dura: alimenta el título y el término
+    de búsqueda de precio, que Diego confirma/edita. Ver `truth-loop.md` §A.
+
+    `confianza` se ACOTA aquí, en el cuerpo (no solo en el parseo aguas
+    arriba): la garantía "nunca alta" la fuerza un `if` en la MISMA función
+    que la promete (`decision-making.md` §17; hallazgo del listing-audit del
+    2026-07-21), igual que `_construir_campo_categoria_desde_sintesis`
+    hardcodea "baja". Así, si algún día se construye un `Campo` de tipo desde
+    un dict que NO pasó por `_parsear_respuesta_sintesis`, "alta" sigue siendo
+    inalcanzable -- la defensa no depende de que otra función haya corrido
+    antes."""
+    valor = decision.get("valor")
+    if not isinstance(valor, str) or not valor.strip():
+        return None
+    confianza = decision.get("confianza")
+    if confianza not in ("media", "baja"):
+        confianza = "baja"
+    return Campo(valor=valor.strip(), fuente="inferido", confianza=confianza)
 
 
 # nombre_del_campo_en_el_json_schema -> (nombre_canonico_del_modulo, ubicaciones_validas)
@@ -2943,6 +3063,28 @@ class ExtractorEngine:
             )
         else:
             fallos.append(f"sintesis_estado_fuera_de_enum: {decisiones['estado']['valor']!r}")
+
+        # "tipo" (2026-07-21, decision de Diego): que ES el producto -- campo
+        # NUEVO (como titulo/descripcion: no existia antes de la sintesis, sin
+        # gap-filler que respetar), TEXTO LIBRE y JUICIO-SOLO (sin enum, sin
+        # camino a fuente="foto"). Alimenta titulo/precio/candidatas de
+        # categoria -- Diego lo confirma/edita en la ficha. Si la sintesis no
+        # opina (valor=None), la clave se deja AUSENTE de `campos`: a
+        # diferencia de "categoria"/"estado", esto NO es una violacion de
+        # enum (no hay enum), asi que NO se anota en `fallos`.
+        campo_tipo = _construir_campo_tipo_desde_sintesis(decisiones["tipo"])
+        if campo_tipo is not None:
+            campos["tipo"] = campo_tipo
+            propuestas["tipo"] = Propuesta(
+                campo="tipo",
+                valor=campo_tipo.valor,
+                recorte=None,
+                evidencia=None,
+                motivo="que es el producto (inferido por la sintesis, confirmalo)",
+            )
+        # else: sin opinion -> clave AUSENTE (nunca comodin). No es un fallo
+        # tecnico: la sintesis simplemente no propuso tipo, no se anota en
+        # `fallos`.
 
         for campo_texto in ("titulo", "descripcion"):
             texto = decisiones[campo_texto]

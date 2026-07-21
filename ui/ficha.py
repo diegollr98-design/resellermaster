@@ -71,8 +71,16 @@ logger = logging.getLogger(__name__)
 # todavía trae la clave, el fallback `[c for c in campos if c not in
 # _ORDEN_CAMPOS]` de `_render_producto` la sigue pintando al final --
 # degrada, no se pierde.
+#
+# "tipo" (Fase 4, `docs/seeds/fase-4-tipo-producto.md`): qué ES el
+# producto ("masajeador de rodilla", "sudadera") -- va justo después de
+# "categoria" porque es lo primero que Diego valida ("¿de qué va esto?"
+# antes que marca/talla). SIEMPRE `fuente="inferido"` (un juicio de la
+# síntesis, nunca una lectura de píxel) y SIN recorte propio -- cae en el
+# mismo camino GENÉRICO que cualquier campo de texto (`_render_campo`, la
+# rama `else`): no exige recorte para pintarse ni para confirmarse.
 _ORDEN_CAMPOS = (
-    "categoria", "marca", "modelo", "ean", "talla", "color",
+    "categoria", "tipo", "marca", "modelo", "ean", "talla", "color",
     "medidas", "estado", "desperfectos", "titulo", "descripcion",
 )
 

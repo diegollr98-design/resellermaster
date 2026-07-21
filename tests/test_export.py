@@ -546,6 +546,52 @@ def test_candidatas_categoria_se_proponen_para_ropa():
         assert payload.categoria_snapshot  # fecha del snapshot presente
 
 
+def test_tipo_entra_en_el_texto_de_busqueda_de_candidatas(monkeypatch):
+    """`tipo` ("que ES el producto": "sudadera", "masajeador de rodilla") es
+    la señal MAS FUERTE para el ranking de `candidatas()` -- debe viajar en
+    el texto de búsqueda aunque título/descripción no lo mencionen literal
+    (`docs/seeds/fase-4-tipo-producto.md`)."""
+    from core import categorias
+
+    original = categorias.candidatas
+    capturado: dict[str, str] = {}
+
+    def _espia(categoria_amplia, texto, plataforma, k=3):
+        capturado["texto"] = texto
+        return original(categoria_amplia, texto, plataforma, k=k)
+
+    monkeypatch.setattr(categorias, "candidatas", _espia)
+    producto = _producto(tipo="masajeador de rodilla")
+    construir_payload(producto, _FOTOS_POR_ID, "wallapop")
+    assert "masajeador" in capturado["texto"].lower()
+
+
+def test_tipo_ausente_no_rompe_el_texto_de_busqueda():
+    # Ficha vieja sin campo `tipo` (extraida antes de que existiera) -- no
+    # debe reventar ni dejar basura ("None") en el texto de busqueda.
+    payload = construir_payload(_producto(), _FOTOS_POR_ID, "wallapop")
+    assert payload.titulo  # el payload se construye igual de bien
+
+
+def test_tipo_mejora_el_ranking_de_candidatas_hacia_la_hoja_correcta():
+    # Con un titulo/descripcion que NO mencionan la prenda, sin `tipo` ninguna
+    # hoja de "sudaderas" aparece entre las candidatas; con `tipo="sudadera"`
+    # SI aparece -- el tipo es la señal mas fuerte de que prenda es, aprieta
+    # el ranking exactamente donde `product.md`/el seed lo pedían.
+    from core import categorias
+
+    texto_generico = (
+        "Prenda comoda para el dia a dia, apenas utilizada, "
+        "sin desperfectos visibles."
+    )
+    sin_tipo = categorias.candidatas("moda", texto_generico, "wallapop", k=5)
+    con_tipo = categorias.candidatas(
+        "moda", f"sudadera {texto_generico}", "wallapop", k=5
+    )
+    assert not any("sudader" in c.hoja.nombre.lower() for c in sin_tipo)
+    assert any("sudader" in c.hoja.nombre.lower() for c in con_tipo)
+
+
 def test_export_nunca_auto_rellena_una_hoja_de_categoria():
     # El export NO produce un CampoExportado de categoria/catalog_id con valor:
     # la hoja SIEMPRE la elige Diego entre las candidatas. Auto-rellenarla

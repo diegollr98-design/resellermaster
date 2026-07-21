@@ -734,6 +734,77 @@ def test_categoria_confirmar_deja_fuente_diego(tmp_path):
 
 
 # ============================================================================
+# `tipo` (Fase 4, `docs/seeds/fase-4-tipo-producto.md`): qué ES el producto
+# ("masajeador de rodilla", "sudadera") -- SIEMPRE `fuente="inferido"` (un
+# juicio de la síntesis, nunca una lectura de píxel) y SIN recorte propio
+# (`recorte=None`). No es un campo especial en `_render_campo` (no es
+# `estado`/`categoria`/`titulo`/`descripcion`): cae en la rama GENÉRICA de
+# texto libre editable, igual que `marca`/`talla` -- por eso NO hace falta
+# código nuevo para que se pinte o se confirme; sólo su sitio en
+# `_ORDEN_CAMPOS` (`ui/ficha.py`).
+# ============================================================================
+def _ficha_con_tipo(crops: Path) -> ResultadoExtraccion:
+    """Basada en la ficha "lista para confirmar" (ya trae categoria/titulo/
+    descripcion propuestos; `estado` lo elige Diego) + el campo `tipo`
+    nuevo, sin recorte -- verifica que `_render_campo` no exige un píxel
+    para un campo que por diseño no lo tiene (es un juicio, `truth-loop.md`
+    §A.5)."""
+    base = _marca_leida_no_publicada_lista_para_confirmar(crops)
+    campos = dict(base.campos)
+    propuestas = dict(base.propuestas)
+    campos["tipo"] = Campo(valor="masajeador de rodilla", fuente="inferido", confianza="baja")
+    propuestas["tipo"] = Propuesta(
+        campo="tipo", valor="masajeador de rodilla", recorte=None, evidencia=None,
+        motivo="qué es el producto (inferido por la síntesis, confírmalo)",
+    )
+    return ResultadoExtraccion(
+        campos=campos, propuestas=propuestas, fallos=base.fallos, coste_usd=base.coste_usd
+    )
+
+
+def test_tipo_se_pinta_sin_recorte_con_badge_inferido(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_con_tipo)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    assert _texto_input(at, f"ficha_{pid}_tipo_valor").value == "masajeador de rodilla"
+
+    captions = " ".join(c.value for c in at.caption)
+    markdowns = " ".join(m.value for m in at.markdown)
+    assert "sin recorte" in captions.lower(), "tipo no tiene recorte propio -- debe decirlo, no simularlo"
+    assert "inferido" in markdowns.lower(), "tipo SIEMPRE es un juicio (fuente=inferido), nunca 'foto'"
+    assert "qué es el producto" in captions.lower()
+
+
+def test_tipo_confirmar_deja_fuente_diego(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_con_tipo)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at = _elegir_estado_y_categoria(at, pid)
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    tipo = _producto(tmp_path, lote_id, pid)["campos"]["campos"]["tipo"]
+    assert tipo["valor"] == "masajeador de rodilla"
+    assert tipo["fuente"] == "diego"
+
+
+def test_tipo_editado_por_diego_se_persiste(tmp_path):
+    """Diego corrige el juicio del modelo ("masajeador de rodilla" ->
+    "masajeador de piernas") -- texto libre editable, mismo camino que
+    corregir una marca mal leída."""
+    lote_id, pid = _preparar(tmp_path, _ficha_con_tipo)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at = _elegir_estado_y_categoria(at, pid)
+    _texto_input(at, f"ficha_{pid}_tipo_valor").set_value("masajeador de piernas").run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    tipo = _producto(tmp_path, lote_id, pid)["campos"]["campos"]["tipo"]
+    assert tipo["valor"] == "masajeador de piernas"
+    assert tipo["fuente"] == "diego"
+
+
+# ============================================================================
 # CAMPOS OBLIGATORIOS (Fase 3, 2026-07-17): "no deje confirmar ficha hasta
 # que no se rellene". `categoria`/`estado`/`titulo`/`descripcion` bloquean
 # duro -- el botón se deshabilita (UX) Y `_accion_confirmar_ficha` bloquea

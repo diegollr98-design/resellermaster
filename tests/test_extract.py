@@ -66,6 +66,7 @@ from core.extract import (
     _color_dominante_rgb,
     _construir_campo_categoria_desde_sintesis,
     _construir_campo_estado_desde_sintesis,
+    _construir_campo_tipo_desde_sintesis,
     _construir_prompt_redaccion,
     _es_bloque_de_texto_largo,
     _es_repeticion_de_un_campo_ya_resuelto,
@@ -185,6 +186,7 @@ def _respuesta_sintesis(
     material: dict | None = None,
     medidas: dict | None = None,
     categoria: str = "otros",
+    tipo: dict | None = None,
     titulo: str = "",
     descripcion: str = "",
 ) -> dict:
@@ -206,7 +208,14 @@ def _respuesta_sintesis(
     sintesis` en `core/extract.py`); el default es "Bueno" (valido, dentro
     del enum), mismo criterio que `categoria`: siempre aceptable, para que
     los tests que no les interesa `estado` no revienten la clave
-    requerida ni disparen `sintesis_estado_fuera_de_enum` sin querer."""
+    requerida ni disparen `sintesis_estado_fuera_de_enum` sin querer.
+
+    `tipo` (2026-07-21) tiene su PROPIA estructura, MAS simple que
+    `estado` (solo valor + confianza, sin motivo, sin enum -- texto libre
+    -- ver `_esquema_tipo_sintesis` en `core/extract.py`); el default es
+    "SIN OPINION" (`valor=None`), igual que marca/modelo/talla/color: los
+    tests que no les interesa `tipo` no ven la clave "tipo" en
+    `resultado.campos` (gap-filler-like: ausente, no comodin)."""
 
     def _campo(override: dict | None) -> dict:
         base = {"valor": None, "visible_en_foto": False, "de_texto_detectado": None, "confianza": "baja"}
@@ -220,6 +229,12 @@ def _respuesta_sintesis(
             base.update(override)
         return base
 
+    def _campo_tipo(override: dict | None) -> dict:
+        base = {"valor": None, "confianza": "baja"}
+        if override:
+            base.update(override)
+        return base
+
     return {
         "marca": _campo(marca),
         "modelo": _campo(modelo),
@@ -229,6 +244,7 @@ def _respuesta_sintesis(
         "material": _campo(material),
         "medidas": _campo(medidas),
         "categoria": categoria,
+        "tipo": _campo_tipo(tipo),
         "titulo": titulo,
         "descripcion": descripcion,
     }
@@ -2247,6 +2263,160 @@ class TestConstruirCampoCategoriaDesdeSintesis:
     @pytest.mark.parametrize("valor", [None, "", "Moda", "ropa", "vehiculos", 42, ["moda"]])
     def test_valores_invalidos_devuelven_none_nunca_un_campo_inventado(self, valor):
         assert _construir_campo_categoria_desde_sintesis(valor) is None
+
+
+# ============================================================================
+# `tipo` (2026-07-21, decision de Diego): que ES el producto ("masajeador
+# de rodilla", "sudadera") -- TEXTO LIBRE (sin enum, a diferencia de
+# categoria/estado), SIEMPRE fuente="inferido" (juicio sobre el producto
+# entero, JAMAS un texto legible en un pixel -- sin visible_en_foto/
+# de_texto_detectado en el json_schema, asi que estructuralmente NO HAY
+# camino a fuente="foto" para este campo). Misma llamada de sintesis, 0
+# llamadas extra. Regla dura: sin opinion (valor=None/""/solo-espacios) ->
+# la clave "tipo" NO se anade a `campos` (ausente, nunca un comodin) -- y
+# a diferencia de "categoria", esto NO es un fallo tecnico (no hay enum
+# que violar), asi que NO se anota en `fallos`.
+# ============================================================================
+
+
+class TestSintesisTipo:
+    def test_tipo_valido_se_publica_inferido_con_su_confianza(self, tmp_path, monkeypatch):
+        foto = _foto_sintetica(tmp_path / "IMG_tipo.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            tipo={"valor": "masajeador de rodilla", "confianza": "media"},
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["tipo"].valor == "masajeador de rodilla"
+        assert resultado.campos["tipo"].fuente == "inferido"
+        assert resultado.campos["tipo"].confianza == "media"
+        assert resultado.campos["tipo"].evidencia is None
+        assert resultado.propuestas["tipo"].motivo == "que es el producto (inferido por la sintesis, confirmalo)"
+        assert resultado.propuestas["tipo"].recorte is None
+
+    @pytest.mark.parametrize("valor_crudo", [None, "", "   "])
+    def test_sin_opinion_la_clave_tipo_queda_ausente_y_no_es_un_fallo(self, tmp_path, monkeypatch, valor_crudo):
+        """A diferencia de `categoria` (donde violar el enum SI anota un
+        fallo), aqui "sin opinion" no es un fallo tecnico -- no hay enum
+        que violar, la sintesis simplemente no tuvo nada que proponer."""
+        foto = _foto_sintetica(tmp_path / "IMG_tipo_vacio.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            tipo={"valor": valor_crudo, "confianza": "baja"},
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "tipo" not in resultado.campos
+        assert "tipo" not in resultado.propuestas
+        assert not any("tipo" in f for f in resultado.fallos)
+
+    def test_tipo_fuente_nunca_es_foto_pase_lo_que_pase(self, tmp_path, monkeypatch):
+        """Estructuralmente imposible: el json_schema de `tipo` no tiene
+        `visible_en_foto`/`de_texto_detectado`, asi que no hay ningun
+        camino en el codigo que pueda construir un `Campo` de `tipo` con
+        `fuente="foto"` -- se demuestra con la senal mas favorable posible
+        (confianza "media", un texto que hasta podria parecer una cita)."""
+        foto = _foto_sintetica(tmp_path / "IMG_tipo_foto.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(10, 10, 40, 20), texto_ocr="sudadera", score=0.9)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple("otro", True, "sudadera")
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            tipo={"valor": "sudadera", "confianza": "media"},
+        )
+        extractor = ExtractorEngine(motor, carpeta_crops=tmp_path / "crops")
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["tipo"].fuente == "inferido"
+        assert resultado.campos["tipo"].fuente != "foto"
+        assert resultado.campos["tipo"].confianza != "alta"
+
+    def test_tipo_no_toca_otros_campos_ni_bloquea_titulo_descripcion(self, tmp_path, monkeypatch):
+        foto = _foto_sintetica(tmp_path / "IMG_tipo_resto.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            tipo={"valor": None, "confianza": "baja"},
+            titulo="Titulo de prueba",
+            descripcion="Descripcion de prueba",
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "tipo" not in resultado.campos
+        assert resultado.campos["titulo"].valor == "Titulo de prueba"
+        assert resultado.campos["descripcion"].valor == "Descripcion de prueba"
+
+    def test_tipo_sobrevive_el_round_trip_de_serializacion(self, tmp_path, monkeypatch):
+        """Round-trip (`core/store.py` guarda `campos` como JSON): `tipo`
+        se serializa/deserializa como cualquier otro `Campo` normal --
+        `serializar_extraccion`/`deserializar_extraccion` operan sobre
+        `dict[str, Campo]` generico, sin caso especial por nombre de
+        campo, asi que un campo NUEVO no necesita tocar esas funciones."""
+        foto = _foto_sintetica(tmp_path / "IMG_tipo_rt.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            tipo={"valor": "jersey", "confianza": "media"},
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        serializado = serializar_extraccion(resultado)
+        recuperado = deserializar_extraccion(json.loads(json.dumps(serializado)))
+
+        tipo = recuperado["campos"]["tipo"]
+        assert tipo["valor"] == "jersey"
+        assert tipo["fuente"] == "inferido"
+        assert tipo["confianza"] == "media"
+        assert tipo["evidencia"] is None
+
+
+class TestConstruirCampoTipoDesdeSintesis:
+    """Unidad directa de `_construir_campo_tipo_desde_sintesis` -- sin
+    pasar por una llamada VLM ni por `extraer_producto`."""
+
+    @pytest.mark.parametrize("confianza", ["media", "baja"])
+    def test_valor_no_vacio_construye_campo_inferido(self, confianza):
+        campo = _construir_campo_tipo_desde_sintesis({"valor": "camiseta", "confianza": confianza})
+        assert campo is not None
+        assert campo.valor == "camiseta"
+        assert campo.fuente == "inferido"
+        assert campo.confianza == confianza
+        assert campo.confianza != "alta"
+        assert campo.evidencia is None
+
+    @pytest.mark.parametrize("valor", [None, "", "   "])
+    def test_valores_vacios_devuelven_none_nunca_un_comodin(self, valor):
+        assert _construir_campo_tipo_desde_sintesis({"valor": valor, "confianza": "baja"}) is None
+
+    def test_valor_con_espacios_se_recorta(self):
+        campo = _construir_campo_tipo_desde_sintesis({"valor": "  electroestimulador  ", "confianza": "baja"})
+        assert campo is not None
+        assert campo.valor == "electroestimulador"
+
+    @pytest.mark.parametrize("confianza_invalida", ["alta", "altisima", None, "", "media "])
+    def test_confianza_fuera_de_media_baja_se_acota_a_baja_en_el_constructor(self, confianza_invalida):
+        """§17 / defensa en profundidad (hallazgo del listing-audit 2026-07-21):
+        la garantia "nunca alta" la fuerza un `if` EN ESTA funcion, no solo el
+        parseo aguas arriba. Aunque a este constructor le llegue un dict que NO
+        paso por `_parsear_respuesta_sintesis` (con confianza="alta"), el `Campo`
+        sale acotado a "baja" -- "alta" es estructuralmente inalcanzable para
+        `tipo` desde CUALQUIER camino, no solo el del flujo real."""
+        campo = _construir_campo_tipo_desde_sintesis({"valor": "sudadera Nike", "confianza": confianza_invalida})
+        assert campo is not None
+        assert campo.confianza == "baja"
+        assert campo.confianza != "alta"
 
 
 def test_sintesis_fuente_foto_exige_que_el_valor_este_en_el_pixel():

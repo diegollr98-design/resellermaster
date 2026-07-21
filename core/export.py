@@ -615,7 +615,12 @@ def construir_payload(
     # vacias + un aviso, el payload sigue. La promesa del modulo -- "si ninguna
     # encaja, navegas a mano, nunca peor que hoy" -- solo es cierta con esto.
     marca_propia = _valor_campo(campos, "marca") or ""
-    texto_busqueda = f"{titulo} {descripcion} {marca_propia}".strip()
+    tipo_propio = _valor_campo(campos, "tipo") or ""
+    # `tipo` ("que ES el producto": "sudadera", "masajeador de rodilla") es la
+    # señal MAS FUERTE de que prenda/hoja es -- va primero para que el rank
+    # de `candidatas()` (solapamiento de palabras + IDF, `core/categorias.py`)
+    # la reciba aunque titulo/descripcion no la mencionen literal.
+    texto_busqueda = f"{tipo_propio} {titulo} {descripcion} {marca_propia}".strip()
     try:
         candidatas = tuple(categorias.candidatas(categoria, texto_busqueda, plataforma, k=3))
         categoria_snapshot = categorias.fecha_snapshot(plataforma)

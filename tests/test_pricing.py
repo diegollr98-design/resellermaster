@@ -471,6 +471,47 @@ class TestAtributosDesdeCampos:
         assert attrs["talla"].valor == "XXL"
         assert attrs["talla"].evidencia.fichero == "IMG.jpg"
 
+    def test_campo_tipo_explicito_confirmado_prefiere_sobre_el_escaneo(self):
+        # `tipo` explicito (core/extract.py) CONFIRMADO por Diego ("fuente"
+        # diego) -- cubre no-ropa: el titulo NO trae ninguna prenda de
+        # `_TIPOS_PRENDA`, asi que el escaneo NUNCA lo habria encontrado.
+        from core.pricing import atributos_desde_campos
+        campos = self._campos(
+            titulo={"valor": "Lufthous LLLT-200 blanco y gris", "fuente": "diego",
+                    "confianza": "alta", "evidencia": None},
+            tipo={"valor": "masajeador de rodilla", "fuente": "diego",
+                  "confianza": "alta", "evidencia": None},
+        )
+        attrs = atributos_desde_campos(campos)
+        assert attrs["tipo"].valor == "masajeador de rodilla"
+        assert attrs["tipo"].fuente == "diego"
+
+    def test_campo_tipo_inferido_no_buscable_cae_al_escaneo_del_titulo(self):
+        # `tipo` explicito pero AUN "inferido" (Diego no lo ha confirmado
+        # todavia) NO es buscable -> cae al fallback de escanear el titulo.
+        from core.pricing import atributos_desde_campos
+        campos = self._campos(
+            tipo={"valor": "masajeador de rodilla", "fuente": "inferido",
+                  "confianza": "baja", "evidencia": None},
+        )
+        attrs = atributos_desde_campos(campos)
+        # el titulo por defecto de `_campos()` es "Sudadera Reebok gris talla
+        # XXL" -- el escaneo SI lo encuentra, el tipo inferido no gana.
+        assert attrs["tipo"].valor == "sudadera"
+        assert attrs["tipo"].fuente == "diego"
+
+    def test_ficha_vieja_sin_campo_tipo_sigue_escaneando_el_titulo(self):
+        # Sin regresion: fichas de ANTES de que `tipo` existiera como campo
+        # propio (no viene la clave en absoluto) siguen derivando del titulo.
+        from core.pricing import atributos_desde_campos
+        campos = self._campos(
+            titulo={"valor": "Camiseta Adidas negra talla M", "fuente": "diego",
+                    "confianza": "alta", "evidencia": None},
+        )
+        assert "tipo" not in campos
+        attrs = atributos_desde_campos(campos)
+        assert attrs["tipo"].valor == "camiseta"
+
 
 class TestTasarHallazgosAudit:
     """`[listing-audit] 2026-07-17`: los 3 hallazgos del audit del precio."""
@@ -508,6 +549,26 @@ class TestTasarHallazgosAudit:
         assert BuscadorWallapop._precio(False) is None
         assert BuscadorWallapop._precio({"amount": True}) is None
         assert BuscadorWallapop._precio(12) == 12.0
+
+    def test_tipo_explicito_fuerte_solo_no_tasa(self):
+        # `[INC-027]` sigue intacto tras preferir el campo `tipo` EXPLICITO:
+        # un tipo explicito CONFIRMADO ("masajeador de rodilla") sin marca ni
+        # modelo sigue sin ser una cohorte -- exige marca/modelo, tipo nunca
+        # basta por si solo por muy "fuerte" (especifico) que parezca.
+        from core.pricing import atributos_desde_campos, tasar
+        campos = {
+            "titulo": {"valor": "Masajeador de rodilla blanco", "fuente": "diego",
+                       "confianza": "alta", "evidencia": None},
+            "tipo": {"valor": "masajeador de rodilla", "fuente": "diego",
+                     "confianza": "alta", "evidencia": None},
+        }
+        atributos = atributos_desde_campos(campos)
+        assert atributos["tipo"].valor == "masajeador de rodilla"  # vino del campo
+        buscador = _BuscadorFake(_comps([5, 8, 10, 12, 15, 20, 25]))
+        t = tasar(atributos, buscador)
+        assert t.mediana is None
+        assert "cohorte" in t.motivo.lower() or "catálogo" in t.motivo.lower()
+        assert buscador.llamado_con == []  # ni se molesta en buscar
 
 
 class TestVariantesDeBusqueda:
