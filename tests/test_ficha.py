@@ -1202,6 +1202,152 @@ def test_valor_pegado_de_extraccion_vieja_se_refresca(tmp_path):
 
 
 # ============================================================================
+# EL GC DE NAVEGACIÓN ([INC-014]/[INC-021], hallazgo de Diego 2026-07-21):
+# navegar Ficha -> Export -> Ficha vía `st.sidebar.radio` (`app.py`) deja de
+# ejecutar `ficha.render()` mientras Diego está en Export -- Streamlit hace
+# GC de toda `key` de WIDGET que no se instancia en un run. El marcador
+# `_ficha_firma_{pid}` es una key NORMAL (nunca `key=` de un widget) y
+# SOBREVIVE al GC; con el `return` temprano de antes, la firma idéntica
+# hacía saltar la re-siembra -> los widgets nacían vacíos al volver, aunque
+# el disco (y Export) siguieran mostrando el dato intacto.
+# ============================================================================
+def test_sembrar_valores_iniciales_re_siembra_tras_gc_de_widget():
+    """Unitario del invariante (`_sembrar_valores_iniciales` sola, sin
+    `AppTest`): siembra, simula el GC borrando SÓLO las keys de widget
+    (deja el marcador `_ficha_firma_*` vivo, que es justo lo que hace
+    Streamlit) y re-invoca con la MISMA firma -- las keys de widget deben
+    volver a poblarse con los valores del disco. Antes del fix (`return`
+    temprano si la firma no cambió) esta segunda siembra era un no-op y
+    las keys seguían ausentes."""
+    pid = "prod1"
+    # `_valor_por_defecto` sólo mira `.get("valor")`/`.get("propuesta")` --
+    # dicts planos (no dataclasses `Campo`) son exactamente lo que trae
+    # `deserializar_extraccion` + `_con_obligatorios` en el flujo real, y
+    # basta para ejercitar la siembra.
+    campos = {
+        "categoria": {"valor": "moda", "fuente": "inferido", "confianza": "baja"},
+        "tipo": {"valor": "masajeador de rodilla", "fuente": "inferido", "confianza": "baja"},
+        "titulo": {"valor": "Sudadera Reebok talla M", "fuente": "inferido", "confianza": "baja"},
+    }
+
+    # Un test unitario "puro" fuera de un script run de Streamlit no tiene
+    # `st.session_state` disponible como dict mutable -- se salta a favor
+    # del `AppTest` de navegación real de abajo, que es el que manda
+    # (`_sembrar_valores_iniciales` es la primera función de este módulo
+    # que se prueba AISLADA usando `st.session_state` de verdad).
+    import pytest
+    try:
+        st.session_state.clear()
+    except Exception:
+        pytest.skip("st.session_state no es accesible fuera de un ScriptRunContext")
+
+    ficha._sembrar_valores_iniciales(pid, campos)
+    assert st.session_state[f"ficha_{pid}_categoria_categoria"] == "moda"
+    assert st.session_state[f"ficha_{pid}_tipo_valor"] == "masajeador de rodilla"
+    assert st.session_state[f"ficha_{pid}_titulo_valor"] == "Sudadera Reebok talla M"
+
+    # Simula el GC: se van las keys de WIDGET, el marcador de firma sobrevive.
+    del st.session_state[f"ficha_{pid}_categoria_categoria"]
+    del st.session_state[f"ficha_{pid}_tipo_valor"]
+    del st.session_state[f"ficha_{pid}_titulo_valor"]
+    assert f"_ficha_firma_{pid}" in st.session_state
+
+    # Re-invoca con la MISMA firma (mismos `campos`) -- antes del fix, el
+    # `return` temprano dejaba las keys ausentes.
+    ficha._sembrar_valores_iniciales(pid, campos)
+    assert st.session_state[f"ficha_{pid}_categoria_categoria"] == "moda"
+    assert st.session_state[f"ficha_{pid}_tipo_valor"] == "masajeador de rodilla"
+    assert st.session_state[f"ficha_{pid}_titulo_valor"] == "Sudadera Reebok talla M"
+
+
+def test_sembrar_valores_iniciales_no_pisa_edicion_sin_navegar():
+    """Caso (b) del docstring: Diego edita una key SIN que la firma cambie
+    (no navegó, no re-extrajo) -- la re-siembra NO debe pisar su edición."""
+    pid = "prod1"
+    campos = {"tipo": {"valor": "masajeador de rodilla", "fuente": "inferido", "confianza": "baja"}}
+
+    import pytest
+    try:
+        st.session_state.clear()
+    except Exception:
+        pytest.skip("st.session_state no es accesible fuera de un ScriptRunContext")
+
+    ficha._sembrar_valores_iniciales(pid, campos)
+    st.session_state[f"ficha_{pid}_tipo_valor"] = "sudadera (editado por Diego)"
+
+    ficha._sembrar_valores_iniciales(pid, campos)  # misma firma, key presente
+    assert st.session_state[f"ficha_{pid}_tipo_valor"] == "sudadera (editado por Diego)"
+
+
+def _script_navegacion(data_dir: str, lote_id: str) -> None:
+    """Reproduce el MECANISMO real de `app.py::main` (`st.sidebar.radio`
+    con `key="sb_pantalla"` decidiendo qué módulo de `ui/` renderiza este
+    script run) sin arrastrar las dependencias de `ui/export.py`
+    (pricing/categorías/API) -- lo único que importa para el GC es que,
+    en el run donde Diego está en "Export", `ficha.render()` NO se
+    ejecuta EN ABSOLUTO, exactamente igual que en la app real."""
+    from pathlib import Path as _Path
+
+    import streamlit as st
+    from core.llm import ResultadoLLM as _ResultadoLLM
+    from core.store import LoteStore as _LoteStore
+    from ui import ficha as _ficha
+
+    class _MotorTextoFake:
+        def consultar_texto(self, prompt, json_schema, version_prompt=None, producto_id=None):
+            return _ResultadoLLM(
+                datos={"titulo": "t", "descripcion": "d"}, fuente="api",
+                coste_usd=0.0, tokens_entrada=1, tokens_salida=1,
+            )
+
+    pantalla = st.sidebar.radio("Pantalla", ["3. Ficha", "4. Export"], key="sb_pantalla")
+    store = _LoteStore(data_dir=_Path(data_dir))
+    if pantalla == "3. Ficha":
+        _ficha.render(store, lote_id, crear_motor=lambda: _MotorTextoFake())
+    else:
+        st.write("(pantalla Export -- placeholder, no depende de ficha.render)")
+
+
+def test_navegar_a_export_y_volver_no_vacia_la_ficha(tmp_path):
+    """AppTest de navegación real: el `bug-hunter` confirmó que `AppTest`
+    SÍ reproduce el GC. Ficha con tipo/categoria POBLADOS -> navega a
+    Export -> vuelve a Ficha -> los dos campos deben seguir poblados
+    (antes del fix: salían vacíos, aunque el disco -y Export- estuvieran
+    intactos). Se comprueban `tipo` (text_input) y `categoria` (selectbox)
+    -- ambos son keys de WIDGET de verdad (sujetas al GC de Streamlit);
+    `titulo`/`descripcion` NO lo son mientras la ficha no está confirmada
+    (`_render_campo` las pinta con `st.info`, sin `key=`, ver su
+    docstring), así que no reproducen este bug y no hace falta afirmarlas
+    aquí."""
+    lote_id, pid = _preparar(tmp_path, _ficha_con_tipo)
+    at = AppTest.from_function(_script_navegacion, args=(str(tmp_path), lote_id))
+    at.run(timeout=10)
+    assert not at.exception
+
+    assert _texto_input(at, f"ficha_{pid}_tipo_valor").value == "masajeador de rodilla"
+    assert (
+        next(s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria").value
+        == "moda"
+    )
+
+    # Navega a Export -- `ficha.render()` NO corre en este run.
+    at.sidebar.radio(key="sb_pantalla").set_value("4. Export").run(timeout=10)
+    assert not at.exception
+
+    # Vuelve a Ficha -- MISMA firma (el disco no cambió).
+    at.sidebar.radio(key="sb_pantalla").set_value("3. Ficha").run(timeout=10)
+    assert not at.exception
+
+    assert _texto_input(at, f"ficha_{pid}_tipo_valor").value == "masajeador de rodilla", (
+        "el tipo se vació al volver de Export -- el GC de navegación no se refrescó"
+    )
+    assert (
+        next(s for s in at.selectbox if s.key == f"ficha_{pid}_categoria_categoria").value
+        == "moda"
+    ), "la categoría se vació al volver de Export"
+
+
+# ============================================================================
 # EXTRACCIÓN DE TODO EL LOTE (Fase 3, 2026-07-17) — pedido urgente de Diego:
 # "no quiero rellenar las fichas manualmente". Antes: 2 clics + 2 esperas POR
 # PRODUCTO (14 clics para su lote de 7). Ahora: 1 clic + 1 confirmación de

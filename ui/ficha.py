@@ -810,29 +810,55 @@ def _categoria_actual_o_defecto(pid: str, datos_campo: dict) -> str:
 
 
 def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
-    """Pre-siembra en `session_state` el valor por defecto de cada campo, y
-    RE-SIEMBRA cuando la extracción cambia (firma distinta).
+    """Pre-siembra en `session_state` el valor por defecto de cada campo.
+    Re-siembra cada key en DOS situaciones, no sólo una:
 
-    Por qué: Streamlit IGNORA el `value=`/`index=` de un widget cuya `key`
-    ya está en `session_state`. Sin esto, un valor de una extracción ANTERIOR
-    (o de antes de re-extraer, o de una versión vieja del código) se queda
-    pegado y TAPA el nuevo — el bug que hacía ver `marca` vacía teniendo
-    'Lufthous' persistido. Al sembrar nosotros y re-sembrar sólo cuando la
-    propuesta cambia, re-extraer resetea los campos a lo nuevo y las
-    ediciones de Diego dentro de una misma extracción se conservan."""
+    (1) La extracción cambió (firma distinta) — re-extraer resetea los
+        campos a lo nuevo; una edición de Diego dentro de la MISMA
+        extracción se conserva (la firma no cambió → no se toca esa key).
+    (2) La key de widget FALTA en `session_state`, aunque la firma sea
+        IDÉNTICA (`[INC-014]`/`[INC-021]`, hallazgo de Diego 2026-07-21:
+        navegar Ficha → Export → Ficha por `st.sidebar.radio` deja de
+        ejecutar `ficha.render()` en el rerun de Export, y Streamlit hace
+        GC de toda `key` de WIDGET que no se instancia en un run —
+        `ficha_{pid}_{campo}_valor` desaparece. El marcador `_ficha_firma_
+        {pid}` es una key NORMAL (nunca `key=` de un widget), así que
+        SOBREVIVE al GC; con el `return` temprano de antes, la firma
+        idéntica hacía saltar la re-siembra y los widgets nacían vacíos al
+        volver — el disco estaba intacto, la PANTALLA mentía.
+
+    Por qué hace falta sembrar en absoluto: Streamlit IGNORA el
+    `value=`/`index=` de un widget cuya `key` ya está en `session_state`
+    (así que un valor de una extracción ANTERIOR, o de antes de
+    re-extraer, se queda pegado y TAPA el nuevo si no se re-siembra por
+    firma — el bug que hacía ver `marca` vacía teniendo 'Lufthous'
+    persistido).
+
+    Los tres casos que este invariante tiene que sostener a la vez
+    (`[INC-014]`/§16: EJECUTA el caso de fallo, no lo leas):
+    (a) tras el GC de un cambio de pantalla, firma IGUAL + key AUSENTE →
+        se re-siembra del disco (rama nueva, `key not in st.session_state`).
+    (b) Diego edita una key SIN navegar, firma IGUAL + key PRESENTE →
+        NO se toca (se preserva su edición).
+    (c) re-extraer, firma DISTINTA → se sobreescribe con lo nuevo
+        (protección original contra el valor rancio, intacta)."""
     firma = tuple(
         (campo, _valor_por_defecto(campo, dc)) for campo, dc in sorted(campos.items())
     )
     marcador = f"_ficha_firma_{pid}"
-    if st.session_state.get(marcador) == firma:
-        return
+    firma_cambio = st.session_state.get(marcador) != firma
     for campo, dc in campos.items():
         if campo == "estado":
-            st.session_state[f"ficha_{pid}_estado_estado"] = _estado_default(dc)
+            key, default = f"ficha_{pid}_estado_estado", _estado_default(dc)
         elif campo == "categoria":
-            st.session_state[f"ficha_{pid}_categoria_categoria"] = _categoria_default(dc)
+            key, default = f"ficha_{pid}_categoria_categoria", _categoria_default(dc)
         else:
-            st.session_state[f"ficha_{pid}_{campo}_valor"] = _valor_por_defecto(campo, dc)
+            key, default = f"ficha_{pid}_{campo}_valor", _valor_por_defecto(campo, dc)
+        # Re-siembra si la extracción cambió (firma nueva) O si la key falta
+        # (GC de navegación) -- NUNCA si sólo está presente con firma igual,
+        # o pisaríamos la edición de Diego (caso (b) de arriba).
+        if firma_cambio or key not in st.session_state:
+            st.session_state[key] = default
     st.session_state[marcador] = firma
 
 
