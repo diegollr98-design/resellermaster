@@ -19,24 +19,39 @@ hay botón de "exportar igualmente": el giro null->mejor-intento sólo es
 legítimo porque Diego revisó cada campo con el píxel delante antes de
 publicar. Saltarse eso desde el export sería tirar la premisa entera.
 
-## Persistencia (`decision-making.md` §13, `[INC-006]`)
-El estado se relee de `store.cargar_lote()` en cada render, nunca de
-`st.session_state` — igual que `ui/ficha.py` y `ui/curar.py`. Esta pantalla
-es de SÓLO LECTURA salvo el botón "Preparar fotos", que copia ficheros a
-disco vía `core.images.exportar_producto` (ya existente) y sólo recuerda en
-`session_state` la última ruta preparada, para pintar el resultado —
-perderlo en un rerun cuesta un vistazo a la carpeta, no trabajo de Diego.
+## Persistencia (`decision-making.md` §13/§19, `[INC-006]`, Fase 5 FINANZAS)
+El estado se relee de `store.cargar_lote()`/`store.cargar_ventas()` en cada
+render, nunca sólo de `st.session_state` — igual que `ui/ficha.py` y
+`ui/curar.py`. Esta pantalla ESCRIBE en tres sitios, todos vía `core/store.py`
+(ya implementado, esta pantalla sólo lo consume) y ninguno vive sólo en
+`session_state`:
+- **"Preparar fotos"**: copia ficheros a disco vía `core.images.exportar_producto`
+  y abre la carpeta (`os.startfile`, Windows-only, guardado con `hasattr`) —
+  sólo recuerda en `session_state` la última ruta, para pintar el resultado;
+  perderlo en un rerun cuesta un vistazo a la carpeta, no trabajo de Diego.
+- **Referencia** (`store.asignar_referencia`, idempotente): se garantiza al
+  entrar en esta pantalla y se inyecta como "Ref. N" en la descripción de
+  AMBAS plataformas (`core/export.py::_inyectar_referencia`) — la llave que
+  Diego imprime para localizar la venta.
+- **"Subido"** (`store.registrar_subido`, idempotente por plataforma):
+  congela el precio elegido + la tasación (mediana/comparables) vistos en
+  pantalla al pulsar. El estado "¿ya está subido?" se relee del DISCO en
+  cada render (`_estado_publicacion`), nunca sólo de `session_state` — un
+  rerun no puede hacer parecer que se perdió una publicación real.
 """
 
 from __future__ import annotations
 
 import logging
+import os
+from dataclasses import asdict
 from pathlib import Path
+from typing import Any
 
 import streamlit as st
 
 from core import export, images, pricing, schema
-from core.store import LoteStore
+from core.store import LoteStore, StoreError
 
 logger = logging.getLogger(__name__)
 
@@ -187,6 +202,25 @@ def _accion_preparar_fotos(
         )
         st.error(f"No se pudieron preparar las fotos: {exc}")
         return None
+    # Abrir la carpeta: ahorra el "buscarla a mano" (Diego pidió esto explícitamente,
+    # Fase 5 FINANZAS). SOLO abre una carpeta LOCAL -- no toca ninguna plataforma,
+    # no roza la prohibición de automatizar publicación (`architecture.md`).
+    # `os.startfile` es Windows-only (no existe en Linux/Mac): el `hasattr` evita
+    # un `AttributeError` en cualquier otro SO, incluido el que corre `pytest`.
+    # Un fallo al abrir la carpeta (permiso, ruta rara) NUNCA debe tumbar la
+    # pantalla -- las fotos YA están copiadas, lo único que se pierde es el
+    # atajo visual, así que se loguea y se sigue (`decision-making.md` §13:
+    # esto SÍ está marcado -- no es un fallback silencioso, es una comodidad
+    # best-effort sobre un resultado que ya se logró).
+    if hasattr(os, "startfile"):
+        try:
+            os.startfile(str(resultado.directorio_producto))  # type: ignore[attr-defined]
+        except OSError as exc:
+            logger.warning(
+                "No se pudo abrir la carpeta %s (las fotos sí se copiaron): %s",
+                resultado.directorio_producto,
+                exc,
+            )
     return resultado.directorio_producto
 
 
@@ -268,6 +302,8 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
             _titulo_desc()
         elif token == "precio":
             _render_precio(producto, plataforma)
+            st.divider()
+            _render_subida(store, producto, plataforma)
             st.divider()
         else:  # un CampoExportado por nombre (marca/talla/estado/color/…/envío)
             campo = campos_por_nombre.get(token)
@@ -364,6 +400,43 @@ def _render_precio(producto: dict, plataforma: str) -> None:
             _buscar()
 
     tasaciones: list[pricing.Tasacion] | None = st.session_state.get(key_tas)
+
+    # -- Precio FINAL a publicar --------------------------------------------
+    # Diego CONFIRMA/EDITA el número final (`truth-loop.md` §D: el precio
+    # nunca lo fija la máquina sola). Se sugiere -- nunca se impone -- la
+    # mediana de la PRIMERA combinación con resultado como punto de partida.
+    # Este valor (en céntimos) + la tasación elegida (snapshot, para
+    # `registrar_subido`) se guardan en `session_state` SIEMPRE, incluso sin
+    # tasaciones todavía, para que "Subido" (renderizado después, fuera de
+    # esta función) siempre pueda leerlos.
+    elegida = next((t for t in (tasaciones or []) if t.mediana is not None), None)
+    key_precio_final = f"precio_final_{producto['id']}_{plataforma}"
+    key_precio_final_cents = f"precio_final_cents_{producto['id']}_{plataforma}"
+    key_tasacion_elegida = f"tasacion_elegida_{producto['id']}_{plataforma}"
+    # Sólo se siembra si la key FALTA -- misma regla que `ui/ficha.py::
+    # _sembrar_coste`: si ya está, es la edición viva de Diego (o la de un
+    # rerun anterior) y pisarla perdería tecleo en curso sin necesidad.
+    if key_precio_final not in st.session_state and elegida is not None:
+        st.session_state[key_precio_final] = round(float(elegida.mediana), 2)
+    st.divider()
+    st.markdown("**Precio final a publicar**")
+    st.caption(
+        "Edítalo si quieres — es el número que se congela (junto con esta "
+        "tasación) al pulsar «Subido», más abajo."
+    )
+    precio_final_euros = st.number_input(
+        "Precio final (€)",
+        min_value=0.0,
+        step=1.0,
+        format="%.2f",
+        key=key_precio_final,
+        label_visibility="collapsed",
+    )
+    st.session_state[key_precio_final_cents] = (
+        round(precio_final_euros * 100) if precio_final_euros and precio_final_euros > 0 else None
+    )
+    st.session_state[key_tasacion_elegida] = asdict(elegida) if elegida is not None else None
+
     if not tasaciones:
         return
 
@@ -371,6 +444,68 @@ def _render_precio(producto: dict, plataforma: str) -> None:
     for tas in tasaciones:
         st.divider()
         _render_una_tasacion(tas)
+
+
+# --------------------------------------------------------------------------
+# "Subido": registra la publicación + congela el snapshot de precio/tasación
+# (superficie `persistencia`, `core/store.py::registrar_subido`, YA
+# implementada -- este módulo SÓLO la consume). Se relee del DISCO en cada
+# render (`store.cargar_ventas()`), nunca sólo de `session_state`: un rerun
+# de Streamlit no puede hacer PARECER que se perdió una publicación que sí
+# está en la BD (`decision-making.md` §19, `[INC-029]`/`[INC-030]`) -- ni al
+# revés, que el botón parezca funcionar sin haber escrito nada.
+# --------------------------------------------------------------------------
+def _estado_publicacion(store: LoteStore, producto_id: str, plataforma: str) -> dict[str, Any] | None:
+    """`None` si el producto nunca se marcó "Subido" a `plataforma`; si no,
+    el dict de la publicación (`plataforma`, `subido_en`,
+    `precio_elegido_cents`, `tasacion`).
+
+    `store.cargar_ventas()` es CROSS-LOTE (la única vía pública que expone
+    `publicaciones` por producto; `cargar_lote` no las trae) -- filtrar aquí
+    es correcto y barato para el volumen de este proyecto (~7
+    productos/lote); no justifica tocar `store.py` para esta tarea."""
+    for fila in store.cargar_ventas():
+        if fila["producto_id"] != producto_id:
+            continue
+        for pub in fila["publicaciones"]:
+            if pub["plataforma"] == plataforma:
+                return pub
+    return None
+
+
+def _accion_subido(store: LoteStore, producto_id: str, plataforma: str) -> None:
+    """El precio final y la tasación elegida los deja `_render_precio` en
+    `session_state` (misma fila, misma pestaña) -- se leen aquí, nunca se
+    recalculan: es el snapshot que Diego vio en pantalla al pulsar."""
+    precio_cents = st.session_state.get(f"precio_final_cents_{producto_id}_{plataforma}")
+    tasacion = st.session_state.get(f"tasacion_elegida_{producto_id}_{plataforma}")
+    try:
+        store.registrar_subido(
+            producto_id, plataforma, precio_elegido_cents=precio_cents, tasacion=tasacion
+        )
+    except StoreError as exc:
+        logger.exception(
+            "No se pudo registrar 'Subido' del producto %s en %s", producto_id, plataforma
+        )
+        st.error(f"No se pudo registrar la subida: {exc}")
+
+
+def _render_subida(store: LoteStore, producto: dict, plataforma: str) -> None:
+    st.subheader("Publicación")
+    key_boton = f"export_subido_{producto['id']}_{plataforma}"
+    if st.button(
+        f"✅ Subido a {_ETIQUETA_PLATAFORMA[plataforma]}",
+        key=key_boton,
+        use_container_width=True,
+    ):
+        _accion_subido(store, producto["id"], plataforma)
+    publicacion = _estado_publicacion(store, producto["id"], plataforma)
+    if publicacion is not None:
+        st.success(
+            f"✔ Subido a {_ETIQUETA_PLATAFORMA[plataforma]} el {publicacion['subido_en']}"
+        )
+    else:
+        st.caption(f"Aún no marcado como subido a {_ETIQUETA_PLATAFORMA[plataforma]}.")
 
 
 # --------------------------------------------------------------------------
@@ -420,6 +555,25 @@ def render(store: LoteStore, lote_id: str) -> None:
             "(truth-loop.md §A.2). No hay atajo para saltarse esto."
         )
         return
+
+    # Cinturón y tirantes: `ui/ficha.py` YA asigna la referencia al confirmar
+    # la ficha, pero el export la GARANTIZA aquí antes de inyectarla en la
+    # descripción (idempotente -- `store.asignar_referencia`) -- así un lote
+    # de antes de esta feature, o cualquier hueco, nunca deja la ficha sin
+    # "Ref. N". `estado["productos"]` se cargó ANTES de este punto en este
+    # mismo render, así que se refresca con el valor devuelto en vez de
+    # confiar en el dict potencialmente stale.
+    try:
+        referencia = store.asignar_referencia(producto["id"])
+    except StoreError as exc:
+        logger.exception("No se pudo asignar la referencia del producto %s", producto["id"])
+        st.error(
+            f"No se pudo asignar/leer el número de referencia: {exc} "
+            "(la descripción se exportará SIN «Ref. N»)."
+        )
+    else:
+        producto = {**producto, "referencia": referencia}
+        st.caption(f"🏷️ **Ref. {referencia}** — se imprime en la descripción de ambas plataformas.")
 
     tabs = st.tabs([_ETIQUETA_PLATAFORMA[p] for p in _PLATAFORMAS])
     for plataforma, tab in zip(_PLATAFORMAS, tabs):

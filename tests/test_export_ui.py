@@ -22,6 +22,7 @@ no hace falta pasar por el diálogo de extracción/VLM para probar el export.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -139,6 +140,20 @@ def _sin_red_en_precio(monkeypatch):
     monkeypatch.setattr(pricing, "BuscadorWallapop", _BuscadorFakeUI)
 
 
+@pytest.fixture(autouse=True)
+def _sin_apertura_de_carpeta_real(monkeypatch) -> list[str]:
+    """"Preparar fotos" abre la carpeta con `os.startfile` (Windows) tras
+    copiar -- NINGÚN test debe abrir una ventana de Explorer real (estamos en
+    win32, así que `os.startfile` existe de verdad aquí). Se sustituye por un
+    registro en memoria, autouse para TODA la suite (incluidos los tests que
+    ya pulsaban "Preparar fotos" antes de esta feature); el test dedicado
+    comprueba las llamadas registradas."""
+    llamadas: list[str] = []
+    if hasattr(os, "startfile"):
+        monkeypatch.setattr(os, "startfile", lambda ruta: llamadas.append(str(ruta)))
+    return llamadas
+
+
 # ============================================================================
 # 1. Sin ficha confirmada -> ni payload ni botón de saltárselo.
 # ============================================================================
@@ -205,9 +220,12 @@ def test_descripcion_con_marca_ajena_bloquea_el_export(tmp_path):
 
 
 # ============================================================================
-# 4. El botón "Preparar fotos" copia de verdad a disco, renombradas.
+# 4. El botón "Preparar fotos" copia de verdad a disco, renombradas, Y ABRE
+#    la carpeta (`os.startfile`, guardado con `hasattr` -- Windows-only).
 # ============================================================================
-def test_boton_preparar_fotos_crea_carpeta_con_fotos_renombradas(tmp_path):
+def test_boton_preparar_fotos_crea_carpeta_con_fotos_renombradas(
+    tmp_path, _sin_apertura_de_carpeta_real
+):
     lote_id, pid = _preparar(
         tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
     )
@@ -229,6 +247,14 @@ def test_boton_preparar_fotos_crea_carpeta_con_fotos_renombradas(tmp_path):
     codigos = [c.value for c in at.code]
     assert any(str(directorio) == c for c in codigos), codigos
     assert at.success
+
+    # "Abrir la carpeta" -- guardado con `hasattr(os, "startfile")`: en esta
+    # máquina (win32) existe de verdad, así que el fixture autouse lo
+    # sustituyó por un registro; comprobamos que SE LLAMÓ con la ruta
+    # correcta (no sólo que el código "compila" -- `change-loop.md` §C4: un
+    # botón se prueba PULSÁNDOLO, no sólo renderizándolo).
+    if hasattr(os, "startfile"):
+        assert str(directorio) in _sin_apertura_de_carpeta_real, _sin_apertura_de_carpeta_real
 
 
 # ============================================================================
@@ -261,3 +287,79 @@ def test_boton_re_buscar_no_peta(tmp_path):
     boton = next(b for b in at.button if b.key == f"btn_precio_{pid}_wallapop")
     at = boton.click().run()
     assert not at.exception, at.exception
+
+
+# ============================================================================
+# 6. Referencia -- "Ref. N" GARANTIZADA (asignada al abrir Export) e
+#    inyectada en la descripción de AMBAS plataformas (requisito FIJO de
+#    Diego, Fase 5 FINANZAS).
+# ============================================================================
+def test_referencia_se_asigna_y_se_inyecta_en_ambas_descripciones(tmp_path):
+    lote_id, pid = _preparar(
+        tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
+    )
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception, at.exception
+
+    store = LoteStore(data_dir=tmp_path)
+    estado = store.cargar_lote(lote_id)
+    producto = next(p for p in estado["productos"] if p["id"] == pid)
+    referencia = producto["referencia"]
+    assert referencia is not None  # el export la GARANTIZA (asignar_referencia)
+
+    marca = f"Ref. {referencia}"
+    codigos = [c.value for c in at.code]
+    # `st.tabs` renderiza el contenido de las DOS pestañas en el mismo run
+    # (igual que el test #2 con el estado traducido) -> ambas descripciones
+    # (Wallapop y Vinted) deben llevar la marca.
+    coincidencias = [c for c in codigos if c.rstrip().endswith(marca)]
+    assert len(coincidencias) >= 2, codigos
+
+
+# ============================================================================
+# 7. "Subido" -- registra la publicación (precio + tasación) EN DISCO, se
+#    relee del disco (no de `session_state`) y es idempotente.
+# ============================================================================
+def test_boton_subido_registra_publicacion_con_precio_y_tasacion(tmp_path):
+    lote_id, pid = _preparar(
+        tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
+    )
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception, at.exception
+
+    boton = next(b for b in at.button if b.key == f"export_subido_{pid}_wallapop")
+    at = boton.click().run()
+    assert not at.exception, at.exception
+
+    # El badge se pinta en el MISMO run -- se relee del disco, no de
+    # `session_state` (`decision-making.md` §19).
+    assert any("Subido a Wallapop" in s.value for s in at.success)
+
+    store = LoteStore(data_dir=tmp_path)
+    ventas = store.cargar_ventas()
+    fila = next(f for f in ventas if f["producto_id"] == pid)
+    pub = next(p for p in fila["publicaciones"] if p["plataforma"] == "wallapop")
+    assert pub["subido_en"]
+    assert pub["precio_elegido_cents"] == 1250  # mediana 12.5 € del buscador falso
+    assert pub["tasacion"] is not None
+    assert pub["tasacion"]["mediana"] == 12.5
+
+    # Idempotente: pulsar otra vez NO duplica la fila ni pierde el snapshot.
+    boton_2 = next(b for b in at.button if b.key == f"export_subido_{pid}_wallapop")
+    at2 = boton_2.click().run()
+    assert not at2.exception, at2.exception
+    ventas2 = LoteStore(data_dir=tmp_path).cargar_ventas()
+    fila2 = next(f for f in ventas2 if f["producto_id"] == pid)
+    pubs_wallapop = [p for p in fila2["publicaciones"] if p["plataforma"] == "wallapop"]
+    assert len(pubs_wallapop) == 1
+
+
+def test_sin_pulsar_subido_no_hay_publicacion_registrada(tmp_path):
+    lote_id, pid = _preparar(
+        tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
+    )
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception, at.exception
+    assert any("Aún no marcado como subido" in c.value for c in at.caption)
+    store = LoteStore(data_dir=tmp_path)
+    assert store.cargar_ventas() == []

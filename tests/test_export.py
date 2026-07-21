@@ -25,10 +25,12 @@ from typing import Any
 
 import pytest
 
+from core import schema
 from core.export import (
     CampoExportado,
     ExportBloqueadoError,
     PayloadPlataforma,
+    _inyectar_referencia,
     construir_payload,
 )
 
@@ -72,6 +74,7 @@ def _producto(
     confirmada: bool = True,
     fotos: list[str] | None = None,
     aviso_coherencia: str | None = None,
+    referencia: int | None = None,
     **overrides: Any,
 ) -> dict:
     return {
@@ -86,6 +89,10 @@ def _producto(
         },
         "confirmado": True,  # agrupación (Fase 1); NO es lo que valida el export
         "fotos": fotos if fotos is not None else ["f1"],
+        # Fase 5 FINANZAS: `store.cargar_lote` ya la incluye en el dict real
+        # (columna propia, NUNCA dentro de `campos`) -- `None` por defecto,
+        # como los productos de un lote donde nadie la ha asignado todavía.
+        "referencia": referencia,
     }
 
 
@@ -702,3 +709,86 @@ def test_color_se_exporta_como_sugerencia_para_vinted():
 def test_sin_color_no_hay_campo_color():
     payload = construir_payload(_producto(color=None), _FOTOS_POR_ID, "vinted")
     assert not any(c.nombre == "color" for c in payload.campos)
+
+
+# ============================================================================
+# REFERENCIA ("Ref. N") -- Fase 5 FINANZAS. La llave que Diego imprime en la
+# descripción para localizar la venta luego (requisito FIJO de Diego, ver
+# `docs/seeds/fase-5-finanzas.md`). `decision-making.md` §17: la garantía es
+# un `if` que se EJECUTA sobre el texto final -- estos tests pasan la
+# descripción YA CON la referencia por `schema.validar_texto`, no lo asumen.
+# ============================================================================
+
+def test_inyectar_referencia_es_idempotente_y_respeta_none():
+    assert _inyectar_referencia("texto base", None) == "texto base"
+    una_vez = _inyectar_referencia("texto base", 7)
+    dos_veces = _inyectar_referencia(una_vez, 7)
+    assert una_vez == dos_veces  # no duplica la marca
+    assert una_vez.endswith("Ref. 7")
+
+
+def test_sin_referencia_asignada_no_inyecta_nada():
+    # Un producto de un lote sin referencia (None, el default de la columna
+    # antes de `store.asignar_referencia`) exporta la descripción TAL CUAL.
+    payload = construir_payload(_producto(referencia=None), _FOTOS_POR_ID, "vinted")
+    assert payload.descripcion == _DESCRIPCION_VALIDA
+    assert "Ref." not in payload.descripcion
+
+
+def test_producto_sin_clave_referencia_no_revienta():
+    # Defensivo: un dict de producto que ni siquiera trae la clave (formas
+    # antiguas cacheadas) se comporta igual que `referencia=None` -- nunca un
+    # KeyError ni un número inventado.
+    producto = _producto(referencia=None)
+    del producto["referencia"]
+    payload = construir_payload(producto, _FOTOS_POR_ID, "wallapop")
+    assert "Ref." not in payload.descripcion
+
+
+@pytest.mark.parametrize("plataforma", ["wallapop", "vinted"])
+def test_referencia_inyectada_pasa_validar_texto_en_ambas_plataformas(plataforma):
+    """El test §17: se pasa la descripción CON la ref inyectada por el
+    sanitizador de verdad -- no se asume que "Ref. N" es inocuo, se comprueba."""
+    producto = _producto(referencia=42)
+    payload = construir_payload(producto, _FOTOS_POR_ID, plataforma)
+    assert payload.descripcion.rstrip().endswith("Ref. 42")
+    violaciones = schema.validar_texto(payload.descripcion, plataforma, None, "description")
+    assert violaciones == [], violaciones
+
+
+def _texto_longitud(n: int) -> str:
+    """Un texto de longitud EXACTA `n`, sin disparar ninguna otra violación
+    (sin mayúsculas, sin símbolos, sin palabras largas, sin email/link/marca)
+    -- para aislar el efecto de LA REFERENCIA sobre el límite de longitud."""
+    palabra = "buen estado "
+    repetido = palabra * (n // len(palabra) + 2)
+    return repetido[:n]
+
+
+@pytest.mark.parametrize("plataforma, limite", [("wallapop", 600), ("vinted", 2000)])
+def test_referencia_no_desborda_el_limite_con_margen(plataforma, limite):
+    # La descripción BASE deja justo el hueco de la marca ("\n\nRef. 123") --
+    # tras inyectar, la longitud final da EXACTO el máximo permitido: no
+    # bloquea.
+    marca = "Ref. 123"
+    hueco = len("\n\n") + len(marca)
+    base = _texto_longitud(limite - hueco)
+    producto = _producto(descripcion=base, referencia=123)
+    payload = construir_payload(producto, _FOTOS_POR_ID, plataforma)
+    assert len(payload.descripcion) == limite
+    assert payload.descripcion.endswith(marca)
+
+
+@pytest.mark.parametrize("plataforma, limite", [("wallapop", 600), ("vinted", 2000)])
+def test_referencia_que_desborda_el_limite_bloquea(plataforma, limite):
+    # La descripción BASE ya está en el máximo ANTES de inyectar -- añadir la
+    # referencia la empuja por encima: el `if` corre sobre el texto FINAL que
+    # se publica, así que esto BLOQUEA (no se publica una descripción
+    # TOO_LONG sólo porque la violación la causó nuestra propia inyección).
+    base = _texto_longitud(limite)
+    producto = _producto(descripcion=base, referencia=123)
+    with pytest.raises(ExportBloqueadoError) as excinfo:
+        construir_payload(producto, _FOTOS_POR_ID, plataforma)
+    assert any(
+        "descripción" in v.lower() and "chars" in v.lower() for v in excinfo.value.violaciones
+    ), excinfo.value.violaciones

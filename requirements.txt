@@ -33,6 +33,10 @@ anthropic>=0.40
 # mockea el OCR no descarga ni carga nada.
 rapidocr-onnxruntime>=1.2
 
+# Fase 5 FINANZAS (core/finanzas.py): export a Excel del ledger de ventas.
+# El .xlsx es un INFORME (SQLite sigue siendo la verdad) -- ver su docstring.
+openpyxl>=3.1
+
 # Dev
 pytest>=8.0
 ruff>=0.8

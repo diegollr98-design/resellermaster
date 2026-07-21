@@ -142,6 +142,37 @@ def _valor_campo(campos: dict[str, Any], nombre: str) -> str | None:
     return valor
 
 
+def _inyectar_referencia(texto: str, referencia: int | None) -> str:
+    """Añade la LLAVE "Ref. N" al final de `texto`, en línea aparte -- el
+    requisito FIJO de Diego (Fase 5 FINANZAS, seed `fase-5-finanzas.md`):
+    la referencia se imprime en la descripción de AMBAS plataformas para
+    poder localizar la venta después. `referencia=None` (el producto
+    todavía no tiene una asignada) devuelve `texto` tal cual -- nunca se
+    inventa un número (conjunto inmutable).
+
+    Formato exacto `"Ref. N"`: sólo letras, un punto, un espacio y dígitos
+    -- ninguno de esos caracteres dispara `UNALLOWED_SYMBOLS` (están en
+    `schema._PUNTUACION_PERMITIDA`/son alfanuméricos), así que la
+    descripción CON la referencia sigue pasando `schema.validar_texto` en
+    Wallapop y Vinted (`decision-making.md` §17: se comprueba EJECUTANDO el
+    sanitizador sobre el texto final, no asumiéndolo -- ver el test
+    dedicado en `tests/test_export.py`).
+
+    Idempotente: si `texto` ya termina exactamente en esta marca, no la
+    duplica (defensivo -- esta función sólo se llama una vez por payload,
+    pero evita sorpresas si algún día se llama más de una vez).
+    """
+    if referencia is None:
+        return texto
+    marca = f"Ref. {referencia}"
+    limpio = texto.rstrip()
+    if limpio.endswith(marca):
+        return limpio
+    if not limpio:
+        return marca
+    return f"{limpio}\n\n{marca}"
+
+
 def _validar_confirmada(producto: dict[str, Any]) -> dict[str, Any]:
     """Devuelve el dict raíz `producto["campos"]` si la ficha está
     confirmada; si no, `ExportBloqueadoError` — sin excepción."""
@@ -536,8 +567,20 @@ def construir_payload(
 
     marca_para_sanitizar = _valor_campo(campos, "marca")
     titulo = _valor_campo(campos, "titulo") or ""
-    descripcion = _valor_campo(campos, "descripcion") or ""
+    descripcion_sin_ref = _valor_campo(campos, "descripcion") or ""
     categoria = _valor_campo(campos, "categoria")
+
+    # Referencia ("Ref. N"): la asigna/garantiza la UI vía
+    # `store.asignar_referencia` ANTES de llamar aquí (cinturón y tirantes,
+    # `decision-making.md` §19); este módulo sólo LEE `producto["referencia"]`
+    # -- ya viene en el dict de `store.cargar_lote` (Fase 5, columna propia,
+    # nunca dentro de `campos`). Se inyecta en la descripción que de verdad
+    # se exporta/pega -- `descripcion_sin_ref` sigue usándose para las señales
+    # derivadas (envío, categoría) para no ensuciar esas heurísticas con "Ref. N".
+    referencia = producto.get("referencia")
+    if not isinstance(referencia, int) or isinstance(referencia, bool):
+        referencia = None
+    descripcion = _inyectar_referencia(descripcion_sin_ref, referencia)
 
     bloqueos: list[str] = []
 
@@ -578,7 +621,9 @@ def construir_payload(
     campo_marca = _campo_marca(campos, plataforma, avisos)
     campo_talla = _campo_talla(campos, plataforma, avisos)
     campo_estado = _campo_estado(campos, plataforma, categoria, avisos)
-    campo_envio = _campo_envio(f"{titulo} {descripcion}", plataforma)
+    # `descripcion_sin_ref`: la clasificación de envío es una heurística de
+    # palabras clave -- "Ref. N" no aporta señal y sólo podría ensuciarla.
+    campo_envio = _campo_envio(f"{titulo} {descripcion_sin_ref}", plataforma)
     campo_color = _campo_color(campos)
     campo_composicion = _campo_composicion(campos, plataforma, categoria)
     campo_desperfectos = _campo_desperfectos(campos, avisos)
@@ -626,7 +671,11 @@ def construir_payload(
     # señal MAS FUERTE de que prenda/hoja es -- va primero para que el rank
     # de `candidatas()` (solapamiento de palabras + IDF, `core/categorias.py`)
     # la reciba aunque titulo/descripcion no la mencionen literal.
-    texto_busqueda = f"{tipo_propio} {genero_propio} {titulo} {descripcion} {marca_propia}".strip()
+    # `descripcion_sin_ref`: mismo motivo que en `_campo_envio` -- "Ref. N" no
+    # debe pesar en el ranking de categorías.
+    texto_busqueda = (
+        f"{tipo_propio} {genero_propio} {titulo} {descripcion_sin_ref} {marca_propia}".strip()
+    )
     try:
         candidatas = tuple(categorias.candidatas(categoria, texto_busqueda, plataforma, k=3))
         categoria_snapshot = categorias.fecha_snapshot(plataforma)

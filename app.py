@@ -19,7 +19,7 @@ from pathlib import Path
 import streamlit as st
 
 from core.store import DEFAULT_DATA_DIR, LoteStore
-from ui import curar, export, ficha, ingesta
+from ui import curar, export, ficha, finanzas, ingesta
 
 
 def _cargar_env() -> None:
@@ -57,6 +57,7 @@ _PANTALLA_INGESTA = "1. Ingesta"
 _PANTALLA_CONFIRMACION = "2. Curar agrupación"
 _PANTALLA_FICHA = "3. Ficha"
 _PANTALLA_EXPORT = "4. Export"
+_PANTALLA_FINANZAS = "5. Finanzas"
 
 
 @st.cache_resource
@@ -95,7 +96,13 @@ def main() -> None:
     st.sidebar.title("RESELLERMASTER")
     pantalla = st.sidebar.radio(
         "Pantalla",
-        [_PANTALLA_INGESTA, _PANTALLA_CONFIRMACION, _PANTALLA_FICHA, _PANTALLA_EXPORT],
+        [
+            _PANTALLA_INGESTA,
+            _PANTALLA_CONFIRMACION,
+            _PANTALLA_FICHA,
+            _PANTALLA_EXPORT,
+            _PANTALLA_FINANZAS,
+        ],
         key="sb_pantalla",
     )
 
@@ -144,11 +151,17 @@ def main() -> None:
             st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
         else:
             ficha.render(store, lote_id)
-    else:
+    elif pantalla == _PANTALLA_EXPORT:
         if lote_id is None:
             st.warning("No hay ningún lote todavía. Ve a «Ingesta» para crear el primero.")
         else:
             export.render(store, lote_id)
+    else:
+        # Finanzas es CROSS-LOTE (`ui/finanzas.py`): el ledger de ventas
+        # abarca todos los lotes, así que — a diferencia de las otras 4
+        # pantallas — NO depende de `lote_id` ni se bloquea si no hay
+        # ningún lote seleccionado en la barra lateral.
+        finanzas.render(store)
 
 
 if __name__ == "__main__":

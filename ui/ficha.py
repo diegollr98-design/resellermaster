@@ -1327,6 +1327,15 @@ def _confirmar_uno(
         )
     try:
         store.confirmar_ficha(pid, confirmado)
+        # Fase 5 FINANZAS: la referencia ("Ref. N") se asigna AQUÍ, dentro
+        # del ÚNICO camino que confirma una ficha -- nunca al extraer ni al
+        # abrir la pantalla, para no quemar un número en una extracción de
+        # usar-y-tirar que Diego jamás confirma. `asignar_referencia` es
+        # assign-once/idempotente (`core/store.py`): re-confirmar (el botón
+        # "Volver a confirmar", el confirm en bloque, "Re-confirmar
+        # seleccionados") llama esto de nuevo y devuelve EL MISMO número --
+        # nunca quema uno nuevo.
+        store.asignar_referencia(pid)
     except StoreError as exc:
         logger.exception("No se pudo confirmar la ficha del producto %s", pid)
         return False, f"No se pudo confirmar la ficha: {exc}"
@@ -1548,6 +1557,67 @@ def _render_comparables(datos: dict) -> None:
 
 
 # --------------------------------------------------------------------------
+# FASE 5 FINANZAS — COSTE (manual, opcional) y REFERENCIA (asignada al
+# confirmar). Superficie sensible de PERSISTENCIA (`truth-loop.md` §B: coste
+# y referencia son dinero, la referencia se imprime en anuncios reales) — la
+# capa de disco YA existe y está verificada en `core/store.py`
+# (`asignar_referencia`/`guardar_coste`/`cargar_lote`); esta pantalla SÓLO la
+# consume, no reimplementa nada de la lógica de negocio (`file-organization.md`:
+# "app.py y ui/ son desechables, sólo renderizan").
+#
+# `coste_cents` NUNCA vive dentro de `campos` (`docs/seeds/fase-5-finanzas.md`
+# Task A): un re-extraer sobreescribe `campos` entero
+# (`store.guardar_extraccion`) y un confirmar/re-confirmar reconstruye
+# `campos` desde `_construir_confirmado` — meter el coste ahí lo borraría de
+# un click ajeno a lo que Diego quiso decir. Va por su columna propia
+# (`productos.coste_cents`), que ninguno de los dos caminos toca.
+#
+# El widget de coste se guarda con `on_change` (persiste EN CUANTO Diego
+# teclea, no espera a que confirme la ficha) — igual criterio que
+# `[INC-029]`/`[INC-030]` (`decision-making.md` §19): un widget que sólo se
+# guardara "al confirmar" podría PARECER que se perdió si Diego lo edita y
+# navega a otra pestaña sin pulsar Confirmar. Guardando en `on_change`, el
+# disco siempre tiene la última cifra tecleada, aunque la ficha ni siquiera
+# esté extraída todavía (por eso este bloque va ANTES del `return` temprano
+# de "sin extraer": el coste de compra no depende de que el VLM haya corrido).
+#
+# Un `on_change`/`on_click` no puede pintar `st.error` directamente (se
+# descarta en silencio, mismo límite que `_dialog_extraer`/`ui/curar.py`) —
+# se usa el MISMO buzón que el resto de la pantalla: `_registrar_error` +
+# `_mostrar_error_pendiente()` (cabecera de `render()`).
+# --------------------------------------------------------------------------
+def _key_coste(pid: str) -> str:
+    return f"ficha_{pid}_coste_euros"
+
+
+def _sembrar_coste(pid: str, coste_cents: int) -> None:
+    """Sólo re-siembra si la key FALTA (GC de navegación, o primera vez en
+    esta sesión) — igual criterio que `_sembrar_valores_iniciales`: si la key
+    ya está presente es la edición viva de Diego (o lo que el propio
+    `on_change` acaba de dejar tras persistir), y pisarla perdería tecleo en
+    curso sin necesidad."""
+    key = _key_coste(pid)
+    if key not in st.session_state:
+        st.session_state[key] = round(coste_cents / 100, 2)
+
+
+def _persistir_coste(store: LoteStore, pid: str) -> None:
+    """Callback `on_change` del `st.number_input` de coste — EL único camino
+    que escribe `coste_cents` a disco. Euros → céntimos ENTEROS
+    (`round(euros * 100)`, `store.guardar_coste` exige `int`); el
+    `min_value=0.0` del widget ya impide negativos, el `max(0, …)` es sólo
+    un cinturón extra, nunca la única defensa."""
+    key = _key_coste(pid)
+    euros = st.session_state.get(key)
+    cents = max(0, round(float(euros or 0.0) * 100))
+    try:
+        store.guardar_coste(pid, cents)
+    except StoreError as exc:
+        logger.exception("No se pudo guardar el coste del producto %s", pid)
+        _registrar_error(f"No se pudo guardar el coste: {exc}")
+
+
+# --------------------------------------------------------------------------
 # Tarjeta de un producto.
 # --------------------------------------------------------------------------
 def _render_producto(
@@ -1561,8 +1631,22 @@ def _render_producto(
     pid = producto["id"]
     with st.container(border=True):
         st.subheader(f"Producto `{pid[:8]}` — {len(producto['fotos'])} foto(s)")
+        referencia = producto.get("referencia")
+        if referencia is not None:
+            st.caption(f"🏷️ **Ref. {referencia}** — imprímela en la descripción para localizar la venta.")
         fotos = _paths_producto(producto, fotos_por_id)
         _render_galeria_fotos(fotos)
+
+        _sembrar_coste(pid, producto.get("coste_cents", 0))
+        st.number_input(
+            "💶 Coste de adquisición (€, opcional)",
+            key=_key_coste(pid),
+            min_value=0.0,
+            step=0.5,
+            format="%.2f",
+            on_change=_persistir_coste,
+            args=(store, pid),
+        )
 
         if not _esta_extraido(producto):
             st.caption("Atributos sin extraer todavía.")

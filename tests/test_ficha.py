@@ -2435,3 +2435,173 @@ def test_reconfirmar_seleccionados_no_toca_las_no_elegidas(tmp_path):
 
     campos_no_elegida = _producto(tmp_path, lote_id, pid_no_elegida)["campos"]["campos"]
     assert campos_no_elegida["titulo"]["valor"] == titulo_no_elegida_antes  # INTACTA
+
+
+# ============================================================================
+# FASE 5 FINANZAS, Task A (`docs/seeds/fase-5-finanzas.md`, superficie
+# `persistencia`): REFERENCIA (asignada al confirmar, assign-once) y COSTE
+# (manual, opcional, en euros -> céntimos). La capa de disco YA existe y está
+# verificada en `core/store.py` (`asignar_referencia`/`guardar_coste`); estos
+# tests verifican SÓLO que `ui/ficha.py` la consume bien -- end-to-end con
+# `AppTest`, pulsando de verdad (`change-loop.md` §C4, `[INC-028]`).
+# ============================================================================
+def _multiselect(at: AppTest, key: str):
+    return next(m for m in at.multiselect if m.key == key)
+
+
+def test_producto_sin_confirmar_no_tiene_referencia(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    assert _producto(tmp_path, lote_id, pid)["referencia"] is None
+
+
+def test_confirmar_asigna_referencia_y_reconfirmar_no_la_cambia(tmp_path):
+    """`store.asignar_referencia` se llama DENTRO de `_confirmar_uno` -- el
+    único camino que confirma una ficha. Confirmar por primera vez asigna un
+    número; "Volver a confirmar" (assign-once/idempotente) devuelve EL MISMO,
+    nunca quema uno nuevo."""
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at = _elegir_estado_y_categoria(at, pid)
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    referencia_1 = _producto(tmp_path, lote_id, pid)["referencia"]
+    assert referencia_1 is not None and referencia_1 > 0
+
+    # "Volver a confirmar" (misma key, la etiqueta cambia pero el botón es el
+    # mismo, ver `_render_producto`) -- re-confirmar NO debe cambiar el número.
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    assert _producto(tmp_path, lote_id, pid)["referencia"] == referencia_1
+
+
+def test_referencia_se_ve_en_pantalla_una_vez_asignada(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at = _elegir_estado_y_categoria(at, pid)
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    referencia = _producto(tmp_path, lote_id, pid)["referencia"]
+    captions = " ".join(c.value for c in at.caption)
+    assert f"Ref. {referencia}" in captions
+
+
+def test_dos_productos_confirmados_nunca_comparten_referencia(tmp_path):
+    """`referencia_seq` es AUTOINCREMENT (`core/store.py`): dos productos
+    confirmados en el MISMO lote jamás comparten número."""
+    lote_id, pid_a = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    store = LoteStore(data_dir=tmp_path)
+    carpeta = store.lotes_dir / lote_id
+    ruta = carpeta / "IMG_b.jpg"
+    _crear_img(ruta, (10, 200, 30))
+    (foto_id,) = store.añadir_fotos(lote_id, [Foto(ruta=str(ruta), hash="hash_b")])
+    (pid_b,) = store.guardar_agrupacion(lote_id, [[foto_id]])
+    store.confirmar_producto(pid_b)
+    resultado_b = _marca_leida_no_publicada_lista_para_confirmar(tmp_path / "crops_fake_b")
+    store.guardar_extraccion(pid_b, serializar_extraccion(resultado_b))
+
+    # Se elige/confirma pid_a COMPLETO antes de tocar los selectbox de pid_b
+    # (no se preparan ambos y se confirma después) -- a propósito: preparar
+    # los dos por adelantado y confirmar A resetea el selectbox "estado" de B
+    # a "(sin elegir)" en el MISMO script run, un quirk de `_sembrar_valores_
+    # iniciales` PRE-EXISTENTE y AJENO a esta feature (reproducido igual en
+    # `master` sin ninguno de los cambios de Fase 5 Task A) -- fuera de
+    # alcance de este seed (coste/referencia); no se toca aquí.
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at = _elegir_estado_y_categoria(at, pid_a)
+    at.button(key=f"confirmar_{pid_a}").click().run()
+    at = _elegir_estado_y_categoria(at, pid_b)
+    at.button(key=f"confirmar_{pid_b}").click().run()
+    assert not at.exception
+
+    ref_a = _producto(tmp_path, lote_id, pid_a)["referencia"]
+    ref_b = _producto(tmp_path, lote_id, pid_b)["referencia"]
+    assert ref_a is not None and ref_b is not None
+    assert ref_a != ref_b
+
+
+# ----------------------------------------------------------------------------
+# COSTE (manual, opcional, EUROS en pantalla -> `coste_cents` ENTEROS en
+# disco). Se guarda por `on_change` (persiste al teclear, no espera a
+# Confirmar) -- ver `ui/ficha.py::_persistir_coste`.
+# ----------------------------------------------------------------------------
+def test_coste_por_defecto_es_cero(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    campo = next(n for n in at.number_input if n.key == f"ficha_{pid}_coste_euros")
+    assert campo.value == 0.0
+    assert _producto(tmp_path, lote_id, pid)["coste_cents"] == 0
+
+
+def test_coste_se_persiste_en_centimos_enteros(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    campo = next(n for n in at.number_input if n.key == f"ficha_{pid}_coste_euros")
+    at = campo.set_value(12.5).run()
+    assert not at.exception
+
+    assert _producto(tmp_path, lote_id, pid)["coste_cents"] == 1250
+
+
+def test_coste_no_vive_dentro_de_campos(tmp_path):
+    """El coste va por su columna propia (`coste_cents`), NUNCA dentro de
+    `campos` -- si viviera ahí, un re-extraer/re-confirmar lo borraría de un
+    click ajeno a lo que Diego quiso decir (`ui/ficha.py`, comentario de la
+    sección FINANZAS)."""
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    campo = next(n for n in at.number_input if n.key == f"ficha_{pid}_coste_euros")
+    at = campo.set_value(9.99).run()
+    assert not at.exception
+
+    campos = _producto(tmp_path, lote_id, pid)["campos"]["campos"]
+    assert "coste" not in campos and "coste_cents" not in campos
+
+
+def test_coste_sobrevive_a_una_nueva_sesion_gc(tmp_path):
+    """Simula el GC de Streamlit al cambiar de pestaña (`[INC-029]`/
+    `[INC-030]`, `decision-making.md` §19): una NUEVA sesión (`AppTest`
+    fresco, `session_state` vacío) sobre el MISMO lote debe seguir mostrando
+    el coste que ya estaba en disco -- nunca vaciarse."""
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    campo = next(n for n in at.number_input if n.key == f"ficha_{pid}_coste_euros")
+    at = campo.set_value(7.0).run()
+    assert not at.exception
+    assert _producto(tmp_path, lote_id, pid)["coste_cents"] == 700
+
+    at2 = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at2.exception
+    campo2 = next(n for n in at2.number_input if n.key == f"ficha_{pid}_coste_euros")
+    assert campo2.value == 7.0
+
+
+def test_coste_no_bloquea_confirmar_sin_extraer(tmp_path):
+    """El coste es independiente de la extracción -- se puede fijar aunque
+    el producto NO se haya extraído todavía (widget colocado ANTES del
+    `return` temprano de "sin extraer" en `_render_producto`)."""
+    lote_id, pid = _preparar(tmp_path, _marca_leida_no_publicada_lista_para_confirmar, confirmar_agrupacion=True)
+    store = LoteStore(data_dir=tmp_path)
+    # Producto SIN extraer (agrupación confirmada, pero nunca se llamó a
+    # `guardar_extraccion`): se crea uno nuevo limpio, ya que `_preparar`
+    # siempre extrae.
+    carpeta = store.lotes_dir / lote_id
+    ruta = carpeta / "IMG_sin_extraer.jpg"
+    _crear_img(ruta, (5, 5, 5))
+    (foto_id,) = store.añadir_fotos(lote_id, [Foto(ruta=str(ruta), hash="hash_sin_extraer")])
+    (pid_sin_extraer,) = store.guardar_agrupacion(lote_id, [[foto_id]])
+    store.confirmar_producto(pid_sin_extraer)
+
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    campo = next(n for n in at.number_input if n.key == f"ficha_{pid_sin_extraer}_coste_euros")
+    at = campo.set_value(3.5).run()
+    assert not at.exception
+
+    producto = _producto(tmp_path, lote_id, pid_sin_extraer)
+    assert producto["coste_cents"] == 350
+    assert producto["referencia"] is None  # nunca confirmado -> sin referencia
