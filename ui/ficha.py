@@ -39,7 +39,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Sequence
 
 import streamlit as st
 
@@ -135,8 +135,52 @@ _ETIQUETA_OBLIGATORIO: dict[str, str] = {
     "descripcion": "descripción",
 }
 
+# --------------------------------------------------------------------------
+# FALLO DE SÍNTESIS (`core/extract.py::_sintetizar_ficha`, típicamente un 429
+# por saturación de la API) -- Diego lo confundió con "se borraron los
+# datos" porque el aviso se enterraba en un `st.caption` gris entre el resto
+# de fallos técnicos. El prefijo `"vlm_sintesis: "` es EXACTO
+# (`fallos.append(f"vlm_sintesis: {exc}")`, `core/extract.py`) -- por
+# `startswith`, así que NUNCA matchea `limite_llamadas_vlm_alcanzado:...`
+# (otro fallo, el backstop de coste de los crops, que coexiste pero NO es
+# éste) ni `sintesis:sin_fotos_abribles` / `sintesis_categoria_fuera_de_enum`
+# / `sintesis_estado_fuera_de_enum` (que SÍ empiezan por "sintesis" a secas,
+# pero NO por "vlm_sintesis:" -- y es correcto que queden fuera: re-extraer
+# no arregla "sin fotos abribles").
+# --------------------------------------------------------------------------
+_PREFIJO_FALLO_SINTESIS = "vlm_sintesis:"
 
-def _con_obligatorios(campos: dict) -> dict:
+_MENSAJE_FALLO_SINTESIS = (
+    "⚠️ La síntesis (categoría, estado, título, descripción, tipo) no se "
+    "completó por un fallo técnico (normalmente saturación temporal de la "
+    "API). **NO se ha borrado nada.** Los recortes ya están en caché "
+    "(coste ~0): re-extrae este producto y solo se repetirá esa última "
+    "llamada — usa «🔁 Re-extraer» abajo, o «Re-extraer los seleccionados» "
+    "arriba."
+)
+
+_MOTIVO_OBLIGATORIO_VERSION_ANTERIOR = (
+    "esta ficha se extrajo con una versión anterior de la app, "
+    "que todavía no tenía este campo — rellénalo a mano, o "
+    "re-extrae el producto para que lo proponga el modelo"
+)
+
+_MOTIVO_OBLIGATORIO_FALLO_SINTESIS = (
+    "la síntesis no se completó por un fallo técnico (p.ej. saturación de "
+    "la API) — re-extrae el producto (coste ~0, los recortes están en "
+    "caché), o rellénalo a mano"
+)
+
+
+def _hay_fallo_sintesis(fallos: Sequence[str]) -> bool:
+    """Discriminante ÚNICO (`change-loop.md` §C3): lo usan `_con_obligatorios`
+    (para el `motivo` por-campo) y `_render_producto` (para el aviso
+    prominente) -- si divergieran, un mensaje podría decir una cosa y el
+    otro, la contraria."""
+    return any(f.startswith(_PREFIJO_FALLO_SINTESIS) for f in fallos)
+
+
+def _con_obligatorios(campos: dict, *, fallos: Sequence[str] = ()) -> dict:
     """`campos` + un hueco vacío por cada obligatorio que la extracción NO
     produjo. Es el invariante que hace que el gate sea una defensa y no un
     callejón sin salida.
@@ -158,7 +202,19 @@ def _con_obligatorios(campos: dict) -> dict:
     El hueco es `valor=None` + `fuente="inferido"` + `confianza="baja"`: NO
     se inventa nada (`decision-making.md` §13) — es un campo vacío que Diego
     rellena, que es exactamente lo que un obligatorio ausente ES.
-    """
+
+    `fallos` (opcional, `producto["campos"]["fallos"]`/`datos["fallos"]`):
+    si contiene un fallo `vlm_sintesis:` (2026-07-21, hallazgo de Diego), el
+    `motivo` del hueco deja de decir "versión anterior de la app" -- que es
+    FALSO cuando la causa es un 429 reciente, no una ficha vieja -- y pasa a
+    decir la verdad: la síntesis falló técnicamente, re-extraer lo cura a
+    coste ~0. Sin ese fallo, el mensaje de "versión anterior" se mantiene
+    EXACTO (sigue siendo correcto para fichas viejas de verdad)."""
+    motivo = (
+        _MOTIVO_OBLIGATORIO_FALLO_SINTESIS
+        if _hay_fallo_sintesis(fallos)
+        else _MOTIVO_OBLIGATORIO_VERSION_ANTERIOR
+    )
     completos = dict(campos)
     for campo in _CAMPOS_OBLIGATORIOS:
         if campo not in completos:
@@ -174,11 +230,7 @@ def _con_obligatorios(campos: dict) -> dict:
                     "evidencia": None,
                     "lecturas": [],
                     "alternativas": [],
-                    "motivo": (
-                        "esta ficha se extrajo con una versión anterior de la app, "
-                        "que todavía no tenía este campo — rellénalo a mano, o "
-                        "re-extrae el producto para que lo proponga el modelo"
-                    ),
+                    "motivo": motivo,
                 },
             }
     return completos
@@ -950,7 +1002,8 @@ def _construir_confirmado(pid: str, serial: dict, *, modo_bloque: bool = False) 
     # Mismo invariante que el render (`_con_obligatorios`): si la extracción
     # no produjo un obligatorio, aquí existe igual como hueco, así que el
     # valor que Diego teclea en pantalla SE PERSISTE en vez de perderse.
-    for campo, datos_campo in _con_obligatorios(serial.get("campos", {})).items():
+    campos_con_huecos = _con_obligatorios(serial.get("campos", {}), fallos=serial.get("fallos", []))
+    for campo, datos_campo in campos_con_huecos.items():
         if campo == "estado":
             elegido = _estado_actual_o_defecto(pid, datos_campo)
             valor = None if elegido == _OPCIONES_ESTADO[0] else elegido
@@ -1449,13 +1502,26 @@ def _render_producto(
         for aviso in (datos.get("aviso_coherencia"),):
             if aviso:
                 st.warning(f"⚠️ {aviso}")
-        for fallo in datos.get("fallos", []):
+
+        fallos_producto = datos.get("fallos", [])
+        # AVISO PROMINENTE (2026-07-21, hallazgo de Diego): un `vlm_sintesis:`
+        # (típico 429 por saturación) se enterraba en un `st.caption` gris
+        # indistinguible del resto de fallos técnicos, y Diego lo leyó como
+        # "se borraron los datos" -- no es así, la caché ya tiene los crops
+        # pagados. `st.warning`/`st.error` cerca de la cabecera, ACCIONABLE
+        # (apunta a los botones de re-extraer ya visibles en pantalla), no un
+        # pie de foto (`decision-making.md` §12).
+        if _hay_fallo_sintesis(fallos_producto):
+            st.warning(_MENSAJE_FALLO_SINTESIS)
+        for fallo in fallos_producto:
             st.caption(f"· fallo técnico durante la extracción: {fallo}")
 
         # `_con_obligatorios`: un obligatorio que la extracción no produjo
-        # (ficha de una versión anterior) DEBE pintarse igual, o el gate se
-        # vuelve un callejón sin salida. Ver su docstring.
-        campos = _con_obligatorios(datos.get("campos", {}))
+        # (ficha de una versión anterior, O una síntesis fallida) DEBE
+        # pintarse igual, o el gate se vuelve un callejón sin salida. Ver su
+        # docstring -- `fallos` decide si el motivo dice la verdad (síntesis
+        # fallida) o el mensaje genérico (versión anterior).
+        campos = _con_obligatorios(datos.get("campos", {}), fallos=fallos_producto)
         _sembrar_valores_iniciales(pid, campos)
         orden = [c for c in _ORDEN_CAMPOS if c in campos] + [
             c for c in campos if c not in _ORDEN_CAMPOS

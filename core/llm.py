@@ -142,6 +142,20 @@ VERSION_PROMPT_DEFECTO = "v1"
 # decide si hace caso.
 UMBRAL_BYTES_AVISO_FOTO_COMPLETA = 400_000
 
+# Reintentos del cliente del SDK ante 429/5xx (backoff exponencial honrando
+# `Retry-After`, YA implementado por el SDK -- este numero solo dice CUANTAS
+# veces lo intenta antes de rendirse). Default del SDK: 2, insuficiente para
+# un producto "de caja" que dispara ~20 llamadas de crops en rafaga
+# secuencial y satura el rate-limit: la llamada de SINTESIS (la mas valiosa,
+# la ultima) llegaba con el limite ya caliente y se quedaba sin intentos.
+# 8 cubre una ventana de reset de tasa de ~60s con el backoff exponencial
+# del SDK. Subir esto NO toca el coste: un 429 nunca llega a
+# `respuesta.usage` (la API lo rechaza antes de procesar nada), y el coste
+# solo se registra tras una respuesta exitosa (`_consultar_interno`, tras
+# `cliente.messages.create` sin excepcion) -- mas reintentos de un fallo que
+# no factura es gratis.
+MAX_REINTENTOS_DEFECTO = 8
+
 
 # ---------------------------------------------------------------------------
 # Errores propios — ruidosos, tipados, nunca `except Exception: pass`.
@@ -298,6 +312,7 @@ class LLMEngine:
         cache_dir: Path | str = Path("data/cache"),
         api_key: str | None = None,
         max_tokens: int = 1024,
+        max_retries: int = MAX_REINTENTOS_DEFECTO,
     ) -> None:
         if modelo not in PRECIOS_USD_POR_MTOK:
             raise ValueError(
@@ -307,6 +322,7 @@ class LLMEngine:
         self.cache_dir = Path(cache_dir)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.max_tokens = max_tokens
+        self._max_retries = max_retries
         self._api_key = api_key or os.environ.get("ANTHROPIC_API_KEY")
         self._cliente: anthropic.Anthropic | None = None
 
@@ -326,7 +342,7 @@ class LLMEngine:
                 "Claude NO vale para esto, Anthropic prohibe enrutar apps de "
                 "terceros por credenciales de plan de consumidor."
             )
-        self._cliente = anthropic.Anthropic(api_key=self._api_key)
+        self._cliente = anthropic.Anthropic(api_key=self._api_key, max_retries=self._max_retries)
         return self._cliente
 
     # -- cache por hash -------------------------------------------------------

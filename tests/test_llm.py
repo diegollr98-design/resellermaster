@@ -24,6 +24,7 @@ from core.llm import (
     Imagen,
     LLMEngine,
     LLMLlamadaFallidaError,
+    MAX_REINTENTOS_DEFECTO,
     PRECIOS_USD_POR_MTOK,
 )
 
@@ -291,6 +292,81 @@ def test_sin_api_key_pero_con_hit_de_cache_no_falla(tmp_path, monkeypatch):
     motor_sin_key = LLMEngine(cache_dir=cache_dir)
     resultado = motor_sin_key.consultar([_imagen()], "prompt", schema)
     assert resultado.fuente == "cache"
+
+
+# ---------------------------------------------------------------------------
+# `max_retries` del cliente Anthropic -- fix del 429 que tumbaba la sintesis
+# en un producto "de caja" con ~20 llamadas de crops en rafaga (ver
+# docstring de `MAX_REINTENTOS_DEFECTO`). El SDK ya hace backoff
+# exponencial honrando `Retry-After`; el unico cambio es CUANTAS veces lo
+# intenta antes de rendirse.
+# ---------------------------------------------------------------------------
+def test_cliente_se_construye_con_max_retries_por_defecto(tmp_path, monkeypatch):
+    kwargs_capturados: dict = {}
+
+    def _fake_anthropic(**kwargs):
+        kwargs_capturados.update(kwargs)
+        return _ClienteFake(respuesta=_mensaje_fake({"marca": "Nike"}))
+
+    monkeypatch.setattr(anthropic, "Anthropic", _fake_anthropic)
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake")
+    motor.consultar([_imagen()], "prompt", {"type": "object", "properties": {}})
+
+    assert kwargs_capturados["max_retries"] == MAX_REINTENTOS_DEFECTO == 8
+
+
+def test_max_retries_es_configurable_por_el_constructor(tmp_path, monkeypatch):
+    kwargs_capturados: dict = {}
+
+    def _fake_anthropic(**kwargs):
+        kwargs_capturados.update(kwargs)
+        return _ClienteFake(respuesta=_mensaje_fake({"marca": "Nike"}))
+
+    monkeypatch.setattr(anthropic, "Anthropic", _fake_anthropic)
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake", max_retries=3)
+    motor.consultar([_imagen()], "prompt", {"type": "object", "properties": {}})
+
+    assert kwargs_capturados["max_retries"] == 3
+
+
+def test_max_retries_no_altera_la_estimacion_de_coste_de_un_lote(tmp_path):
+    """La estimacion (sin red, sin key) no debe cambiar por este parametro:
+    subir los reintentos no toca cuantos tokens se estiman ni el coste."""
+    cache_dir = tmp_path / "cache"
+    schema_solicitudes = [([_imagen("IMG_x.jpg")], "prompt", "v1")]
+
+    motor_defecto = LLMEngine(cache_dir=cache_dir)
+    motor_reintentos_altos = LLMEngine(cache_dir=cache_dir, max_retries=20)
+
+    estimacion_defecto = motor_defecto.estimar_coste_lote(schema_solicitudes)
+    estimacion_alta = motor_reintentos_altos.estimar_coste_lote(schema_solicitudes)
+
+    assert estimacion_defecto.coste_usd_estimado == pytest.approx(
+        estimacion_alta.coste_usd_estimado
+    )
+    assert estimacion_defecto.n_llamadas_total == estimacion_alta.n_llamadas_total
+
+
+def test_un_429_agotado_sigue_lanzando_llmllamadafallidaerror_con_max_retries_alto(
+    tmp_path, monkeypatch
+):
+    """Aunque se suban los reintentos, un 429 que persiste tras agotarlos
+    DEBE seguir propagandose -- nunca un fallback silencioso ni un dato
+    inventado (`decision-making.md` SS 13)."""
+    respuesta_http = httpx.Response(429, request=_peticion_httpx(), json={"error": {}})
+    error = anthropic.RateLimitError("rate limited", response=respuesta_http, body=None)
+    cliente_fake = _ClienteFake(error=error)
+    monkeypatch.setattr(anthropic, "Anthropic", lambda **kwargs: cliente_fake)
+
+    motor = LLMEngine(cache_dir=tmp_path / "cache", api_key="sk-ant-fake", max_retries=8)
+    schema = {"type": "object", "properties": {}}
+
+    with pytest.raises(LLMLlamadaFallidaError):
+        motor.consultar([_imagen()], "prompt", schema)
+
+    # Un 429 no factura: ni cache ni coste, con reintentos altos o bajos.
+    assert motor.coste_lote.llamadas == 0
+    assert not list((tmp_path / "cache").glob("*.json"))
 
 
 # ---------------------------------------------------------------------------

@@ -1896,3 +1896,109 @@ def test_boton_confirmar_lote_no_aparece_si_ya_todo_confirmado(tmp_path):
 
     labels = [b.label for b in at.button]
     assert not any("Confirmar todas las fichas listas" in lbl for lbl in labels)
+
+
+# ============================================================================
+# FALLO DE SÍNTESIS (2026-07-21, hallazgo de Diego: "se han borrado los
+# datos"). Causa real: un 429 en `core/extract.py::_sintetizar_ficha` deja
+# categoria/titulo/descripcion/tipo SIN producir y `estado.valor=None` --
+# nada se borró, la síntesis nunca llegó a escribirlos. Dos bugs de UI:
+# (A) el aviso se enterraba en un `st.caption` gris indistinguible de
+# cualquier otro fallo técnico; (B) el motivo por-campo de cada obligatorio
+# ausente mentía "esta ficha se extrajo con una versión anterior de la
+# app" -- FALSO cuando la causa es un 429 reciente, no una ficha vieja.
+#
+# El discriminante es el prefijo EXACTO `"vlm_sintesis:"`
+# (`fallos.append(f"vlm_sintesis: {exc}")`, `core/extract.py`) por
+# `startswith` -- por diseño NO matchea `limite_llamadas_vlm_alcanzado:...`
+# (el backstop de coste de los crops -- OTRO fallo que coexiste en cajas
+# pero no es éste) ni `sintesis:sin_fotos_abribles` / `sintesis_categoria_
+# fuera_de_enum` / `sintesis_estado_fuera_de_enum` (empiezan por "sintesis"
+# a secas, no por "vlm_sintesis:" -- y es correcto que queden fuera:
+# re-extraer no arregla "sin fotos abribles").
+# ============================================================================
+def _ficha_sintesis_fallida(crops: Path) -> ResultadoExtraccion:
+    """Un 429 real en la síntesis: marca/talla SÍ se leyeron (los crops de
+    OCR/VLM son una fase previa e independiente de la síntesis), pero
+    categoria/titulo/descripcion NUNCA se produjeron. `fallos` lleva el
+    prefijo EXACTO que anota `core/extract.py`."""
+    base = _marca_leida_no_publicada(crops)
+    return ResultadoExtraccion(
+        campos=base.campos, propuestas=base.propuestas,
+        fallos=("vlm_sintesis: limite de tasa excedido: 429 rate_limit_error",),
+        coste_usd=base.coste_usd,
+    )
+
+
+def _ficha_con_fallo_no_sintesis(crops: Path) -> ResultadoExtraccion:
+    """Fallos técnicos que NO son de síntesis: el backstop de coste de los
+    crops (`limite_llamadas_vlm_alcanzado`) y un crop concreto que reventó
+    (`vlm_crop:`). Ninguno de los dos debe disparar el aviso prominente de
+    síntesis -- son fallos DISTINTOS, y re-extraer no repara lo mismo."""
+    base = _marca_leida_no_publicada(crops)
+    return ResultadoExtraccion(
+        campos=base.campos, propuestas=base.propuestas,
+        fallos=(
+            "limite_llamadas_vlm_alcanzado:20:21",
+            "vlm_crop:IMG_1.jpg:(0, 0, 10, 10): timeout",
+        ),
+        coste_usd=base.coste_usd,
+    )
+
+
+def test_fallo_sintesis_dispara_aviso_prominente_y_motivo_veraz(tmp_path):
+    """EL CASO QUE IMPORTA: un `vlm_sintesis:` real -- aviso PROMINENTE
+    (no un caption gris) y el motivo por-campo de los obligatorios ausentes
+    dice la VERDAD (fallo técnico / re-extraer, coste ~0), nunca "versión
+    anterior de la app" (sería falso: la ficha es de HOY)."""
+    lote_id, pid = _preparar(tmp_path, _ficha_sintesis_fallida)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    textos_warning = " ".join(w.value for w in at.warning)
+    assert "síntesis" in textos_warning.lower()
+    assert "no se ha borrado nada" in textos_warning.lower()
+    assert "re-extrae" in textos_warning.lower()
+
+    captions = " ".join(c.value for c in at.caption)
+    assert "saturación" in captions.lower(), (
+        "el motivo por-campo del obligatorio ausente debe explicar el fallo "
+        "técnico, no inventar una excusa distinta"
+    )
+    assert "versión anterior de la app" not in captions.lower(), (
+        "con un fallo vlm_sintesis: reciente, el motivo NO puede decir que "
+        "la ficha es de una versión anterior -- es FALSO, la causa es el 429"
+    )
+
+
+def test_fallo_no_sintesis_no_dispara_aviso_de_sintesis(tmp_path):
+    """`limite_llamadas_vlm_alcanzado` y `vlm_crop:` NO son un fallo de
+    síntesis -- el discriminante debe ser el prefijo EXACTO
+    `"vlm_sintesis:"`, no una subcadena floja como "sintesis" o "vlm"."""
+    lote_id, pid = _preparar(tmp_path, _ficha_con_fallo_no_sintesis)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    textos_warning = " ".join(w.value for w in at.warning)
+    assert "síntesis" not in textos_warning.lower()
+
+    # Sin un fallo vlm_sintesis:, el motivo del obligatorio ausente sigue
+    # siendo el genérico de "versión anterior" -- no hay regresión.
+    captions = " ".join(c.value for c in at.caption)
+    assert "versión anterior de la app" in captions.lower()
+
+
+def test_ficha_vieja_de_verdad_sin_fallo_sintesis_mantiene_mensaje_version_anterior(tmp_path):
+    """La ficha REAL de Diego (`eea6b292`, sin fallos técnicos, extraída
+    antes de que `categoria` existiera): SIN ningún fallo `vlm_sintesis:`,
+    el mensaje sigue siendo EXACTAMENTE "versión anterior de la app" -- no
+    regresión del comportamiento legítimo para fichas viejas de verdad."""
+    lote_id, pid = _preparar(tmp_path, _ficha_de_version_vieja_sin_categoria)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    textos_warning = " ".join(w.value for w in at.warning)
+    assert "síntesis" not in textos_warning.lower()
+
+    captions = " ".join(c.value for c in at.caption)
+    assert "versión anterior de la app" in captions.lower()
