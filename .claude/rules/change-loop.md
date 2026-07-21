@@ -28,6 +28,8 @@ Por **superficie**, no por número de líneas. La lista de superficies sensibles
 
    **La superficie que Diego TOCA CON LAS MANOS necesita sus propios tests** `[INC-006]`. Los 241 tests verdes de `schema`/`images`/`store`/`grouping` no cubrían **ni una línea** de la pantalla de curado — y ahí vivían los dos bugs (uno de ellos capaz de meter una foto en la ficha equivocada). `streamlit.testing.v1.AppTest` reproduce esos fallos en 10 líneas: no era caro, es que no estaba. Todo cambio en `ui/` que mueva fotos entre grupos lleva su test de `AppTest`.
 
+   **Y todo BOTÓN nuevo de la UI lleva un `AppTest` que lo PULSA** (ejecuta su `on_click`/rerun), no sólo que renderiza la pantalla inicial `[INC-028]` (3ª de la clase, con `[INC-006]`/`[INC-021]`). El arranque headless y el render inicial **no pagan el clic**: un `AttributeError` en la línea que sólo corre tras pulsar («Buscar comparables») pasó ruff + `compileall` + arranque limpio y lo cazó Diego, no la suite. Corolario del mismo incidente: un **rename global** (`sed -i` en un fichero) se verifica con un **`grep` del nombre viejo en TODO el repo**, no en el fichero editado — una referencia en `ui/` quedó viva apuntando al nombre privado renombrado. (Es `§17` en otra forma: "renombré esto en todos lados" es una afirmación que se EJECUTA o no se escribe.)
+
 5. **Coste antes de ejecutar.** Cualquier cambio que altere cuántas llamadas al LLM se hacen por producto → **recalcular el coste/producto y decirlo**, aunque nadie lo pregunte. Un cambio de prompt que duplica el coste es un cambio de arquitectura disfrazado.
 
 ## §D — Reconciliación de estado antes de cada fase

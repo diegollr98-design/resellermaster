@@ -28,6 +28,8 @@ Si Diego propone algo correcto → impleméntalo, no lo debatas. Si no tienes un
 
 **Una tabla de mapeo con un eje categórico** (categoría, plataforma, idioma) se testea con el **producto cartesiano**, no un representante `[INC-018]` — elegir un representante es elegir el cómodo, y quien escribe el test es quien escribió el código (eligió el caso donde su implementación queda bien). Un **umbral fuzzy** se calibra y verifica contra el **vocabulario real que puede colisionar**, no contra la longitud de una de las palabras que separa `[INC-024]`: distancia 3 calibrada sobre `DESPERFECTOS` (12 letras) coló `PERFECTOS`/`MEDICAL` sobre `MEDIDAS` (7 letras) → un desperfecto inventado y `medidas="SYSTEM"`.
 
+**Una constante/tabla que debe COINCIDIR con la salida de una función** (un stem, un normalizador, un hash) se **DERIVA aplicando esa función**, nunca se escribe a ojo `[INC-026]` — si no, coincide por suerte hasta que un caso no cubierto la rompe en silencio. Los stems de género se escribieron a mano (`"hombr"`) asumiendo lo que `_stem` produciría, pero `_stem("hombre")=="hombre"` → `"hombre"` singular (la forma natural más común) no casaba y la feature de sesgo hacía lo contrario; lo cazó el `listing-audit`, no la suite del propio autor. Es la misma familia que el umbral fuzzy de `[INC-024]` (calibrar contra la realidad, no a ojo) y que `§17` (el `if` comprueba lo que promete, no un proxy).
+
 ## 5. Verificar el Código Antes de Preguntar al Usuario
 Si la respuesta está en el repo, léela. Preguntar lo que puedes comprobar tú cuesta más caro que comprobarlo.
 

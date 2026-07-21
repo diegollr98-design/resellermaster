@@ -87,6 +87,8 @@ El precio **no es un atributo del producto**: es una observación del mercado. P
 
    **Lo que NO cambia (conjunto inmutable):** *sin comparables reales citados, no hay número*. La mediana de parecidos **cita comparables reales y verificables** — por eso es honesta. Un número salido del LLM, no. La diferencia no es la precisión: es que **Diego puede abrir los 15 enlaces y comprobarlo**.
 
+   **La cohorte se valida por la FUERZA del identificador, no sólo por su presencia** `[INC-027]`. La cohorte es *marca + tipo + talla* — un identificativo DÉBIL solo (un `tipo` genérico: "sudadera", "masajeador") **no es una cohorte, es el catálogo entero**, y su mediana es un número plausible con URLs reales que NO representa el producto (el modo de fallo del proyecto en su forma más pura). Para dar un NÚMERO hace falta **marca o modelo** (identificativo fuerte); sin ellos → `precio=None` + motivo "cohorte demasiado amplia". *(Excepción: la vía EDITABLE de la UI, donde Diego escribe/edita cada término y ve los comparables — ahí el guardrail es su ojo, no el `if`; la disciplina estricta rige donde la máquina propone SOLA.)*
+
    **Límite honesto que hay que decir en la UI:** los anuncios publican lo que la gente **PIDE**, no por cuánto **VENDIÓ** (los precios de venta no son públicos en Wallapop/Vinted). Así que ni la mediana ni ninguna API dan "el precio óptimo": dan **el precio que otros piden**. El óptimo lo dice el mercado (si no se vende en 2 semanas, se baja).
 3. Sin comparables suficientes (`n < k`, umbral a definir en el plan) → **`precio=None` + motivo**. Nunca un rango inventado.
 4. Lo que el pipeline entrega es el **conjunto de comparables + un rango observado**, y Diego decide. La app no fija precios: informa.
