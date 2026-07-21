@@ -198,6 +198,15 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
             _render_campo_exportado(campo)
             st.divider()
 
+    # 0. RESUMEN DEL PRODUCTO -- Wallapop lo pide ARRIBA DEL TODO (máx 50
+    # chars); es el mismo título, se repite aquí para pegarlo primero sin
+    # scrollear (Diego, 2026-07-21). Vinted no tiene "Resumen".
+    if plataforma == "wallapop":
+        st.subheader("Resumen del producto")
+        st.caption(_contador(payload.titulo, schema.LimiteTexto(maximo=50)))
+        st.code(payload.titulo, language=None)
+        st.divider()
+
     # 1. FOTOS (+ preparar) -- van arriba en el formulario de Wallapop.
     st.subheader("Fotos")
     if payload.fotos:
