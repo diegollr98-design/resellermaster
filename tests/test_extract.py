@@ -63,6 +63,7 @@ from core.extract import (
     _agregar_campo_desde_marcador,
     _agregar_campo_desperfectos,
     _agregar_campo_texto,
+    _asegurar_titulo_lidera_con_tipo,
     _color_dominante_rgb,
     _construir_campo_categoria_desde_sintesis,
     _construir_campo_estado_desde_sintesis,
@@ -2633,6 +2634,128 @@ class TestRedactarDesdeCamposConfirmados:
         motor = _MotorTextoFake(titulo="T", descripcion="Descripcion normal sin defectos.")
         _, descripcion = redactar_desde_campos_confirmados({"marca": "BH"}, motor)
         assert descripcion == "Descripcion normal sin defectos."
+
+    # ------------------------------------------------------------------
+    # `tipo` lidera el titulo (2026-07-21, Diego midio 1/7 titulos
+    # liderando con el tipo confirmado y 2 contradiciendolo). El prompt
+    # instruye, el backstop `_asegurar_titulo_lidera_con_tipo` GARANTIZA.
+    # ------------------------------------------------------------------
+
+    def test_tipo_confirmado_aparece_en_el_prompt_real(self):
+        """`tipo` es un campo mas de `_CAMPOS_REDACCION_ORDEN` -- debe
+        llegar al texto real que se manda al motor, igual que `marca` o
+        `desperfectos`."""
+        motor = _MotorTextoFake()
+        redactar_desde_campos_confirmados(
+            {"tipo": "Masajeador de rodilla", "marca": "Lufthous"}, motor
+        )
+        prompt = motor.llamadas[0]["prompt"]
+        assert "Masajeador de rodilla" in prompt
+        assert "tipo de producto" in prompt.lower()
+
+    def test_titulo_sin_tipo_liderando_se_corrige_con_el_backstop(self):
+        """El modelo devuelve un titulo que NO empieza por el tipo -- el
+        backstop lo antepone antes de que la funcion lo devuelva."""
+        motor = _MotorTextoFake(
+            titulo="Lufthous LLLT-200 blanco y gris",
+            descripcion="En muy buen estado, apenas usado.",
+        )
+        titulo, _ = redactar_desde_campos_confirmados(
+            {"tipo": "Masajeador de rodilla", "marca": "Lufthous"}, motor
+        )
+        assert titulo.startswith("Masajeador de rodilla")
+
+    def test_sin_tipo_confirmado_titulo_del_modelo_no_se_toca(self):
+        motor = _MotorTextoFake(titulo="Bici azul BH", descripcion="Bici de paseo, buen estado.")
+        titulo, _ = redactar_desde_campos_confirmados({"marca": "BH"}, motor)
+        assert titulo == "Bici azul BH"
+
+
+class TestAseguraTituloLideraConTipo:
+    """`_asegurar_titulo_lidera_con_tipo` -- el BACKSTOP determinista
+    (misma disciplina que `_asegurar_desperfecto_en_descripcion`): nunca
+    depende de que el modelo obedezca la regla de FORMATO del prompt."""
+
+    def test_titulo_que_omite_el_tipo_se_prepone_y_lidera(self):
+        resultado = _asegurar_titulo_lidera_con_tipo(
+            "Lufthous LLLT-200 blanco", "Masajeador de rodilla"
+        )
+        assert resultado.startswith("Masajeador de rodilla")
+        assert "Lufthous LLLT-200 blanco" in resultado
+
+    def test_titulo_que_ya_lidera_con_el_tipo_no_cambia(self):
+        titulo = "Sudadera Reebok gris XXL"
+        resultado = _asegurar_titulo_lidera_con_tipo(titulo, "Sudadera")
+        assert resultado == titulo
+        assert resultado.count("Sudadera") == 1  # nunca duplica
+
+    def test_titulo_que_contiene_el_tipo_no_al_principio_no_duplica(self):
+        titulo = "Reebok Sudadera gris"
+        resultado = _asegurar_titulo_lidera_con_tipo(titulo, "Sudadera")
+        assert resultado == titulo
+        assert resultado.count("Sudadera") == 1
+
+    def test_tipo_none_o_vacio_no_toca_el_titulo(self):
+        titulo = "Sudadera Reebok gris XXL"
+        assert _asegurar_titulo_lidera_con_tipo(titulo, None) == titulo
+        assert _asegurar_titulo_lidera_con_tipo(titulo, "") == titulo
+        assert _asegurar_titulo_lidera_con_tipo(titulo, "   ") == titulo
+
+    def test_prepend_que_excede_el_limite_se_capa_por_palabra_sin_partir(self):
+        # Titulo SIN el nucleo del tipo ("masajeador") -> antepone y, al exceder
+        # 100, capa por palabra completa.
+        titulo_largo = (
+            "Lufthous LLLT-200 aparato termico y por vibracion para "
+            "rodilla, hombro y espalda, edicion blanco y gris, casi nuevo"
+        )
+        resultado = _asegurar_titulo_lidera_con_tipo(
+            titulo_largo, "Masajeador de rodilla con tecnologia laser", limite=100
+        )
+        assert len(resultado) <= 100
+        assert resultado.startswith("Masajeador de rodilla con tecnologia laser")
+        # nunca corta a mitad de palabra: cada palabra del resultado debe
+        # aparecer completa en el texto fuente (tipo + titulo original)
+        fuente = "Masajeador de rodilla con tecnologia laser " + titulo_largo
+        for palabra in resultado.split(" "):
+            assert palabra in fuente.split(" ")
+
+    def test_nucleo_del_tipo_enterrado_no_se_duplica_aunque_no_lidere(self):
+        # #5: si el nucleo del tipo ("masajeador") ya esta en el titulo aunque no
+        # al frente, NO se antepone (duplicaria) -- se deja tal cual. Reordenar
+        # palabras es fragil y este modulo no lo hace; el prompt v2 hace que el
+        # modelo lidere de entrada, asi que este caso enterrado es raro.
+        titulo = "Lufthous LLLT-200 masajeador termico blanco y gris"
+        resultado = _asegurar_titulo_lidera_con_tipo(
+            titulo, "Masajeador de rodilla con tecnologia laser"
+        )
+        assert resultado == titulo
+        assert resultado.lower().count("masajeador") == 1
+
+    def test_deteccion_insensible_a_acentos_y_mayusculas_no_duplica(self):
+        resultado = _asegurar_titulo_lidera_con_tipo("sudadera reebok", "Sudadera")
+        assert resultado == "sudadera reebok"
+        assert resultado.lower().count("sudadera") == 1
+
+    def test_modelo_abrevia_un_tipo_largo_no_se_duplica(self):
+        # listing-audit #5: el modelo lidera con "Masajeador" (nucleo del tipo)
+        # abreviando el tipo largo confirmado -> el backstop NO debe anteponer
+        # el tipo entero otra vez.
+        resultado = _asegurar_titulo_lidera_con_tipo(
+            "Masajeador Lufthous LLLT-200 blanco", "Masajeador de rodilla con tecnología láser"
+        )
+        assert resultado == "Masajeador Lufthous LLLT-200 blanco"
+        assert resultado.lower().count("masajeador") == 1
+
+    def test_nucleo_del_tipo_presente_no_duplica_parcialmente(self):
+        # listing-audit #5: "Jersey" (nucleo) ya esta -> no "Jersey de cuello vuelto Jersey azul".
+        resultado = _asegurar_titulo_lidera_con_tipo("Jersey azul de lana", "Jersey de cuello vuelto")
+        assert resultado == "Jersey azul de lana"
+        assert resultado.lower().count("jersey") == 1
+
+    def test_plural_del_tipo_sigue_deduplicando(self):
+        # El tipo entero como substring cubre el plural: "Sudadera" en "Sudaderas".
+        resultado = _asegurar_titulo_lidera_con_tipo("Sudaderas Reebok rosas", "Sudadera")
+        assert resultado == "Sudaderas Reebok rosas"
 
 
 def test_construir_solicitud_redaccion_no_llama_a_nadie():

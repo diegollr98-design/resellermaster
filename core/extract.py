@@ -3508,22 +3508,27 @@ def _muestrear_fotos(fotos: Sequence[Path], k: int) -> list[Path]:
 # prompt lo instruye con dureza, sin margen de "suavizarlo hasta que no se
 # note".
 
-VERSION_PROMPT_REDACCION = "extract-redaccion-v1"
+VERSION_PROMPT_REDACCION = "extract-redaccion-v2"  # + tipo lidera el titulo
 
 # Orden de presentacion de los campos en el prompt -- SOLO campos de
 # atributo (nunca titulo/descripcion, que es lo que este paso REDACTA, ni
 # `ean`, que no aporta nada a un texto de venta legible). "composicion" NO
 # esta aqui: salio ENTERA de la ficha (Diego, 2026-07-17, ver
 # `CAMPOS_PRODUCIDOS`) -- si algun dia vuelve, se anade aqui tambien.
-# `desperfectos` va el ultimo A PROPOSITO: es el campo con la instruccion
-# mas dura del prompt, y quedarse el ultimo en la lista reduce que se
-# pierda entre los demas.
+# `tipo` va PRIMERO A PROPOSITO (2026-07-21, Diego midio: solo 1/7 titulos
+# lideraba con el tipo de producto y 2 lo contradecian) -- es lo primero
+# que debe aparecer en el titulo ("Masajeador de rodilla Lufthous...",
+# "Sudadera Reebok gris XXL..."), y el orden de esta lista es el orden en
+# que se presentan los campos al modelo. `desperfectos` va el ultimo A
+# PROPOSITO: es el campo con la instruccion mas dura del prompt, y
+# quedarse el ultimo en la lista reduce que se pierda entre los demas.
 _CAMPOS_REDACCION_ORDEN: tuple[str, ...] = (
-    "categoria", "marca", "modelo", "talla", "color", "estado",
+    "tipo", "categoria", "marca", "modelo", "talla", "color", "estado",
     "medidas", "desperfectos",
 )
 
 _NOMBRE_CAMPO_LEGIBLE: dict[str, str] = {
+    "tipo": "tipo de producto",
     "categoria": "categoria",
     "marca": "marca",
     "modelo": "modelo/referencia",
@@ -3565,8 +3570,12 @@ REGLAS DURAS -- son invariantes, no sugerencias:
      agresiva ni alarmista).
 
 FORMATO:
-  - titulo: maximo 100 caracteres, corto y claro (incluye marca+tipo de
-    producto si los tienes; nunca vacio).
+  - titulo: maximo 100 caracteres, corto y claro. Si en la lista aparece
+    "tipo de producto", el titulo DEBE EMPEZAR por ese tipo, seguido de la
+    marca y lo distintivo (ej: "Masajeador de rodilla Lufthous LLLT-200",
+    "Sudadera Reebok gris XXL"). Si no aparece "tipo de producto" en la
+    lista, empieza por la marca o lo mas distintivo que tengas. Nunca
+    vacio.
   - descripcion: maximo 600 caracteres, honesta sobre lo que hay en la
     lista (incluido cualquier desperfecto, regla 3).
 
@@ -3655,6 +3664,101 @@ def _asegurar_desperfecto_en_descripcion(
     return f"{descripcion}\n\nDESPERFECTOS: {texto_desperfecto}"
 
 
+# ----------------------------------------------------------------------------
+# BACKSTOP DETERMINISTA -- MISMA DISCIPLINA que `_asegurar_desperfecto_en_
+# descripcion` de arriba (2026-07-21, Diego midio sobre 7 fichas reales:
+# solo 1/7 titulos lideraba con el `tipo` de producto confirmado, y 2
+# CONTRADECIAN su propio tipo). El prompt (regla de FORMATO, arriba) ya
+# INSTRUYE a que el titulo empiece por el tipo -- pero pedir no es
+# verificar (`[INC-010]`): esta funcion GARANTIZA que el titulo publicado
+# efectivamente lo hace, sin depender de que el modelo obedezca.
+#
+# Nunca REORDENA palabras del titulo que devuelve el modelo (mover texto
+# es fragil y puede romper gramatica) -- si el tipo ya esta presente en
+# cualquier posicion, se deja tal cual; si no esta, se ANTEPONE, igual que
+# el desperfecto se ANEXA nunca se reescribe la descripcion.
+#
+# SEGURIDAD DE MARCA: este backstop antepone SOLO el texto de `tipo` que
+# Diego ya confirmo -- no detecta ni filtra marcas ajenas aqui (seria
+# duplicar logica, `decision-making.md` "no anadir friccion"). En el raro
+# caso de que un `tipo` contenga una marca ajena, `core/export.py`
+# YA VALIDA el titulo final con `validar_texto(..., "title")` y BLOQUEA
+# `MENTIONS_OTHER_BRAND` antes de exportar -- esa defensa aguas abajo
+# cubre este caso, no hace falta repetirla aqui.
+# ----------------------------------------------------------------------------
+
+
+def _normalizar_para_comparar_titulo(texto: str) -> str:
+    """Minusculas, sin acentos, espacios colapsados -- SOLO para comparar
+    si el `tipo` ya esta presente en el titulo. Nunca se aplica al texto
+    que se antepone de verdad: ese se usa tal cual lo confirmo Diego."""
+    sin_acentos = unicodedata.normalize("NFKD", texto).encode("ascii", "ignore").decode("ascii")
+    return re.sub(r"\s+", " ", sin_acentos.lower()).strip()
+
+
+def _asegurar_titulo_lidera_con_tipo(titulo: str, tipo: str | None, limite: int = 100) -> str:
+    """Si `tipo` (el tipo de producto que Diego confirmo, p.ej. "Sudadera",
+    "Masajeador de rodilla") no esta ya presente en `titulo`, lo ANTEPONE
+    para que el titulo LIDERE con el. Si ya esta presente (en cualquier
+    posicion, comparacion insensible a mayusculas/acentos), el titulo se
+    devuelve SIN TOCAR -- no duplica ("Sudadera Sudadera Reebok...") ni
+    reordena palabras del modelo, que es fragil.
+
+    `tipo` ausente/vacio -> `titulo` sin cambios (nada que asegurar).
+
+    El resultado se capa a `limite` caracteres SIEMPRE cortando por
+    PALABRA completa (nunca a mitad de palabra), y el `tipo` antepuesto
+    siempre sobrevive al corte -- es el dato que este backstop existe
+    para proteger."""
+    if not tipo:
+        return titulo
+    tipo_limpio = str(tipo).strip()
+    if not tipo_limpio:
+        return titulo
+
+    # DEDUP (listing-audit 2026-07-21 #5): no anteponer si el tipo ya esta
+    # representado en el titulo. Dos criterios, cualquiera basta:
+    #   (a) el NUCLEO del tipo (su primera palabra) aparece como TOKEN completo
+    #       -- cubre el caso comun de que el modelo ABREVIE un tipo largo:
+    #       titulo "Masajeador Lufthous..." con tipo "Masajeador de rodilla con
+    #       tecnologia laser" NO debe volverse "Masajeador de rodilla... Masajeador
+    #       Lufthous...". Token completo (no substring) para no cazar "body"
+    #       dentro de "body-kit".
+    #   (b) el tipo ENTERO como substring -- cubre el plural: tipo "Sudadera"
+    #       ya presente en un titulo que dice "Sudaderas".
+    titulo_norm = _normalizar_para_comparar_titulo(titulo)
+    tipo_norm = _normalizar_para_comparar_titulo(tipo_limpio)
+    tokens_titulo = titulo_norm.split()
+    nucleo_tipo = tipo_norm.split()[0] if tipo_norm else ""
+    if nucleo_tipo and (nucleo_tipo in tokens_titulo or tipo_norm in titulo_norm):
+        return titulo  # el tipo ya esta representado -- no duplicar ni reordenar
+
+    prefijo = tipo_limpio[0].upper() + tipo_limpio[1:] if tipo_limpio else tipo_limpio
+    nuevo_titulo = f"{prefijo} {titulo}".strip()
+    if len(nuevo_titulo) <= limite:
+        return nuevo_titulo
+
+    # Capar por PALABRA desde la cola, garantizando que `prefijo` sobreviva.
+    if len(prefijo) >= limite:
+        # Caso patologico: el tipo solo ya excede el limite -- trunca el
+        # propio tipo por palabra hasta que quepa (nunca a mitad de palabra).
+        palabras_tipo = prefijo.split(" ")
+        while palabras_tipo and len(" ".join(palabras_tipo)) > limite:
+            palabras_tipo.pop()
+        return " ".join(palabras_tipo) if palabras_tipo else prefijo[:limite]
+
+    palabras = nuevo_titulo.split(" ")
+    while palabras and len(" ".join(palabras)) > limite:
+        palabras.pop()
+    resultado = " ".join(palabras)
+    # Garantiza que el prefijo (el tipo) sigue presente tras el recorte --
+    # si el recorte por palabra completa lo hubiera dejado fuera (limite
+    # menor que len(prefijo) + 1), cae al truncado patologico de arriba.
+    if not resultado.startswith(prefijo):
+        return prefijo[:limite]
+    return resultado
+
+
 ESQUEMA_REDACCION_FICHA: dict = {
     "type": "object",
     "properties": {
@@ -3734,6 +3838,7 @@ def redactar_desde_campos_confirmados(
             f"redaccion: titulo o descripcion vacios (titulo={titulo!r}, descripcion={descripcion!r})"
         )
     descripcion = _asegurar_desperfecto_en_descripcion(descripcion, campos_confirmados, producto_id)
+    titulo = _asegurar_titulo_lidera_con_tipo(titulo, campos_confirmados.get("tipo"))
     return titulo, descripcion
 
 
