@@ -24,6 +24,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 from PIL import Image
 from streamlit.testing.v1 import AppTest
 
@@ -113,8 +114,9 @@ def _script(data_dir: str, lote_id: str) -> None:
 
 
 class _BuscadorFakeUI:
-    """Doble de `pricing.Buscador` para la UI -> el test del botón de precio
-    NUNCA toca la red (se inyecta con monkeypatch sobre `pricing.BuscadorWallapop`)."""
+    """Doble de `pricing.Buscador` para la UI -> los tests del Export NUNCA
+    tocan la red (el precio AUTO-BUSCA al abrir la pantalla, así que sin este
+    doble cada test que renderiza el Export golpearía Wallapop)."""
 
     def __init__(self, *a, **k) -> None:
         pass
@@ -126,6 +128,15 @@ class _BuscadorFakeUI:
             Comparable(url=f"https://es.wallapop.com/item/x{i}", precio=float(10 + i), titulo=f"t{i}")
             for i in range(6)
         ]
+
+
+@pytest.fixture(autouse=True)
+def _sin_red_en_precio(monkeypatch):
+    """El precio auto-busca al abrir «4. Export» -> TODO test que renderice esa
+    pantalla usaría la red. Se falsea el buscador para toda la suite de UI."""
+    from core import pricing
+
+    monkeypatch.setattr(pricing, "BuscadorWallapop", _BuscadorFakeUI)
 
 
 # ============================================================================
@@ -227,24 +238,26 @@ def test_boton_preparar_fotos_crea_carpeta_con_fotos_renombradas(tmp_path):
 #    un flujo que cuesta un clic arrancar no está probado hasta que alguien
 #    paga ese clic). Con buscador falso -> sin red.
 # ============================================================================
-def test_boton_buscar_comparables_se_ejecuta_y_pinta_medianas(tmp_path, monkeypatch):
-    from core import pricing
-
-    monkeypatch.setattr(pricing, "BuscadorWallapop", _BuscadorFakeUI)
+def test_precio_auto_busca_al_abrir_y_pinta_medianas(tmp_path):
+    # El precio AUTO-BUSCA al abrir «4. Export» (menos clics, idea de Diego):
+    # la mediana sale SIN pulsar nada. Esto ejecuta `_render_precio` entero,
+    # incluida `pricing.NOTA_PRECIO_PEDIDO` -> cazaría el `[INC-028]`.
     lote_id, pid = _preparar(
         tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
     )
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
-    assert not at.exception
+    assert not at.exception, at.exception
+    captions = " ".join(c.value for c in at.caption)
+    assert "PIDEN" in captions  # la nota honesta se pintó
+    assert at.metric  # ya hay al menos una mediana, sin clic
 
+
+def test_boton_re_buscar_no_peta(tmp_path):
+    # El botón «Buscar de nuevo» re-ejecuta con las palabras editadas.
+    lote_id, pid = _preparar(
+        tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
+    )
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     boton = next(b for b in at.button if b.key == f"btn_precio_{pid}")
     at = boton.click().run()
-    # ESTA es la aserción que cazaba el bug: pulsar el botón EJECUTA
-    # `_render_precio` entero, incluida la nota `pricing.NOTA_PRECIO_PEDIDO`.
     assert not at.exception, at.exception
-
-    # La nota honesta (precio pedido, no de venta) se pinta.
-    captions = " ".join(c.value for c in at.caption)
-    assert "PIDEN" in captions
-    # Y salió al menos una mediana (una métrica por variante con datos).
-    assert at.metric

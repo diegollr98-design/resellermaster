@@ -259,8 +259,7 @@ def _render_una_tasacion(tas: pricing.Tasacion) -> None:
     else:
         st.caption(f"— {tas.motivo}")
     if tas.url_busqueda:
-        st.caption("Abrir la búsqueda entera:")
-        st.code(tas.url_busqueda, language=None)
+        st.link_button("🔗 Abrir la búsqueda en Wallapop", tas.url_busqueda)
     if tas.comparables:
         with st.expander(f"Ver los {tas.n} comparables (ábrelos y compruébalo)"):
             for comp in tas.comparables:
@@ -293,19 +292,30 @@ def _render_precio(producto: dict) -> None:
     terminos = [ln for ln in texto.splitlines() if ln.strip()]
 
     key_tas = f"tasaciones_{producto['id']}"
-    if st.button("🔎 Buscar comparables en Wallapop", key=f"btn_precio_{producto['id']}"):
+
+    def _buscar() -> None:
+        with st.spinner(f"Leyendo {len(terminos)} búsquedas públicas de Wallapop…"):
+            try:
+                st.session_state[key_tas] = pricing.tasar_terminos(terminos, _buscador())
+            except Exception as exc:  # noqa: BLE001 — la red nunca tumba la pantalla
+                logger.exception("Fallo al tasar el producto %s", producto["id"])
+                st.error(f"No se pudo leer la búsqueda: {exc}")
+
+    # AUTO-BUSCAR una vez al abrir el producto (idea de Diego: menos clics --
+    # que salga ya al entrar en «4. Export», sin darle en cada producto). Sólo
+    # la primera vez (gate por `session_state`); no se repite en cada rerun ni
+    # machaca el endpoint. Tras editar las palabras, el botón re-busca.
+    if key_tas not in st.session_state and terminos:
+        _buscar()
+
+    if st.button("🔎 Buscar de nuevo (con las palabras de arriba)", key=f"btn_precio_{producto['id']}"):
         if not terminos:
             st.warning("Escribe al menos una combinación de palabras clave.")
         else:
-            with st.spinner(f"Leyendo {len(terminos)} búsquedas públicas de Wallapop…"):
-                try:
-                    st.session_state[key_tas] = pricing.tasar_terminos(terminos, _buscador())
-                except Exception as exc:  # noqa: BLE001 — la red nunca tumba la pantalla
-                    logger.exception("Fallo al tasar el producto %s", producto["id"])
-                    st.error(f"No se pudo leer la búsqueda: {exc}")
+            _buscar()
 
     tasaciones: list[pricing.Tasacion] | None = st.session_state.get(key_tas)
-    if tasaciones is None:
+    if not tasaciones:
         return
 
     st.caption(f"⚠️ {pricing.NOTA_PRECIO_PEDIDO}")
