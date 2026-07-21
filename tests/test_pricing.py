@@ -560,3 +560,44 @@ class TestVariantesDeBusqueda:
     def test_tasar_variantes_vacio_si_no_hay_fuerte(self):
         from core.pricing import tasar_variantes
         assert tasar_variantes({"tipo": _diego("sudadera")}, _BuscadorFake(_comps([1, 2, 3, 4, 5]))) == []
+
+
+class TestTerminosEditables:
+    """Vía editable de la UI (idea de Diego 2026-07-18): sugerencias generosas
+    (incluida marca inferida) que Diego edita, y una mediana por línea."""
+
+    def test_sugiere_marca_inferida_para_el_box_real(self):
+        from core.pricing import sugerir_terminos
+        # Ficha REAL del masajeador: marca Lufthous es 'inferido' -> la búsqueda
+        # estricta la excluía; como SUGERENCIA editable sí entra.
+        campos = {
+            "marca": {"valor": "Lufthous", "fuente": "inferido"},
+            "modelo": {"valor": "LLLT-200", "fuente": "foto"},
+            "titulo": {"valor": "Lufthous LLLT-200 blanco y gris", "fuente": "inferido"},
+        }
+        assert sugerir_terminos(campos) == ["Lufthous LLLT-200", "LLLT-200", "Lufthous"]
+
+    def test_sin_marca_ni_modelo_cae_al_titulo(self):
+        from core.pricing import sugerir_terminos
+        campos = {"titulo": {"valor": "Sudadera gris chula", "fuente": "inferido"}}
+        assert sugerir_terminos(campos) == ["Sudadera gris chula"]
+
+    def test_ficha_vacia_no_sugiere_nada(self):
+        from core.pricing import sugerir_terminos
+        assert sugerir_terminos({}) == []
+
+    def test_tasar_terminos_una_por_linea_no_vacia(self):
+        from core.pricing import tasar_terminos
+        buscador = _BuscadorFake(_comps([10, 12, 15, 18, 20]))
+        tas = tasar_terminos(["Lufthous LLLT-200", "  ", "masajeador laser rodilla", ""], buscador)
+        assert len(tas) == 2  # las vacías/espacios se saltan
+        assert buscador.llamado_con == ["Lufthous LLLT-200", "masajeador laser rodilla"]
+        assert all(t.mediana == 15.0 for t in tas)
+
+    def test_tasar_terminos_respeta_lo_que_diego_escribe(self):
+        # Un término que Diego añade a mano (no derivado del pipeline) se busca
+        # TAL CUAL -- él controla las palabras y ve los comparables.
+        from core.pricing import tasar_terminos
+        buscador = _BuscadorFake(_comps([5, 8, 10, 12, 15, 20]))
+        tasar_terminos(["masajeador laser rodilla Lufthous"], buscador)
+        assert buscador.llamado_con == ["masajeador laser rodilla Lufthous"]

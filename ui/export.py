@@ -270,36 +270,42 @@ def _render_una_tasacion(tas: pricing.Tasacion) -> None:
 def _render_precio(producto: dict) -> None:
     st.subheader("Precio — mediana de parecidos")
     campos = producto.get("campos", {}).get("campos", {})
-    atributos = pricing.atributos_desde_campos(campos)
-    variantes = pricing.variantes_de_busqueda(atributos)
-
-    if not variantes:
-        st.caption(
-            "No hay marca ni modelo confirmados con que buscar comparables de "
-            "forma honesta (buscar sólo por tipo daría el catálogo entero). "
-            "Confirma la marca/modelo en la ficha, o mira el precio a mano."
-        )
-        return
 
     st.caption(
-        f"{len(variantes)} combinaciones de palabras clave para triangular el "
-        "precio: compara las medianas y quédate con la que de verdad casa con tu "
-        "producto (abre sus comparables para verificar). El precio nunca sale de "
-        "un modelo — sale de anuncios reales que puedes abrir."
+        "Una línea por combinación de palabras clave. **Edítalas**: añade las "
+        "que veas en el producto (marca, modelo, tipo…) y borra las que no "
+        "encajen. Al buscar, sale la mediana de parecidos de CADA línea, para "
+        "que compares y te quedes con la que de verdad casa (abre sus "
+        "comparables para verificar). El precio nunca sale de un modelo — sale "
+        "de anuncios reales que puedes abrir."
     )
+
+    # Semilla editable: sugerencias generosas (incluye la marca aunque sea
+    # inferida; con título como respaldo si no hay marca/modelo).
+    sugeridas = pricing.sugerir_terminos(campos)
+    key_txt = f"precio_terminos_{producto['id']}"
+    texto = st.text_area(
+        "Palabras clave (una combinación por línea)",
+        value="\n".join(sugeridas),
+        key=key_txt,
+        height=120,
+    )
+    terminos = [ln for ln in texto.splitlines() if ln.strip()]
 
     key_tas = f"tasaciones_{producto['id']}"
     if st.button("🔎 Buscar comparables en Wallapop", key=f"btn_precio_{producto['id']}"):
-        with st.spinner(f"Leyendo {len(variantes)} búsquedas públicas de Wallapop…"):
-            try:
-                st.session_state[key_tas] = pricing.tasar_variantes(atributos, _buscador())
-            except Exception as exc:  # noqa: BLE001 — la red nunca tumba la pantalla
-                logger.exception("Fallo al tasar el producto %s", producto["id"])
-                st.error(f"No se pudo leer la búsqueda: {exc}")
+        if not terminos:
+            st.warning("Escribe al menos una combinación de palabras clave.")
+        else:
+            with st.spinner(f"Leyendo {len(terminos)} búsquedas públicas de Wallapop…"):
+                try:
+                    st.session_state[key_tas] = pricing.tasar_terminos(terminos, _buscador())
+                except Exception as exc:  # noqa: BLE001 — la red nunca tumba la pantalla
+                    logger.exception("Fallo al tasar el producto %s", producto["id"])
+                    st.error(f"No se pudo leer la búsqueda: {exc}")
 
     tasaciones: list[pricing.Tasacion] | None = st.session_state.get(key_tas)
     if tasaciones is None:
-        st.caption("Combinaciones que se probarán: " + " · ".join(f"«{v}»" for v in variantes))
         return
 
     st.caption(f"⚠️ {pricing.NOTA_PRECIO_PEDIDO}")

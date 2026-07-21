@@ -644,6 +644,70 @@ def tasar_variantes(
 
 
 # ============================================================================
+# Términos EDITABLES para la UI -- Diego en el bucle. `sugerir_terminos` siembra
+# combinaciones generosas (incluida la marca aunque sea `inferido`: es una
+# SUGERENCIA que Diego ve, edita y verifica contra los comparables reales, no
+# un dato que se publica) y `tasar_terminos` calcula la mediana de las líneas
+# que Diego deje. Decisión de Diego (2026-07-18): quiere poder AÑADIR palabras
+# que el pipeline no extrajo (p.ej. "masajeador láser rodilla", que está en la
+# caja pero no en el título sintetizado), y ver la mediana de cada una.
+#
+# La diferencia con `tasar`/`variantes_de_busqueda` (que SÍ exigen procedencia
+# foto/diego + identificativo fuerte): ahí la máquina propone SOLA, así que la
+# disciplina es estricta; aquí Diego edita cada término y mira los comparables,
+# así que el guardrail es su ojo, no el `if`.
+# ============================================================================
+
+
+def _texto_campo(campos: dict[str, Any], nombre: str) -> str | None:
+    """Lee `valor` de un campo persistido, sea cual sea su `fuente` (para las
+    SUGERENCIAS editables). `None` si no hay valor de texto."""
+    datos = campos.get(nombre)
+    if not isinstance(datos, dict):
+        return None
+    valor = datos.get("valor")
+    return valor.strip() if isinstance(valor, str) and valor.strip() else None
+
+
+def sugerir_terminos(campos: dict[str, Any]) -> list[str]:
+    """Combinaciones de palabras clave SUGERIDAS (editables en la UI) a partir
+    de una ficha confirmada. Usa marca/modelo/talla con CUALQUIER fuente (son
+    sugerencias que Diego edita) + el tipo derivado del título. Reusa
+    `variantes_de_busqueda` relabelando a "diego" (el filtro de procedencia no
+    aplica a un término que Diego va a revisar). Vacía si no hay ni marca ni
+    modelo -- entonces la UI arranca con el título como única línea editable."""
+    loose: AtributosProducto = {}
+    for nombre in ("marca", "modelo", "talla"):
+        v = _texto_campo(campos, nombre)
+        if v:
+            loose[nombre] = Campo(valor=v, fuente="diego", confianza="media")
+    titulo = _texto_campo(campos, "titulo")
+    if titulo:
+        t = _sin_acentos(titulo.lower())
+        for tipo in _TIPOS_PRENDA:
+            if tipo in t:
+                loose["tipo"] = Campo(valor=tipo, fuente="diego", confianza="media")
+                break
+    variantes = variantes_de_busqueda(loose)
+    # Fallback: sin marca ni modelo no hay variantes, pero el título confirmado
+    # es la mejor semilla editable que queda (Diego la recorta).
+    if not variantes and titulo:
+        variantes = [titulo]
+    return variantes
+
+
+def tasar_terminos(
+    terminos: list[str],
+    buscador: Buscador,
+    plataforma: str = "wallapop",
+) -> list[Tasacion]:
+    """Una `Tasacion` por cada término (línea) NO vacía -- la vía editable de
+    la UI. Cada término es tal cual lo dejó Diego; el gate `n >= 5` y la nota
+    honesta se aplican igual (`_tasar_query`)."""
+    return [_tasar_query(t.strip(), buscador, plataforma) for t in terminos if t.strip()]
+
+
+# ============================================================================
 # v-futuro -- BUSQUEDA POR IMAGEN. DESCARTADA, no reabrir. Misma costura.
 # ============================================================================
 # architecture.md SS Costura 2: "SerpAPI/Google Lens devuelve comparables
