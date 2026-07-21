@@ -1,15 +1,22 @@
-# Fase 4 (cont.) — El `tipo` de producto en la extracción
+# Fase 4 (cont.) — El `tipo` de producto en la extracción · SEED DE PLANIFICACIÓN
 
-> Arranca aquí. **Reconcilia el estado contra el repo antes de tocar nada** (`change-loop.md` §D): `git log`, el código, `pytest`. Los seeds mienten; el código no.
+> **Este seed es para PLANEAR, no para implementar.** Da el problema, lo que ya
+> existe, las restricciones que aplican y las DECISIONES ABIERTAS — **a
+> propósito NO da la respuesta**. Diego quiere planearlo sin el sesgo de la
+> sesión anterior. Si el orquestador tiene una intuición, la mide o la propone
+> como opción, no como conclusión.
+>
+> **Reconcilia el estado contra el repo antes de nada** (`change-loop.md` §D):
+> `git log`, el código, `pytest`. Los seeds mienten; el código no.
 
 ## Prompt de arranque
 ```
 Eres el orquestador ("papá oso") de RESELLERMASTER. Lee CLAUDE.md, .claude/rules/
 (decision-making, truth-loop, change-loop, architecture, product, file-organization),
 .claude/incident-ledger.md y docs/seeds/fase-4-tipo-producto.md.
-El export ya está pulido y en el orden de cada plataforma. Falta UN campo en la
-extracción: el TIPO de producto. Corre el Loop de Cambios; es superficie SENSIBLE
-(core/extract.py) → listing-audit + /eval antes de cerrar.
+Es una sesión de PLANIFICACIÓN (Loop de Cambios §A): decide CON DIEGO el approach
+antes de escribir código. Superficie SENSIBLE (core/extract.py). NO propongas una
+solución como conclusión sin medirla; presenta las opciones con sus trade-offs.
 ```
 
 ---
@@ -19,77 +26,75 @@ extracción: el TIPO de producto. Corre el Loop de Cambios; es superficie SENSIB
 La síntesis (`core/extract.py::_sintetizar_ficha`) produce
 `marca/talla/modelo/ean/color/estado/categoria/titulo/descripcion/desperfectos`,
 pero **NO produce qué ES el producto**: el "masajeador de rodilla", la
-"sudadera", el "jersey", la "camiseta". Diego lo dijo textual: *"en la ropa no
-pone si son jerséis, sudaderas etc, y creo que este es fundamental no sólo para
-el título, sino para el precio (al buscar por palabra clave)."*
+"sudadera", el "jersey", la "camiseta". Diego, textual: *"en la ropa no pone si
+son jerséis, sudaderas etc, y creo que este es fundamental no sólo para el
+título, sino para el precio (al buscar por palabra clave)."*
 
-**Por qué es fundamental — toca TRES cosas a la vez:**
-1. **Título:** hoy sale genérico ("Lufthous LLLT-200 blanco y gris" en vez de
-   "Masajeador de rodilla Lufthous LLLT-200"). El tipo es la palabra que un
-   comprador busca.
-2. **Precio** (`core/pricing.py`): la búsqueda de comparables por texto es
-   marca+tipo+talla. Hoy el `tipo` se **deriva del título** con una lista de
-   prendas (`_TIPOS_PRENDA` en `pricing.py`) — funciona para ropa conocida,
-   pero NO para "masajeador de rodilla" (no está en la lista) ni cuando el
-   título no nombra el tipo. Un `tipo` estructurado y fiable haría la cohorte
-   de precio mucho mejor (`[INC-027]`: la cohorte se valida por la fuerza del
-   identificador — marca+tipo es más fuerte que marca sola).
-3. **Candidatas de categoría** (`core/categorias.py`): hoy rankean con el
-   título+descripción. Un `tipo` explícito (+ género, que también falta) daría
-   candidatas mucho más certeras — de hecho el seed anterior
-   (`fase-4-precio-y-pulido-export.md`) ya proponía añadir `tipo_prenda`+`género`
-   a la extracción por esto mismo.
+**Toca TRES consumidores a la vez** (verificar cada uno en el código):
+1. **Título** (`extract.py`, la síntesis lo redacta). Hoy sale genérico
+   ("Lufthous LLLT-200 blanco y gris" en vez de "Masajeador de rodilla…").
+2. **Precio** (`core/pricing.py`). La búsqueda de comparables por texto es
+   marca+tipo+talla; hoy `tipo` se **deriva del título** con la lista
+   `_TIPOS_PRENDA` (sólo prendas conocidas → NO cubre "masajeador de rodilla").
+   `[INC-027]`: la cohorte se valida por la FUERZA del identificador — marca+tipo
+   es más fuerte que marca sola.
+3. **Candidatas de categoría** (`core/categorias.py`). Hoy rankean con el
+   título+descripción; un `tipo` (+ género) explícito daría candidatas más
+   certeras. El factor de género de `categorias.py` ya lee del título.
 
-## LO QUE YA EXISTE (no reinventar)
-- `core/extract.py`: la síntesis ya añade campos de ENUM CERRADO siguiendo un
-  patrón repetible (`categoria`, `estado`) — el `tipo` debe seguir EL MISMO:
-  vive en `ESQUEMA_SINTESIS_FICHA`/`_CAMPOS_SINTESIS`, `fuente="inferido"`
-  SIEMPRE (nunca "foto" — es un juicio), si el modelo viola el enum la clave NO
-  se añade (nunca un comodín silencioso, `decision-making.md` §13). Ver los
-  párrafos "categoria (2026-07-17...)" y "estado (2026-07-17...)" del docstring
-  del módulo: son la plantilla exacta.
-- `pricing._TIPOS_PRENDA` (lista de prendas para derivar el tipo del título) y
-  `categorias.py` (IDF + factor de género/infantil) ya consumen "tipo"/género
-  como término — enchufar el nuevo campo estructurado ahí sube su calidad.
-- `CAMPOS_PRODUCIDOS` en `extract.py` es la tupla de campos; añadir "tipo" (y
-  quizá "genero") ahí.
+## LO QUE YA EXISTE (verificar en el código antes de decidir; no reinventar)
+- `core/extract.py`: la síntesis YA añade campos de enum cerrado con un patrón
+  repetible (`categoria`, `estado`): viven en `ESQUEMA_SINTESIS_FICHA`/
+  `_CAMPOS_SINTESIS`, `fuente="inferido"` SIEMPRE, y si el modelo viola el enum
+  la clave NO se añade (nunca un comodín silencioso). Leer esos párrafos del
+  docstring del módulo — muestran cómo se añade un campo a la síntesis SIN
+  llamada extra.
+- `CAMPOS_PRODUCIDOS` (tupla de campos producidos), `pricing._TIPOS_PRENDA`,
+  `categorias.py` (IDF + factor género/infantil) — los sitios que consumirían
+  el nuevo campo.
 
-## DECISIONES QUE FALTAN (resolver con Diego ANTES de construir)
-1. **¿`tipo` es un ENUM CERRADO o un texto corto libre?**
-   - ENUM cerrado (como `categoria`/`estado`): anti-alucinación fuerte, pero
-     enumerar TODOS los tipos (ropa + cajas + variado) es inviable y un enum
-     incompleto tira datos. **Probablemente NO** para el catálogo variado de Diego.
-   - Texto corto libre `fuente="inferido"` + `confianza="baja"`, que Diego
-     confirma/edita con el recorte delante (patrón de la ficha): más flexible,
-     cubre "masajeador de rodilla". El riesgo de alucinación lo cubre el ojo de
-     Diego + que NO se publica como afirmación dura (va al título/búsqueda).
-     **Recomendación de partida**, a validar con Diego y con /eval.
-2. **¿Y el GÉNERO** (hombre/mujer/niño)? El seed anterior lo emparejaba con
-   `tipo`. `categorias.py` ya tiene factor de género leyendo del título — un
-   campo estructurado lo haría fiable. ¿Se añade a la vez o después?
-3. **¿Coste?** Va DENTRO de la llamada de síntesis existente (0 llamadas extra,
-   como `categoria`/`estado`) → coste plano. Confírmalo con `estimar_coste_lote`
-   y dilo (`change-loop.md` §C5).
+## DECISIONES ABIERTAS (resolver CON DIEGO — presentadas sin veredicto)
+
+**D1 — ¿Qué FORMA tiene `tipo`?** Opciones y sus tensiones (medir, no elegir a ojo):
+- **Enum cerrado** (como `categoria`/`estado`): máxima defensa anti-alucinación,
+  pero enumerar todos los tipos de un catálogo variado (ropa + cajas + variado)
+  es difícil, y un enum incompleto TIRA datos (el tipo que no está → se pierde).
+- **Texto corto libre** `fuente="inferido"`, que Diego confirma con el recorte
+  delante: cubre cualquier producto, pero es un juicio del modelo → ¿cuánto
+  alucina sobre las fotos reales? El ojo de Diego + que NO se publica como
+  afirmación dura (va a título/búsqueda) es la defensa.
+- **Híbrido** (enum para ropa, libre para el resto; o lista + "otro"): ¿vale la
+  complejidad?
+  → **Cómo decidir sin sesgo:** medir con `/eval` sobre el golden real cuánto
+  cubre/alucina cada forma, y/o un panel ciego (`change-loop.md` §A). El dato
+  manda, no la intuición.
+
+**D2 — ¿Se añade el GÉNERO (hombre/mujer/niño) a la vez?** El seed anterior lo
+emparejaba con `tipo` (mejora las candidatas de categoría y de precio). ¿Ahora,
+después, o nunca? ¿Mismo debate de forma (enum vs libre) que `tipo`?
+
+**D3 — Coste.** Debería ir DENTRO de la síntesis (0 llamadas extra, como
+`categoria`/`estado`) → coste plano. Confirmarlo con `estimar_coste_lote` y
+decirlo (`change-loop.md` §C5). Si algún approach añade una llamada, es un
+cambio de arquitectura disfrazado.
 
 ## GATE (superficie sensible → obligatorio antes de cerrar)
-- `/eval` contra el golden set: ¿el `tipo` extraído es legible/correcto en las
-  fotos reales? ¿Sube o baja la tasa de alucinación? (métrica primaria).
-- `listing-audit`: intentar que el `tipo` cuele algo falso en el título o en la
-  búsqueda de precio (¿mete una marca ajena como tipo? ¿un tipo inventado que
-  no está en la foto?).
-- Medir el impacto en las **candidatas de categoría** y en la **cohorte de
-  precio** con los productos reales de Diego (la sudadera y el masajeador).
+- `/eval` contra el golden set: ¿el `tipo` es legible/correcto en las fotos
+  reales? ¿sube o baja la tasa de alucinación (métrica primaria)?
+- `listing-audit`: intentar que `tipo` cuele algo falso en el título o en la
+  búsqueda de precio (una marca ajena como tipo, un tipo que no está en la foto).
+- Medir el impacto REAL en las candidatas de categoría y en la cohorte de precio
+  con la sudadera y el masajeador de Diego (antes/después).
 
 ## NO REABRIR (medido y cerrado)
-- El EXPORT (orden, envío, color, categoría candidata, precio editable) está
-  hecho y en el orden de cada plataforma. No tocar salvo que el `tipo` mejore
-  una entrada concreta.
+- El EXPORT (orden por plataforma, envío, color, categoría candidata, precio
+  editable) está hecho. No tocar salvo que `tipo` mejore una entrada concreta.
 - Precio por imagen / Google Lens: DESCARTADO (`architecture.md`).
 - `medidas` desde texto: NO (`[INC-025]`), sólo del metro.
 
-## Pendientes menores (no bloquean)
-- El GATE real que sigue sin hacerse: Diego exporta un producto de verdad y
-  CRONOMETRA (baseline ~285 s). Sin ese número no sabemos qué ahorra.
-- Precio en Vinted (su búsqueda está tras Datadome; hoy sólo Wallapop).
-- `test_curar::test_render_sin_excepcion` es flaky por timeout de `AppTest`
-  (3 s) bajo carga — subir el timeout de los `AppTest.run()`.
+## Pendientes menores (no bloquean el plan)
+- **El GATE real, aún sin hacer:** Diego exporta un producto de verdad y
+  CRONOMETRA (baseline ~285 s). Sin ese número no sabemos qué ahorra nada.
+- Precio en Vinted (búsqueda tras Datadome; hoy sólo Wallapop).
+- `test_curar::test_render_sin_excepcion` flaky por timeout de `AppTest` (3 s)
+  bajo carga — subir el timeout de los `AppTest.run()`.
