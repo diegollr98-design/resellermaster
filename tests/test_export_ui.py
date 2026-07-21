@@ -258,6 +258,6 @@ def test_boton_re_buscar_no_peta(tmp_path):
         tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
     )
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
-    boton = next(b for b in at.button if b.key == f"btn_precio_{pid}")
+    boton = next(b for b in at.button if b.key == f"btn_precio_{pid}_wallapop")
     at = boton.click().run()
     assert not at.exception, at.exception

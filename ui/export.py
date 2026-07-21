@@ -184,23 +184,21 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
     for aviso in payload.avisos:
         st.warning(f"⚠️ {aviso}")
 
-    st.subheader("Título + descripción")
-    st.caption(_contador(payload.titulo, _limite_texto(plataforma, "title")))
-    st.code(payload.titulo, language=None)
-    st.caption(_contador(payload.descripcion, _limite_texto(plataforma, "description")))
-    st.code(payload.descripcion, language=None)
-    st.caption("Título + descripción juntos, para pegar de una vez:")
-    st.code(f"{payload.titulo}\n\n{payload.descripcion}", language=None)
+    # ORDEN = EL DEL FORMULARIO DE WALLAPOP, verbatim de Diego (2026-07-21),
+    # para rellenar de arriba abajo en paralelo con la web sin scrollear:
+    #   Fotos -> Categoría -> Título -> Descripción -> (Marca/Talla) -> Estado
+    #   -> PRECIO -> Medidas(desperfectos) -> Tamaño(envío).
+    # (El "Resumen del producto" de arriba de Wallapop es el mismo título.)
+    # El orden de Vinted lo afinará Diego; por ahora usa el mismo.
+    campos_por_nombre = {c.nombre: c for c in payload.campos}
 
-    st.divider()
-    _render_candidatas_categoria(payload)
+    def _campo(nombre: str) -> None:
+        campo = campos_por_nombre.get(nombre)
+        if campo is not None:
+            _render_campo_exportado(campo)
+            st.divider()
 
-    st.divider()
-    st.subheader("Campos")
-    for campo in payload.campos:
-        _render_campo_exportado(campo)
-        st.divider()
-
+    # 1. FOTOS (+ preparar) -- van arriba en el formulario de Wallapop.
     st.subheader("Fotos")
     if payload.fotos:
         columnas = st.columns(min(len(payload.fotos), 5))
@@ -214,8 +212,6 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
             f"{len(payload.fotos_excluidas)} foto(s) no caben en el límite de "
             f"{_ETIQUETA_PLATAFORMA[plataforma]} — no se incluyen."
         )
-
-    st.divider()
     key_boton = f"export_fotos_{producto['id']}_{plataforma}"
     key_ruta = f"export_ruta_{producto['id']}_{plataforma}"
     if st.button(
@@ -226,11 +222,37 @@ def _render_plataforma(store: LoteStore, lote_id: str, producto: dict, fotos_por
         ruta = _accion_preparar_fotos(store, lote_id, producto["id"], plataforma, payload)
         if ruta is not None:
             st.session_state[key_ruta] = str(ruta)
-
     ruta_preparada = st.session_state.get(key_ruta)
     if ruta_preparada:
         st.success(f"Fotos copiadas — ábrela y arrástralas a {_ETIQUETA_PLATAFORMA[plataforma]}:")
         st.code(ruta_preparada, language=None)
+
+    # 2. CATEGORÍA
+    st.divider()
+    _render_candidatas_categoria(payload)
+
+    # 3-4. TÍTULO + DESCRIPCIÓN (el título sirve también para el "Resumen").
+    st.divider()
+    st.subheader("Título + descripción")
+    st.caption(_contador(payload.titulo, _limite_texto(plataforma, "title")))
+    st.code(payload.titulo, language=None)
+    st.caption(_contador(payload.descripcion, _limite_texto(plataforma, "description")))
+    st.code(payload.descripcion, language=None)
+    st.caption("Título + descripción juntos, para pegar de una vez:")
+    st.code(f"{payload.titulo}\n\n{payload.descripcion}", language=None)
+
+    # 5. (MARCA/TALLA, atributos de moda), 6. ESTADO
+    st.divider()
+    for nombre in ("marca", "talla", "estado"):
+        _campo(nombre)
+
+    # 7. PRECIO
+    _render_precio(producto, plataforma)
+
+    # 8. MEDIDAS (desperfectos), 9. TAMAÑO (envío)
+    st.divider()
+    for nombre in ("desperfectos", "composicion", "tramo_peso_kg", "package_size"):
+        _campo(nombre)
 
 
 # --------------------------------------------------------------------------
@@ -266,7 +288,7 @@ def _render_una_tasacion(tas: pricing.Tasacion) -> None:
                 st.markdown(f"- **{comp.precio:.0f} €** — [{comp.titulo or comp.url}]({comp.url})")
 
 
-def _render_precio(producto: dict) -> None:
+def _render_precio(producto: dict, plataforma: str) -> None:
     st.subheader("Precio — mediana de parecidos")
     campos = producto.get("campos", {}).get("campos", {})
 
@@ -282,7 +304,7 @@ def _render_precio(producto: dict) -> None:
     # Semilla editable: sugerencias generosas (incluye la marca aunque sea
     # inferida; con título como respaldo si no hay marca/modelo).
     sugeridas = pricing.sugerir_terminos(campos)
-    key_txt = f"precio_terminos_{producto['id']}"
+    key_txt = f"precio_terminos_{producto['id']}_{plataforma}"
     texto = st.text_area(
         "Palabras clave (una combinación por línea)",
         value="\n".join(sugeridas),
@@ -291,7 +313,7 @@ def _render_precio(producto: dict) -> None:
     )
     terminos = [ln for ln in texto.splitlines() if ln.strip()]
 
-    key_tas = f"tasaciones_{producto['id']}"
+    key_tas = f"tasaciones_{producto['id']}_{plataforma}"
 
     def _buscar() -> None:
         with st.spinner(f"Leyendo {len(terminos)} búsquedas públicas de Wallapop…"):
@@ -308,7 +330,10 @@ def _render_precio(producto: dict) -> None:
     if key_tas not in st.session_state and terminos:
         _buscar()
 
-    if st.button("🔎 Buscar de nuevo (con las palabras de arriba)", key=f"btn_precio_{producto['id']}"):
+    if st.button(
+        "🔎 Buscar de nuevo (con las palabras de arriba)",
+        key=f"btn_precio_{producto['id']}_{plataforma}",
+    ):
         if not terminos:
             st.warning("Escribe al menos una combinación de palabras clave.")
         else:
@@ -371,9 +396,6 @@ def render(store: LoteStore, lote_id: str) -> None:
             "(truth-loop.md §A.2). No hay atajo para saltarse esto."
         )
         return
-
-    _render_precio(producto)
-    st.divider()
 
     tabs = st.tabs([_ETIQUETA_PLATAFORMA[p] for p in _PLATAFORMAS])
     for plataforma, tab in zip(_PLATAFORMAS, tabs):
