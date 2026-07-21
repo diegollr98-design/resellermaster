@@ -77,7 +77,7 @@ _REPO_ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_DATA_DIR = _REPO_ROOT / "data"
 DB_FILENAME = "resellermaster.db"
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 # Cada entrada es la lista de sentencias DDL que llevan la base de datos de
 # la versión (N-1) a la versión N. NUNCA se reescribe una migración ya
@@ -145,7 +145,78 @@ _MIGRATIONS: dict[int, tuple[str, ...]] = {
         "ALTER TABLE fotos ADD COLUMN legible INTEGER NOT NULL DEFAULT 1",
         "ALTER TABLE fotos ADD COLUMN error_lectura TEXT",
     ),
+    # v3 — FASE 5 FINANZAS (superficie sensible: ventas = dinero). Todo
+    # additivo, ningún DROP: un lote v2 a medias se abre sin romper. Modelo
+    # decidido por un panel multi-agente (seed `fase-5-finanzas.md`):
+    #
+    #  - `productos.referencia` + `referencia_seq`: el número humano ("Ref. N")
+    #    que Diego imprime en la descripción como LLAVE para localizar la venta.
+    #    `referencia_seq` es AUTOINCREMENT (marca de agua): nunca reutiliza un
+    #    número tras borrar un producto — dos productos jamás comparten Ref.
+    #  - `coste_cents`: coste de adquisición (opcional, céntimos ENTEROS, nunca
+    #    float). Columna propia porque `campos` lo sobreescriben `guardar_extraccion`
+    #    Y `confirmar_ficha` con `UPDATE productos SET campos=?` — el dinero NO
+    #    puede vivir ahí o se pierde en la siguiente extracción.
+    #  - `publicaciones`: el "Subido" por plataforma + snapshot congelado de la
+    #    tasación (mediana+comparables) en el momento de pulsar Subido.
+    #  - `ventas`: SIN FK a `productos` a propósito — una venta es dinero y debe
+    #    SOBREVIVIR a un futuro borrado del producto; por eso congela snapshots
+    #    (referencia/titulo/coste) en el momento de vender.
+    #  - `movimientos`: log APPEND-ONLY, el rastro reversible de undo/devolución.
+    3: (
+        "ALTER TABLE productos ADD COLUMN referencia INTEGER",
+        "ALTER TABLE productos ADD COLUMN coste_cents INTEGER NOT NULL DEFAULT 0",
+        # SQLite permite múltiples NULL bajo un índice UNIQUE: los productos
+        # sin referencia asignada conviven, pero dos NO pueden compartir número.
+        "CREATE UNIQUE INDEX idx_productos_referencia ON productos(referencia)",
+        """
+        CREATE TABLE referencia_seq (
+            n            INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id  TEXT NOT NULL REFERENCES productos(id),
+            asignada_en  TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE publicaciones (
+            id                    TEXT PRIMARY KEY,
+            producto_id           TEXT NOT NULL REFERENCES productos(id),
+            plataforma            TEXT NOT NULL,
+            subido_en             TEXT NOT NULL,
+            precio_elegido_cents  INTEGER,
+            tasacion_json         TEXT,
+            UNIQUE(producto_id, plataforma)
+        )
+        """,
+        """
+        CREATE TABLE ventas (
+            producto_id        TEXT PRIMARY KEY,
+            referencia_snap    INTEGER,
+            titulo_snap        TEXT,
+            coste_snap_cents   INTEGER NOT NULL DEFAULT 0,
+            precio_final_cents INTEGER,
+            plataforma_venta   TEXT,
+            estado             TEXT NOT NULL DEFAULT 'vendida',
+            lote_venta_id      TEXT,
+            fecha_venta        TEXT,
+            creada_en          TEXT NOT NULL,
+            actualizada_en     TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE movimientos (
+            id           INTEGER PRIMARY KEY AUTOINCREMENT,
+            producto_id  TEXT NOT NULL,
+            tipo         TEXT NOT NULL,
+            timestamp    TEXT NOT NULL,
+            detalle      TEXT NOT NULL DEFAULT '{}'
+        )
+        """,
+        "CREATE INDEX idx_publicaciones_producto ON publicaciones(producto_id)",
+        "CREATE INDEX idx_movimientos_producto ON movimientos(producto_id)",
+    ),
 }
+
+_PLATAFORMAS = ("wallapop", "vinted")
 
 
 # --------------------------------------------------------------------------
@@ -197,6 +268,34 @@ def _ahora() -> str:
 
 def _nuevo_id() -> str:
     return uuid.uuid4().hex
+
+
+def _titulo_de_campos(campos_json: str | None) -> str | None:
+    """Extrae el título publicable del JSON de `productos.campos`, defensivo.
+
+    El contrato de `campos` (ver docstring del módulo) anida la procedencia,
+    así que el título vive en `campos['campos']['titulo']['valor']` (forma que
+    produce `core.extract.serializar_extraccion`) o, en fichas más planas, en
+    `campos['titulo']['valor']`. Nunca revienta: cualquier forma inesperada,
+    JSON corrupto o ausencia devuelve `None` — es un SNAPSHOT informativo para
+    el ledger de ventas, no una fuente de verdad que deba fallar ruidosamente.
+    """
+    if not campos_json:
+        return None
+    try:
+        data = json.loads(campos_json)
+    except (json.JSONDecodeError, TypeError, ValueError):
+        return None
+    if not isinstance(data, dict):
+        return None
+    for contenedor in (data.get("campos"), data):
+        if isinstance(contenedor, dict):
+            titulo = contenedor.get("titulo")
+            if isinstance(titulo, dict):
+                valor = titulo.get("valor")
+                if isinstance(valor, str):
+                    return valor
+    return None
 
 
 @dataclass(frozen=True)
@@ -831,6 +930,397 @@ class LoteStore:
                    VALUES (?, ?, 'ficha', ?, ?)""",
                 (producto_id, fila["lote_id"], ahora, json.dumps(detalle or {}, ensure_ascii=False)),
             )
+
+    # -- finanzas: referencia + coste (superficie sensible: dinero) -------
+
+    def asignar_referencia(self, producto_id: str) -> int:
+        """Asigna (o devuelve) el número de referencia humano de un producto.
+
+        Es la LLAVE que Diego imprime en la descripción ("Ref. N") para
+        localizar después la venta. `assign-once` / idempotente: si el
+        producto ya tiene `referencia`, la devuelve sin tocar nada. Si es
+        NULL, inserta una fila en `referencia_seq` (AUTOINCREMENT = marca de
+        agua: no se reutiliza tras un DELETE, así dos productos jamás
+        comparten número) y fija `productos.referencia` con ese `n`.
+
+        `ProductoNoEncontradoError` si el producto no existe.
+        """
+        with self._transaccion() as conn:
+            fila = conn.execute(
+                "SELECT referencia FROM productos WHERE id = ?", (producto_id,)
+            ).fetchone()
+            if fila is None:
+                raise ProductoNoEncontradoError(f"producto no encontrado: {producto_id}")
+            if fila["referencia"] is not None:
+                return int(fila["referencia"])
+            cursor = conn.execute(
+                "INSERT INTO referencia_seq (producto_id, asignada_en) VALUES (?, ?)",
+                (producto_id, _ahora()),
+            )
+            n = int(cursor.lastrowid)
+            conn.execute(
+                "UPDATE productos SET referencia = ? WHERE id = ?", (n, producto_id)
+            )
+            return n
+
+    def guardar_coste(self, producto_id: str, coste_cents: int) -> None:
+        """Guarda el coste de adquisición del producto (opcional), en céntimos
+        ENTEROS — nunca float. Columna propia `coste_cents`, NO dentro de
+        `campos` (que lo sobreescriben `guardar_extraccion`/`confirmar_ficha`).
+
+        `ValueError` si `coste_cents < 0`; `ProductoNoEncontradoError` si el
+        producto no existe.
+        """
+        if coste_cents < 0:
+            raise ValueError(f"coste_cents no puede ser negativo: {coste_cents}")
+        with self._transaccion() as conn:
+            fila = conn.execute(
+                "SELECT id FROM productos WHERE id = ?", (producto_id,)
+            ).fetchone()
+            if fila is None:
+                raise ProductoNoEncontradoError(f"producto no encontrado: {producto_id}")
+            conn.execute(
+                "UPDATE productos SET coste_cents = ? WHERE id = ?",
+                (coste_cents, producto_id),
+            )
+
+    # -- finanzas: publicación ("Subido") --------------------------------
+
+    def registrar_subido(
+        self,
+        producto_id: str,
+        plataforma: str,
+        precio_elegido_cents: int | None = None,
+        tasacion: dict | None = None,
+    ) -> None:
+        """Registra que Diego subió el producto a una plataforma.
+
+        Idempotente por `UNIQUE(producto_id, plataforma)`: el PRIMER "Subido"
+        fija `subido_en=ahora` y deja una fila `movimientos(tipo='subido')`.
+        Una segunda pulsada NO duplica la publicación ni cambia `subido_en`,
+        pero SÍ refresca `precio_elegido_cents`/`tasacion_json` (el snapshot
+        más reciente de la tasación al pulsar). `tasacion` se congela como
+        JSON. `plataforma` debe ser 'wallapop' o 'vinted'.
+
+        `ValueError` si la plataforma es desconocida;
+        `ProductoNoEncontradoError` si el producto no existe.
+        """
+        if plataforma not in _PLATAFORMAS:
+            raise ValueError(
+                f"plataforma desconocida: {plataforma!r} (esperado {_PLATAFORMAS})"
+            )
+        tasacion_json = (
+            json.dumps(tasacion, ensure_ascii=False) if tasacion is not None else None
+        )
+        with self._transaccion() as conn:
+            fila = conn.execute(
+                "SELECT id FROM productos WHERE id = ?", (producto_id,)
+            ).fetchone()
+            if fila is None:
+                raise ProductoNoEncontradoError(f"producto no encontrado: {producto_id}")
+            existente = conn.execute(
+                "SELECT id FROM publicaciones WHERE producto_id = ? AND plataforma = ?",
+                (producto_id, plataforma),
+            ).fetchone()
+            ahora = _ahora()
+            if existente is None:
+                conn.execute(
+                    """INSERT INTO publicaciones
+                       (id, producto_id, plataforma, subido_en,
+                        precio_elegido_cents, tasacion_json)
+                       VALUES (?, ?, ?, ?, ?, ?)""",
+                    (
+                        _nuevo_id(),
+                        producto_id,
+                        plataforma,
+                        ahora,
+                        precio_elegido_cents,
+                        tasacion_json,
+                    ),
+                )
+                conn.execute(
+                    """INSERT INTO movimientos (producto_id, tipo, timestamp, detalle)
+                       VALUES (?, 'subido', ?, ?)""",
+                    (
+                        producto_id,
+                        ahora,
+                        json.dumps(
+                            {
+                                "plataforma": plataforma,
+                                "precio_elegido_cents": precio_elegido_cents,
+                            },
+                            ensure_ascii=False,
+                        ),
+                    ),
+                )
+            else:
+                # Idempotente: no duplica ni re-fecha, pero refresca el snapshot
+                # de precio/tasación (Diego re-pulsó Subido con una tasación más
+                # reciente). No añade un segundo movimiento 'subido'.
+                conn.execute(
+                    """UPDATE publicaciones
+                       SET precio_elegido_cents = ?, tasacion_json = ?
+                       WHERE producto_id = ? AND plataforma = ?""",
+                    (precio_elegido_cents, tasacion_json, producto_id, plataforma),
+                )
+
+    # -- finanzas: venta / undo / devolución -----------------------------
+
+    def marcar_vendido(
+        self,
+        producto_id: str,
+        precio_final_cents: int,
+        plataforma_venta: str,
+        lote_venta_id: str | None = None,
+        fecha_venta: str | None = None,
+    ) -> None:
+        """Marca un producto como VENDIDO, congelando los snapshots del dinero.
+
+        En el momento de vender congela, desde `productos`, lo que puede
+        cambiar o desaparecer después: `referencia_snap`, `titulo_snap` (del
+        JSON de `campos`, defensivo) y `coste_snap_cents`. Así el beneficio se
+        calcula siempre sobre el coste que había AL VENDER, aunque Diego edite
+        el coste luego o se borre el producto (por eso `ventas` no tiene FK).
+
+        Idempotente (UPSERT por PK `producto_id`): re-marcar actualiza
+        `precio_final_cents`/`plataforma_venta`/`estado='vendida'`/
+        `actualizada_en`, pero NO re-congela coste/titulo/referencia — el
+        PRIMER snapshot manda. Deja siempre una fila `movimientos(tipo='vendido')`.
+
+        `ValueError` si `precio_final_cents < 0`; `ProductoNoEncontradoError`
+        si el producto no existe (se vende un producto que existe; `ventas`
+        sobrevive a un borrado POSTERIOR, no permite crear la venta sin él).
+        """
+        if precio_final_cents < 0:
+            raise ValueError(
+                f"precio_final_cents no puede ser negativo: {precio_final_cents}"
+            )
+        with self._transaccion() as conn:
+            prod = conn.execute(
+                "SELECT referencia, campos, coste_cents FROM productos WHERE id = ?",
+                (producto_id,),
+            ).fetchone()
+            if prod is None:
+                raise ProductoNoEncontradoError(f"producto no encontrado: {producto_id}")
+            ahora = _ahora()
+            existente = conn.execute(
+                "SELECT producto_id FROM ventas WHERE producto_id = ?", (producto_id,)
+            ).fetchone()
+            if existente is None:
+                conn.execute(
+                    """INSERT INTO ventas
+                       (producto_id, referencia_snap, titulo_snap, coste_snap_cents,
+                        precio_final_cents, plataforma_venta, estado, lote_venta_id,
+                        fecha_venta, creada_en, actualizada_en)
+                       VALUES (?, ?, ?, ?, ?, ?, 'vendida', ?, ?, ?, ?)""",
+                    (
+                        producto_id,
+                        prod["referencia"],
+                        _titulo_de_campos(prod["campos"]),
+                        prod["coste_cents"],
+                        precio_final_cents,
+                        plataforma_venta,
+                        lote_venta_id,
+                        fecha_venta or ahora,
+                        ahora,
+                        ahora,
+                    ),
+                )
+            else:
+                # Re-marca: el primer snapshot (coste/titulo/referencia/fecha)
+                # manda; sólo se refresca lo que Diego puede corregir.
+                conn.execute(
+                    """UPDATE ventas
+                       SET precio_final_cents = ?, plataforma_venta = ?,
+                           estado = 'vendida', lote_venta_id = COALESCE(?, lote_venta_id),
+                           actualizada_en = ?
+                       WHERE producto_id = ?""",
+                    (
+                        precio_final_cents,
+                        plataforma_venta,
+                        lote_venta_id,
+                        ahora,
+                        producto_id,
+                    ),
+                )
+            conn.execute(
+                """INSERT INTO movimientos (producto_id, tipo, timestamp, detalle)
+                   VALUES (?, 'vendido', ?, ?)""",
+                (
+                    producto_id,
+                    ahora,
+                    json.dumps(
+                        {
+                            "precio": precio_final_cents,
+                            "plataforma": plataforma_venta,
+                            "lote_venta_id": lote_venta_id,
+                        },
+                        ensure_ascii=False,
+                    ),
+                ),
+            )
+
+    def deshacer_venta(self, producto_id: str) -> None:
+        """Deshace una venta, DEJANDO RASTRO. Borra la fila de `ventas` pero
+        antes añade `movimientos(tipo='undo_venta')` con el snapshot completo
+        de lo que había — el historial vive en `movimientos` (append-only) y
+        nunca se pierde, así que un undo es reversible a mano si hiciera falta.
+
+        Decisión en el punto ambiguo del contrato: si el producto NO tenía
+        venta → `ProductoNoEncontradoError` (ruidoso, no un no-op silencioso).
+        Deshacer algo que no existe es un error de la UI que conviene ver, no
+        tragar (`decision-making.md` §13).
+        """
+        with self._transaccion() as conn:
+            venta = conn.execute(
+                "SELECT * FROM ventas WHERE producto_id = ?", (producto_id,)
+            ).fetchone()
+            if venta is None:
+                raise ProductoNoEncontradoError(
+                    f"no hay venta que deshacer para el producto: {producto_id}"
+                )
+            conn.execute(
+                """INSERT INTO movimientos (producto_id, tipo, timestamp, detalle)
+                   VALUES (?, 'undo_venta', ?, ?)""",
+                (producto_id, _ahora(), json.dumps(dict(venta), ensure_ascii=False)),
+            )
+            conn.execute("DELETE FROM ventas WHERE producto_id = ?", (producto_id,))
+
+    def marcar_devuelta(self, producto_id: str) -> None:
+        """Marca una venta como DEVUELTA. La fila de `ventas` se CONSERVA (una
+        devolución con envío de vuelta puede ser pérdida neta; el dashboard la
+        muestra como tal). Sólo cambia `estado='devuelta'` + `actualizada_en`
+        y deja `movimientos(tipo='devuelta')`.
+
+        `ProductoNoEncontradoError` si no hay venta que devolver.
+        """
+        with self._transaccion() as conn:
+            venta = conn.execute(
+                "SELECT producto_id FROM ventas WHERE producto_id = ?", (producto_id,)
+            ).fetchone()
+            if venta is None:
+                raise ProductoNoEncontradoError(
+                    f"no hay venta que devolver para el producto: {producto_id}"
+                )
+            ahora = _ahora()
+            conn.execute(
+                "UPDATE ventas SET estado = 'devuelta', actualizada_en = ? WHERE producto_id = ?",
+                (ahora, producto_id),
+            )
+            conn.execute(
+                """INSERT INTO movimientos (producto_id, tipo, timestamp, detalle)
+                   VALUES (?, 'devuelta', ?, '{}')""",
+                (producto_id, ahora),
+            )
+
+    def cargar_ventas(self) -> list[dict[str, Any]]:
+        """El ledger de FINANZAS, CROSS-LOTE (abarca varios lotes; `cargar_lote`
+        es por-lote y NO sirve aquí).
+
+        Devuelve una fila por producto que tenga AL MENOS una `publicacion` o
+        una `venta`, ordenada de más reciente a más antigua. Cada dict:
+        `producto_id` (la clave durable, NUNCA la referencia), `lote_id`,
+        `referencia`, `titulo` (del JSON de `campos`, defensivo), `coste_cents`,
+        `publicaciones` (lista), `venta` (dict o None) y `beneficio_bruto_cents`
+        (= `precio_final − coste_snap` si la venta está 'vendida', None en
+        cualquier otro caso).
+
+        Si el producto fue borrado pero su venta sobrevive (sin FK, por diseño),
+        cae a los snapshots congelados en `ventas` (referencia/titulo/coste) y
+        `lote_id=None` — el ledger no pierde la venta.
+        """
+        conn = self._conectar()
+        try:
+            ids: set[str] = set()
+            for fila in conn.execute("SELECT DISTINCT producto_id FROM publicaciones"):
+                ids.add(fila["producto_id"])
+            for fila in conn.execute("SELECT producto_id FROM ventas"):
+                ids.add(fila["producto_id"])
+
+            resultado: list[dict[str, Any]] = []
+            for pid in ids:
+                prod = conn.execute(
+                    "SELECT lote_id, referencia, campos, coste_cents FROM productos WHERE id = ?",
+                    (pid,),
+                ).fetchone()
+                venta_row = conn.execute(
+                    "SELECT * FROM ventas WHERE producto_id = ?", (pid,)
+                ).fetchone()
+                pubs = conn.execute(
+                    """SELECT plataforma, subido_en, precio_elegido_cents, tasacion_json
+                       FROM publicaciones WHERE producto_id = ? ORDER BY subido_en""",
+                    (pid,),
+                ).fetchall()
+
+                if prod is not None:
+                    lote_id = prod["lote_id"]
+                    referencia = prod["referencia"]
+                    titulo = _titulo_de_campos(prod["campos"])
+                    coste_cents = prod["coste_cents"]
+                else:
+                    # Producto borrado: el ledger no pierde la venta, cae a los
+                    # snapshots congelados al vender.
+                    lote_id = None
+                    referencia = venta_row["referencia_snap"] if venta_row else None
+                    titulo = venta_row["titulo_snap"] if venta_row else None
+                    coste_cents = venta_row["coste_snap_cents"] if venta_row else 0
+
+                publicaciones = [
+                    {
+                        "plataforma": p["plataforma"],
+                        "subido_en": p["subido_en"],
+                        "precio_elegido_cents": p["precio_elegido_cents"],
+                        "tasacion": (
+                            json.loads(p["tasacion_json"]) if p["tasacion_json"] else None
+                        ),
+                    }
+                    for p in pubs
+                ]
+
+                venta: dict[str, Any] | None = None
+                beneficio: int | None = None
+                if venta_row is not None:
+                    venta = {
+                        "precio_final_cents": venta_row["precio_final_cents"],
+                        "plataforma_venta": venta_row["plataforma_venta"],
+                        "estado": venta_row["estado"],
+                        "lote_venta_id": venta_row["lote_venta_id"],
+                        "fecha_venta": venta_row["fecha_venta"],
+                    }
+                    if (
+                        venta_row["estado"] == "vendida"
+                        and venta_row["precio_final_cents"] is not None
+                    ):
+                        beneficio = (
+                            venta_row["precio_final_cents"] - venta_row["coste_snap_cents"]
+                        )
+
+                # Orden por lo más reciente: máximo timestamp ISO (UTC isoformat
+                # ordena lexicográfica == cronológicamente) de cualquier evento.
+                marcas = [p["subido_en"] for p in pubs]
+                if venta_row is not None:
+                    for clave in ("actualizada_en", "creada_en", "fecha_venta"):
+                        if venta_row[clave]:
+                            marcas.append(venta_row[clave])
+
+                resultado.append(
+                    {
+                        "producto_id": pid,
+                        "lote_id": lote_id,
+                        "referencia": referencia,
+                        "titulo": titulo,
+                        "coste_cents": coste_cents,
+                        "publicaciones": publicaciones,
+                        "venta": venta,
+                        "beneficio_bruto_cents": beneficio,
+                        "_orden": max(marcas) if marcas else "",
+                    }
+                )
+
+            resultado.sort(key=lambda r: r.pop("_orden"), reverse=True)
+            return resultado
+        finally:
+            conn.close()
 
     # -- carga / reanudación --------------------------------------------
 
