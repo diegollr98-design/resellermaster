@@ -616,11 +616,17 @@ def construir_payload(
     # encaja, navegas a mano, nunca peor que hoy" -- solo es cierta con esto.
     marca_propia = _valor_campo(campos, "marca") or ""
     tipo_propio = _valor_campo(campos, "tipo") or ""
+    # `genero` (enum cerrado hombre/mujer/niño/niña/unisex, SIEMPRE
+    # `fuente="inferido"`, espejo de `tipo`): `core/categorias.py` ya
+    # reconoce "hombre"/"mujer" (sesga la hoja de género) y "niño"/"niña"
+    # (canal infantil) del texto -- "unisex" no lo reconoce ningún
+    # consumidor, así que entra inofensivo; ausente, `or ""` lo absorbe.
+    genero_propio = _valor_campo(campos, "genero") or ""
     # `tipo` ("que ES el producto": "sudadera", "masajeador de rodilla") es la
     # señal MAS FUERTE de que prenda/hoja es -- va primero para que el rank
     # de `candidatas()` (solapamiento de palabras + IDF, `core/categorias.py`)
     # la reciba aunque titulo/descripcion no la mencionen literal.
-    texto_busqueda = f"{tipo_propio} {titulo} {descripcion} {marca_propia}".strip()
+    texto_busqueda = f"{tipo_propio} {genero_propio} {titulo} {descripcion} {marca_propia}".strip()
     try:
         candidatas = tuple(categorias.candidatas(categoria, texto_busqueda, plataforma, k=3))
         categoria_snapshot = categorias.fecha_snapshot(plataforma)

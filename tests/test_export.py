@@ -592,6 +592,33 @@ def test_tipo_mejora_el_ranking_de_candidatas_hacia_la_hoja_correcta():
     assert any("sudader" in c.hoja.nombre.lower() for c in con_tipo)
 
 
+def test_genero_entra_en_el_texto_de_busqueda_de_candidatas(monkeypatch):
+    """`genero` (enum cerrado, SIEMPRE `fuente="inferido"`, espejo de `tipo`)
+    viaja al texto de búsqueda de `candidatas()`: `core/categorias.py`
+    reconoce "hombre"/"mujer" (sesga la hoja de género) y "niño"/"niña"
+    (canal infantil) de ahí."""
+    from core import categorias
+
+    original = categorias.candidatas
+    capturado: dict[str, str] = {}
+
+    def _espia(categoria_amplia, texto, plataforma, k=3):
+        capturado["texto"] = texto
+        return original(categoria_amplia, texto, plataforma, k=k)
+
+    monkeypatch.setattr(categorias, "candidatas", _espia)
+    producto = _producto(genero="mujer")
+    construir_payload(producto, _FOTOS_POR_ID, "wallapop")
+    assert "mujer" in capturado["texto"].lower()
+
+
+def test_genero_ausente_no_rompe_el_texto_de_busqueda():
+    # Producto no-ropa (o ficha vieja sin `genero`) -- no debe reventar ni
+    # dejar basura ("None") en el texto de búsqueda.
+    payload = construir_payload(_producto(), _FOTOS_POR_ID, "wallapop")
+    assert payload.titulo  # el payload se construye igual de bien
+
+
 def test_export_nunca_auto_rellena_una_hoja_de_categoria():
     # El export NO produce un CampoExportado de categoria/catalog_id con valor:
     # la hoja SIEMPRE la elige Diego entre las candidatas. Auto-rellenarla

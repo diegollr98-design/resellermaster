@@ -805,6 +805,73 @@ def test_tipo_editado_por_diego_se_persiste(tmp_path):
 
 
 # ============================================================================
+# `genero` (campo NUEVO, enum cerrado `core.schema.GENEROS`): ESPEJO EXACTO
+# de `categoria` -- selectbox, SIEMPRE `fuente="inferido"` del extractor --
+# pero OPCIONAL: a diferencia de `categoria`, NUNCA bloquea confirmar. La
+# síntesis produce `valor=None` ("AUSENTE") para no-ropa, no la omite.
+# ============================================================================
+def _ficha_con_genero(crops: Path, genero: str | None = "mujer") -> ResultadoExtraccion:
+    """Basada en la ficha COMPLETA (ya trae categoria/estado/titulo/
+    descripcion propuestos, lista para confirmar sin fricción) + `genero`
+    nuevo, sin recorte propio -- mismo criterio que `tipo`
+    (`truth-loop.md` §A.5: un juicio, no una lectura de píxel)."""
+    base = _ficha_completa(crops)
+    campos = dict(base.campos)
+    propuestas = dict(base.propuestas)
+    campos["genero"] = Campo(valor=genero, fuente="inferido", confianza="baja")
+    propuestas["genero"] = Propuesta(
+        campo="genero", valor=genero, recorte=None, evidencia=None,
+        motivo="género (inferido por la síntesis, confírmalo)" if genero else "no aplica (no es ropa)",
+    )
+    return ResultadoExtraccion(
+        campos=campos, propuestas=propuestas, fallos=base.fallos, coste_usd=base.coste_usd
+    )
+
+
+def test_genero_se_pinta_como_selectbox_y_preselecciona_el_mejor_intento(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_con_genero)  # genero="mujer" por defecto
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    selebox = next(s for s in at.selectbox if s.key == f"ficha_{pid}_genero_genero")
+    assert selebox.value == "mujer"
+
+
+def test_genero_confirmar_deja_fuente_diego(tmp_path):
+    lote_id, pid = _preparar(tmp_path, _ficha_con_genero)
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+
+    genero = _producto(tmp_path, lote_id, pid)["campos"]["campos"]["genero"]
+    assert genero["valor"] == "mujer"
+    assert genero["fuente"] == "diego"
+
+
+def test_genero_ausente_no_bloquea_confirmar(tmp_path):
+    """Producto NO-ropa: la síntesis deja `genero=None` (AUSENTE), el
+    selectbox sale en "(sin elegir)" y el confirm NO se bloquea -- a
+    diferencia de `categoria`/`estado`, `genero` nunca es obligatorio."""
+    lote_id, pid = _preparar(tmp_path, lambda c: _ficha_con_genero(c, genero=None))
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    selector = next(
+        (s for s in at.selectbox if s.key == f"ficha_{pid}_genero_genero"), None
+    )
+    assert selector is not None
+    assert selector.value == "(sin elegir)"
+    assert at.button(key=f"confirmar_{pid}").proto.disabled is False
+
+    at.button(key=f"confirmar_{pid}").click().run()
+    assert not at.exception
+    assert _ficha_confirmada(_producto(tmp_path, lote_id, pid)) is True
+
+    genero = _producto(tmp_path, lote_id, pid)["campos"]["campos"]["genero"]
+    assert genero["valor"] is None
+    assert genero["fuente"] == "diego"
+
+
+# ============================================================================
 # CAMPOS OBLIGATORIOS (Fase 3, 2026-07-17): "no deje confirmar ficha hasta
 # que no se rellene". `categoria`/`estado`/`titulo`/`descripcion` bloquean
 # duro -- el botón se deshabilita (UX) Y `_accion_confirmar_ficha` bloquea

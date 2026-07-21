@@ -352,6 +352,23 @@ fallo no-fatal: si la sintesis no opina (`valor=None`), la clave "tipo"
 se queda AUSENTE de `campos` -- aqui NO es una "violacion de enum" (no
 hay enum que violar), asi que tampoco se anota en `fallos`: simplemente
 no hubo opinion, igual que un gap-filler que no encontro nada.
+
+`genero` (2026-07-21, fast-follow del `tipo`, campo NUEVO): a que genero
+va dirigido el producto ("hombre", "mujer", "niño", "niña", "unisex") --
+afina las CANDIDATAS de categoria (`core/categorias.py` sesga sus hojas
+por genero) y, indirectamente, el titulo. Es el ESPEJO EXACTO de
+`categoria`: ENUM CERRADO (`core.schema.GENEROS`), SIEMPRE un JUICIO del
+modelo (nunca un texto legible en un pixel -- sin `visible_en_foto`/
+`de_texto_detectado`), sale SIEMPRE `fuente="inferido"`, techo
+`confianza="baja"` (nunca "alta"). La UNICA diferencia estructural con
+`categoria`: su enum es NULLABLE -- un `masajeador de rodilla` o
+cualquier no-ropa NO TIENE genero, asi que `valor=None` es un resultado
+NORMAL (no aplica), no una ausencia de opinion. Por eso `genero` tiene
+DOS caminos, distintos, hacia la MISMA clave AUSENTE de `campos`: (1)
+`valor=None` -- no aplica, NUNCA se anota en `fallos` (igual que "tipo"
+sin opinion); (2) un string FUERA de `GENEROS` -- el modelo violo el
+enum cerrado, SI se anota en `fallos` (igual que "categoria" fuera de
+enum). Sin llamada VLM extra: vive DENTRO de la MISMA sintesis.
 """
 
 from __future__ import annotations
@@ -377,10 +394,12 @@ from core.llm import (
 from core.schema import (
     CATEGORIAS,
     ESTADO_UI_A_CANONICO,
+    GENEROS,
     Campo,
     CategoriaTipo,
     Evidencia,
     es_categoria_valida,
+    es_genero_valido,
 )
 
 logger = logging.getLogger(__name__)
@@ -414,7 +433,7 @@ class RespuestaVLMInvalidaError(ExtractorError):
 
 VERSION_PROMPT_CROP = "extract-crop-v2"  # v2: hallazgos como LISTA (regla 4)
 VERSION_PROMPT_METRO = "extract-metro-v1"
-VERSION_PROMPT_SINTESIS = "extract-sintesis-v5"  # v5: + tipo (texto libre, SIEMPRE inferido) -- v4: + estado (enum cerrado, SIEMPRE inferido) -- v3: + categoria
+VERSION_PROMPT_SINTESIS = "extract-sintesis-v6"  # v6: + genero (enum cerrado nullable, SIEMPRE inferido) -- v5: + tipo (texto libre, SIEMPRE inferido) -- v4: + estado (enum cerrado, SIEMPRE inferido) -- v3: + categoria
 # NO existe VERSION_PROMPT_COLOR: el color sale de pixeles
 # (`architecture.md` Costura 1, tabla de proveedores: "color por pixeles"),
 # nunca del VLM -- ver `_color_dominante_rgb` mas abajo. La sintesis SI
@@ -714,12 +733,15 @@ class ResultadoExtraccion:
 
     `campos`: nombre_campo -> `Campo` (la estructura de procedencia de
         `core/schema.py`) -- LA COSTURA para exportar a Wallapop/Vinted.
-        Siempre incluye las mismas claves (`CAMPOS_PRODUCIDOS`), CON DOS
+        Siempre incluye las mismas claves (`CAMPOS_PRODUCIDOS`), CON TRES
         EXCEPCIONES: "categoria" falta si el modelo violo su enum cerrado
-        (nunca se rellena con un comodin silencioso), y "tipo" falta si la
+        (nunca se rellena con un comodin silencioso); "tipo" falta si la
         sintesis no tuvo opinion (`valor=None` -- no hay enum que violar,
-        asi que esto no es un fallo) -- quien consuma `campos` debe usar
-        `.get("categoria")`/`.get("tipo")`, nunca asumir que estan.
+        asi que esto no es un fallo); y "genero" falta por CUALQUIERA de
+        los dos motivos anteriores (no aplica -- no-ropa -- O violo su
+        enum cerrado) -- quien consuma `campos` debe usar
+        `.get("categoria")`/`.get("tipo")`/`.get("genero")`, nunca asumir
+        que estan.
     `propuestas`: nombre_campo -> `Propuesta` -- LA ENTREGA para la UI de
         revision de Diego: el recorte, todas las lecturas, las alternativas
         en conflicto (cada una con su recorte) y el motivo. Mismas claves
@@ -771,6 +793,13 @@ CAMPOS_PRODUCIDOS: tuple[str, ...] = (
     # claves" de abajo: si el modelo viola el enum cerrado, la clave "categoria"
     # NO se anade a `campos` (nunca un comodin tipo "otros" en silencio) -- el
     # fallo queda en `ResultadoExtraccion.fallos`.
+    "genero",  # NUEVO (2026-07-21, fast-follow del `tipo`): ESPEJO EXACTO de
+    # "categoria" -- ENUM CERRADO (`core.schema.GENEROS`), fuente="inferido"
+    # SIEMPRE -- NUNCA "foto". A diferencia de "categoria"/"tipo", esta clave
+    # puede faltar por DOS motivos distintos: (1) `valor=None` -- no aplica
+    # (un producto que no es ropa), NUNCA anotado en `fallos`; (2) un string
+    # fuera de `GENEROS` -- el modelo violo el enum, SI anotado en `fallos`
+    # (igual que "categoria").
     "titulo",  # NUEVO (LA SINTESIS COMPROMETIDA): borrador redactado, fuente=inferido SIEMPRE
     "descripcion",  # NUEVO, idem
 )
@@ -1610,6 +1639,14 @@ confianza, sin visible_en_foto):
         se lea en una etiqueta.
       - confianza: "media" o "baja". NUNCA "alta".
 
+Ademas, indica el GENERO al que va dirigido el producto (para afinar la
+categoria):
+  - genero: EXACTAMENTE uno de "hombre", "mujer", "niño", "niña", "unisex",
+    o null si NO APLICA (un producto que no es ropa/moda: un masajeador, un
+    electrodomestico...). Es un JUICIO tuyo (por el corte, la talla, el
+    estampado), nunca un texto que se lea en una etiqueta. Ante la duda
+    entre hombre y mujer en una prenda neutra, usa "unisex".
+
 Ademas, clasifica la CATEGORIA de producto (decide que campos estructurados le
 va a pedir la plataforma -- Moda pide talla, Electronica pide capacidad,
 etc.):
@@ -1728,21 +1765,29 @@ ESQUEMA_SINTESIS_FICHA: dict = {
     "type": "object",
     "properties": {
         **{campo: _esquema_campo_sintesis() for campo in _CAMPOS_SINTESIS},
-        # "categoria"/"estado"/"tipo" NO usan `_esquema_campo_sintesis()` --
-        # no son texto legible con visible_en_foto/de_texto_detectado, son
-        # JUICIOS del modelo (dos de ellos ENUM CERRADO, "tipo" texto
-        # libre). El enum en el json_schema ya restringe la respuesta a
-        # nivel de API; el codigo (`_construir_campo_categoria_desde_
-        # sintesis`/`_construir_campo_estado_desde_sintesis`) NUNCA confia
-        # solo en eso -- revalida contra `es_categoria_valida`/
-        # `ESTADO_UI_A_CANONICO`.
+        # "categoria"/"estado"/"tipo"/"genero" NO usan `_esquema_campo_
+        # sintesis()` -- no son texto legible con visible_en_foto/
+        # de_texto_detectado, son JUICIOS del modelo (tres de ellos ENUM
+        # CERRADO -- "categoria"/"estado"/"genero" --, "tipo" texto libre).
+        # El enum en el json_schema ya restringe la respuesta a nivel de
+        # API; el codigo (`_construir_campo_categoria_desde_sintesis`/
+        # `_construir_campo_estado_desde_sintesis`/`_construir_campo_
+        # genero_desde_sintesis`) NUNCA confia solo en eso -- revalida
+        # contra `es_categoria_valida`/`ESTADO_UI_A_CANONICO`/
+        # `es_genero_valido`.
         "categoria": {"type": "string", "enum": list(CATEGORIAS)},
+        # "genero" (2026-07-21, fast-follow de "tipo"): ESPEJO de
+        # "categoria", pero NULLABLE -- a diferencia de categoria, el
+        # producto puede legitimamente NO TENER genero (un masajeador),
+        # asi que `None` es un valor valido dentro del enum, no una
+        # ausencia de respuesta.
+        "genero": {"type": ["string", "null"], "enum": [*GENEROS, None]},
         "estado": _esquema_estado_sintesis(),
         "tipo": _esquema_tipo_sintesis(),
         "titulo": {"type": "string"},
         "descripcion": {"type": "string"},
     },
-    "required": [*_CAMPOS_SINTESIS, "categoria", "estado", "tipo", "titulo", "descripcion"],
+    "required": [*_CAMPOS_SINTESIS, "categoria", "genero", "estado", "tipo", "titulo", "descripcion"],
     "additionalProperties": False,
 }
 
@@ -1825,9 +1870,10 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
     Normaliza `valor`/`de_texto_detectado` vacios o solo-espacios a `None`
     (mismo patron que `_parsear_lectura_crop` con `texto`).
 
-    `categoria`/`estado` se exigen PRESENTES (estructura minima), pero su
-    ENUM se valida mas abajo, en `_construir_campo_categoria_desde_sintesis`/
-    `_construir_campo_estado_desde_sintesis` -- no aqui. Si se validara
+    `categoria`/`estado`/`genero` se exigen PRESENTES (estructura minima),
+    pero su ENUM se valida mas abajo, en `_construir_campo_categoria_
+    desde_sintesis`/`_construir_campo_estado_desde_sintesis`/
+    `_construir_campo_genero_desde_sintesis` -- no aqui. Si se validara
     aqui y se lanzara, un valor fuera de enum tumbaria la sintesis ENTERA
     (marca/talla/color/... y titulo/descripcion con ella) por culpa de un
     campo que tiene su propio camino de fallo no-fatal (decision-making.md
@@ -1835,8 +1881,12 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
     resto). `tipo` tambien se exige PRESENTE (estructura minima: valor +
     confianza), pero NO tiene enum que validar -- es texto libre; su
     unico camino de fallo no-fatal es "sin opinion" (`valor=None`), ver
-    `_construir_campo_tipo_desde_sintesis`."""
-    claves_requeridas = (*_CAMPOS_SINTESIS, "categoria", "estado", "tipo", "titulo", "descripcion")
+    `_construir_campo_tipo_desde_sintesis`. `genero` es como `categoria`
+    (ENUM CERRADO, se pasa CRUDO sin validar aqui), pero su enum es
+    NULLABLE -- `None` es un valor VALIDO del json_schema (no aplica, ver
+    `_construir_campo_genero_desde_sintesis`), a diferencia de `categoria`
+    que no admite null."""
+    claves_requeridas = (*_CAMPOS_SINTESIS, "categoria", "genero", "estado", "tipo", "titulo", "descripcion")
     for clave in claves_requeridas:
         if clave not in datos:
             raise RespuestaVLMInvalidaError(
@@ -1872,6 +1922,14 @@ def _parsear_respuesta_sintesis(datos: dict) -> dict[str, Any]:
 
     # Se pasa CRUDO (sin normalizar/validar enum): ver docstring de arriba.
     resultado["categoria"] = datos["categoria"]
+
+    # "genero": mismo patron que "categoria" -- se pasa CRUDO, sin validar
+    # el enum aqui (eso vive en `_construir_campo_genero_desde_sintesis`).
+    # A diferencia de "categoria", `None` es un valor VALIDO (no aplica:
+    # el producto no es ropa) -- el json_schema ya lo permite
+    # (`"type": ["string", "null"]`), asi que no hace falta normalizar
+    # vacio/espacios aqui como con los campos de texto libre de arriba.
+    resultado["genero"] = datos["genero"]
 
     # "estado" tiene su ESTRUCTURA PROPIA (valor ENUM + motivo + confianza)
     # -- NO pasa por el bucle generico de arriba (sin visible_en_foto/
@@ -2451,10 +2509,31 @@ def _construir_campo_categoria_desde_sintesis(valor: Any) -> Campo | None:
     inventar un valor de relleno (p.ej. "otros" como comodin) -- eso seria
     exactamente el fallback silencioso que `decision-making.md` SS13
     prohibe. Debe anotar el fallo en `ResultadoExtraccion.fallos` y dejar
-    la clave "categoria" AUSENTE de `campos` (una de las dos excepciones
-    documentadas a "CAMPOS_PRODUCIDOS siempre presente" -- la otra es
-    "tipo", ver `_construir_campo_tipo_desde_sintesis")."""
+    la clave "categoria" AUSENTE de `campos` (una de las TRES excepciones
+    documentadas a "CAMPOS_PRODUCIDOS siempre presente" -- las otras son
+    "tipo", ver `_construir_campo_tipo_desde_sintesis`, y "genero", ver
+    `_construir_campo_genero_desde_sintesis")."""
     if not es_categoria_valida(valor):
+        return None
+    return Campo(valor=valor, fuente="inferido", confianza="baja")
+
+
+def _construir_campo_genero_desde_sintesis(valor: Any) -> Campo | None:
+    """Traduce el `genero` crudo de la sintesis a un `Campo`, o `None` si
+    `valor` es null (no aplica: no-ropa) o no es un `GeneroTipo` valido
+    (`core.schema.es_genero_valido`). SIEMPRE `fuente="inferido"` (un genero
+    es un JUICIO, nunca un texto legible en un pixel), techo
+    `confianza="baja"`. `None` -> la clave "genero" NO se anade a `campos`
+    (nunca un comodin, `decision-making.md` SS13).
+
+    ESPEJO EXACTO de `_construir_campo_categoria_desde_sintesis`, con UNA
+    diferencia: aqui `valor=None` es un caso NORMAL (el producto no es
+    ropa/moda), no un fallo del modelo -- quien llama (`_sintetizar_ficha`)
+    distingue los dos motivos de `None` para decidir si anota `fallos`:
+    `valor is None` -> no aplica, nunca un fallo; un string fuera del enum
+    -> el modelo violo el enum cerrado, SI es un fallo (igual que
+    "categoria")."""
+    if valor is None or not es_genero_valido(valor):
         return None
     return Campo(valor=valor, fuente="inferido", confianza="baja")
 
@@ -3041,6 +3120,32 @@ class ExtractorEngine:
             )
         else:
             fallos.append(f"sintesis_categoria_fuera_de_enum: {decisiones['categoria']!r}")
+
+        # "genero" (2026-07-21, fast-follow del "tipo"): ESPEJO EXACTO de
+        # "categoria", con UNA diferencia -- su enum es NULLABLE, asi que
+        # `valor_genero is None` es un caso NORMAL (no aplica: no-ropa),
+        # NUNCA un fallo. Solo se anota en `fallos` cuando el modelo
+        # devolvio un string FUERA del enum cerrado (violacion real, igual
+        # que "categoria"). Ver `_construir_campo_genero_desde_sintesis`.
+        valor_genero = decisiones["genero"]
+        campo_genero = _construir_campo_genero_desde_sintesis(valor_genero)
+        if campo_genero is not None:
+            campos["genero"] = campo_genero
+            propuestas["genero"] = Propuesta(
+                campo="genero",
+                valor=campo_genero.valor,
+                recorte=None,
+                evidencia=None,
+                motivo="genero del producto (inferido), confirmalo",
+            )
+        elif valor_genero is not None:
+            # el modelo devolvio un string fuera del enum -> fallo real
+            # (igual que "categoria"). `valor_genero is None` (no aplica,
+            # no-ropa) NUNCA llega aqui -- no es un fallo tecnico.
+            fallos.append(f"sintesis_genero_fuera_de_enum: {valor_genero!r}")
+        # else (valor_genero is None): no aplica -> clave AUSENTE de
+        # `campos`, sin anotar `fallos` (mismo criterio no-fatal que "tipo"
+        # sin opinion).
 
         # "estado": mismo patron que "categoria" -- SIEMPRE un juicio del
         # modelo (`truth-loop.md` SS A.4), nunca gap-filler sobre un valor

@@ -53,7 +53,7 @@ from core.extract import (
     serializar_extraccion,
 )
 from core.llm import LLMEngine, LLMEngineError
-from core.schema import Campo, validar_texto
+from core.schema import GENEROS, Campo, validar_texto
 from core.store import LoteStore, StoreError
 
 logger = logging.getLogger(__name__)
@@ -79,8 +79,16 @@ logger = logging.getLogger(__name__)
 # síntesis, nunca una lectura de píxel) y SIN recorte propio -- cae en el
 # mismo camino GENÉRICO que cualquier campo de texto (`_render_campo`, la
 # rama `else`): no exige recorte para pintarse ni para confirmarse.
+#
+# "genero" (enum cerrado hombre/mujer/niño/niña/unisex, `core.schema.
+# GENEROS`): ESPEJO EXACTO de "categoria" -- SIEMPRE `fuente="inferido"`
+# (un juicio de la síntesis, nunca una lectura de píxel), selectbox que
+# cierra Diego. A diferencia de "categoria", NO es obligatorio (una ficha
+# sin género se confirma igual -- no toda plataforma/categoría lo pide).
+# Va justo después de "tipo": es la siguiente pregunta natural tras "¿de
+# qué va esto?" ("¿para quién es?").
 _ORDEN_CAMPOS = (
-    "categoria", "tipo", "marca", "modelo", "ean", "talla", "color",
+    "categoria", "tipo", "genero", "marca", "modelo", "ean", "talla", "color",
     "medidas", "estado", "desperfectos", "titulo", "descripcion",
 )
 
@@ -112,6 +120,14 @@ _OPCIONES_CATEGORIA = (
     "libros",
     "otros",
 )
+
+# `genero` (`core.schema.GENEROS`/`es_genero_valido`): ESPEJO EXACTO de
+# `_OPCIONES_CATEGORIA` -- SIEMPRE `fuente="inferido"` (nunca "foto": un
+# género no es texto legible en un píxel), lo confirma Diego con un
+# selectbox. "(sin elegir)" es un resultado válido, NUNCA obligatorio
+# (a diferencia de `estado`/`categoria`) -- ropa infantil sin género claro,
+# o un producto que no es ropa, se confirma igual con "(sin elegir)".
+_OPCIONES_GENERO = ("(sin elegir)", *GENEROS)
 
 # --------------------------------------------------------------------------
 # CAMPOS OBLIGATORIOS -- defensa CON DIENTES (`decision-making.md` §12,
@@ -777,6 +793,11 @@ def _categoria_default(datos_campo: dict) -> str:
     return sugerido if sugerido in _OPCIONES_CATEGORIA else _OPCIONES_CATEGORIA[0]
 
 
+def _genero_default(datos_campo: dict) -> str:
+    sugerido = datos_campo.get("valor")
+    return sugerido if sugerido in _OPCIONES_GENERO else _OPCIONES_GENERO[0]
+
+
 # --------------------------------------------------------------------------
 # "Valor actual, o el default que se habría sembrado" — para poder decidir
 # si un campo está TOCADO sin depender de que `_render_producto` ya haya
@@ -807,6 +828,13 @@ def _categoria_actual_o_defecto(pid: str, datos_campo: dict) -> str:
     if key in st.session_state:
         return st.session_state[key]
     return _categoria_default(datos_campo)
+
+
+def _genero_actual_o_defecto(pid: str, datos_campo: dict) -> str:
+    key = f"ficha_{pid}_genero_genero"
+    if key in st.session_state:
+        return st.session_state[key]
+    return _genero_default(datos_campo)
 
 
 def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
@@ -852,6 +880,8 @@ def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
             key, default = f"ficha_{pid}_estado_estado", _estado_default(dc)
         elif campo == "categoria":
             key, default = f"ficha_{pid}_categoria_categoria", _categoria_default(dc)
+        elif campo == "genero":
+            key, default = f"ficha_{pid}_genero_genero", _genero_default(dc)
         else:
             key, default = f"ficha_{pid}_{campo}_valor", _valor_por_defecto(campo, dc)
         # Re-siembra si la extracción cambió (firma nueva) O si la key falta
@@ -973,6 +1003,22 @@ def _render_campo(pid: str, campo: str, datos_campo: dict, *, confirmada: bool =
                 key=f"ficha_{pid}_{campo}_categoria",
                 label_visibility="collapsed",
             )
+        elif campo == "genero":
+            # ESPEJO EXACTO de `categoria`: `fuente="inferido"` siempre
+            # (nunca "foto"), lo cierra Diego -- pero, a diferencia de
+            # `categoria`, NUNCA es obligatorio (sin badge rojo posible,
+            # `_badge_obligatorio` ya lo excluye por no estar en
+            # `_CAMPOS_OBLIGATORIOS`). La key ya está sembrada por
+            # `_sembrar_valores_iniciales`.
+            sugerido = datos_campo.get("valor")
+            if sugerido and sugerido not in _OPCIONES_GENERO:
+                st.caption(f"El modelo propuso: _{str(sugerido)[:140]}_ — elige el género:")
+            st.selectbox(
+                "género (lo confirmas tú, opcional)",
+                _OPCIONES_GENERO,
+                key=f"ficha_{pid}_{campo}_genero",
+                label_visibility="collapsed",
+            )
         else:
             # Sin `value=`: el valor por defecto ya está sembrado en
             # session_state (ver `_sembrar_valores_iniciales`). Pasar `value=`
@@ -1038,6 +1084,10 @@ def _construir_confirmado(pid: str, serial: dict, *, modo_bloque: bool = False) 
             elegido = _categoria_actual_o_defecto(pid, datos_campo)
             valor = None if elegido == _OPCIONES_CATEGORIA[0] else elegido
             tocado = elegido != _categoria_default(datos_campo)
+        elif campo == "genero":
+            elegido = _genero_actual_o_defecto(pid, datos_campo)
+            valor = None if elegido == _OPCIONES_GENERO[0] else elegido
+            tocado = elegido != _genero_default(datos_campo)
         else:
             crudo = _valor_actual_o_defecto(pid, campo, datos_campo)
             valor = crudo.strip() or None

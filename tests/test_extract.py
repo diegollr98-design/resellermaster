@@ -67,6 +67,7 @@ from core.extract import (
     _color_dominante_rgb,
     _construir_campo_categoria_desde_sintesis,
     _construir_campo_estado_desde_sintesis,
+    _construir_campo_genero_desde_sintesis,
     _construir_campo_tipo_desde_sintesis,
     _construir_prompt_redaccion,
     _es_bloque_de_texto_largo,
@@ -187,6 +188,7 @@ def _respuesta_sintesis(
     material: dict | None = None,
     medidas: dict | None = None,
     categoria: str = "otros",
+    genero: str | None = None,
     tipo: dict | None = None,
     titulo: str = "",
     descripcion: str = "",
@@ -216,7 +218,14 @@ def _respuesta_sintesis(
     -- ver `_esquema_tipo_sintesis` en `core/extract.py`); el default es
     "SIN OPINION" (`valor=None`), igual que marca/modelo/talla/color: los
     tests que no les interesa `tipo` no ven la clave "tipo" en
-    `resultado.campos` (gap-filler-like: ausente, no comodin)."""
+    `resultado.campos` (gap-filler-like: ausente, no comodin).
+
+    `genero` (2026-07-21, fast-follow de `tipo`) es un valor CRUDO (como
+    `categoria`, no un objeto anidado) -- ESPEJO de `categoria` pero
+    NULLABLE: el default es `None` (valido dentro del enum: "no aplica"),
+    para que los tests que no les interesa este campo no vean la clave
+    "genero" en `resultado.campos` ni disparen `sintesis_genero_fuera_de_
+    enum` sin querer."""
 
     def _campo(override: dict | None) -> dict:
         base = {"valor": None, "visible_en_foto": False, "de_texto_detectado": None, "confianza": "baja"}
@@ -245,6 +254,7 @@ def _respuesta_sintesis(
         "material": _campo(material),
         "medidas": _campo(medidas),
         "categoria": categoria,
+        "genero": genero,
         "tipo": _campo_tipo(tipo),
         "titulo": titulo,
         "descripcion": descripcion,
@@ -2418,6 +2428,156 @@ class TestConstruirCampoTipoDesdeSintesis:
         assert campo is not None
         assert campo.confianza == "baja"
         assert campo.confianza != "alta"
+
+
+# ============================================================================
+# `genero` (2026-07-21, fast-follow del `tipo`): ESPEJO EXACTO de `categoria`
+# -- ENUM CERRADO, SIEMPRE fuente="inferido", NUNCA "foto". UNICA diferencia:
+# su enum es NULLABLE ("no aplica" para no-ropa) -- por eso tiene DOS caminos
+# distintos hacia la MISMA clave AUSENTE de `campos`: `valor=None` (no
+# aplica, NUNCA un fallo) vs un string fuera de `GENEROS` (violacion de
+# enum, SI un fallo, igual que `categoria`).
+# ============================================================================
+
+
+class TestSintesisGenero:
+    def test_genero_valido_se_publica_inferido_baja(self, tmp_path, monkeypatch):
+        foto = _foto_sintetica(tmp_path / "IMG_genero.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(genero="mujer")
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["genero"].valor == "mujer"
+        assert resultado.campos["genero"].fuente == "inferido"
+        assert resultado.campos["genero"].confianza == "baja"
+        assert resultado.campos["genero"].evidencia is None
+        assert resultado.propuestas["genero"].motivo == "genero del producto (inferido), confirmalo"
+        assert resultado.propuestas["genero"].recorte is None
+
+    def test_genero_null_no_aplica_clave_ausente_y_no_es_un_fallo(self, tmp_path, monkeypatch):
+        """`valor=None` es un caso NORMAL (el producto no es ropa/moda,
+        p.ej. un masajeador) -- a diferencia de una violacion de enum,
+        NUNCA se anota en `fallos`."""
+        foto = _foto_sintetica(tmp_path / "IMG_genero_null.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(genero=None)
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "genero" not in resultado.campos
+        assert "genero" not in resultado.propuestas
+        assert not any("genero" in f for f in resultado.fallos)
+
+    def test_genero_fuera_del_enum_no_se_anade_a_campos_y_anota_fallo(self, tmp_path, monkeypatch):
+        """Un genero plausible-pero-inventado ("masculino"/"otro", que ni
+        siquiera existe en `GENEROS`) no puede colarse como si fuera un
+        dato real -- la clave se queda AUSENTE, y el fallo TECNICO queda
+        anotado (mismo criterio que `categoria` fuera de enum)."""
+        foto = _foto_sintetica(tmp_path / "IMG_genero_mal.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(genero="masculino")
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "genero" not in resultado.campos
+        assert "genero" not in resultado.propuestas
+        assert any("sintesis_genero_fuera_de_enum" in f for f in resultado.fallos)
+
+    def test_genero_fuera_del_enum_no_toca_otros_campos(self, tmp_path, monkeypatch):
+        """Un `genero` invalido NO puede abortar el resto de la sintesis
+        (categoria/titulo/descripcion siguen publicandose)."""
+        foto = _foto_sintetica(tmp_path / "IMG_genero_mal2.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(
+            genero="otro",
+            categoria="moda",
+            titulo="Titulo de prueba",
+            descripcion="Descripcion de prueba",
+        )
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        assert "genero" not in resultado.campos
+        assert resultado.campos["categoria"].valor == "moda"
+        assert resultado.campos["titulo"].valor == "Titulo de prueba"
+        assert resultado.campos["descripcion"].valor == "Descripcion de prueba"
+
+    def test_genero_fuente_nunca_es_foto_pase_lo_que_pase(self, tmp_path, monkeypatch):
+        """Estructuralmente imposible: el json_schema de `genero` no tiene
+        `visible_en_foto`/`de_texto_detectado`, asi que no hay ningun
+        camino en el codigo que pueda construir un `Campo` de `genero` con
+        `fuente="foto"` -- se demuestra con la senal mas favorable posible
+        (un texto detectado que hasta podria parecer una cita: "MUJER")."""
+        foto = _foto_sintetica(tmp_path / "IMG_genero_foto.jpg")
+        region = RegionOCR(fichero=foto.name, bbox=(10, 10, 40, 20), texto_ocr="MUJER", score=0.9)
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [region])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_CROP] = _respuesta_crop_simple("otro", True, "MUJER")
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(genero="mujer")
+        extractor = ExtractorEngine(motor, carpeta_crops=tmp_path / "crops")
+        resultado = extractor.extraer_producto([foto])
+
+        assert resultado.campos["genero"].fuente == "inferido"
+        assert resultado.campos["genero"].fuente != "foto"
+        assert resultado.campos["genero"].confianza != "alta"
+
+    def test_genero_sobrevive_el_round_trip_de_serializacion(self, tmp_path, monkeypatch):
+        """Round-trip (`core/store.py` guarda `campos` como JSON): `genero`
+        se serializa/deserializa como cualquier otro `Campo` normal --
+        `serializar_extraccion`/`deserializar_extraccion` operan sobre
+        `dict[str, Campo]` generico, sin caso especial por nombre de
+        campo, asi que un campo NUEVO no necesita tocar esas funciones."""
+        foto = _foto_sintetica(tmp_path / "IMG_genero_rt.jpg")
+        monkeypatch.setattr("core.extract.localizar_regiones_ocr", lambda ruta: [])
+
+        motor = _MotorFake()
+        motor.respuestas[VERSION_PROMPT_SINTESIS] = _respuesta_sintesis(genero="niño")
+        extractor = ExtractorEngine(motor)
+        resultado = extractor.extraer_producto([foto])
+
+        serializado = serializar_extraccion(resultado)
+        recuperado = deserializar_extraccion(json.loads(json.dumps(serializado)))
+
+        genero = recuperado["campos"]["genero"]
+        assert genero["valor"] == "niño"
+        assert genero["fuente"] == "inferido"
+        assert genero["confianza"] == "baja"
+        assert genero["evidencia"] is None
+
+
+class TestConstruirCampoGeneroDesdeSintesis:
+    """Unidad directa de `_construir_campo_genero_desde_sintesis` -- sin
+    pasar por una llamada VLM ni por `extraer_producto`."""
+
+    @pytest.mark.parametrize("valor", ["hombre", "mujer", "niño", "niña", "unisex"])
+    def test_los_cinco_generos_validos_construyen_campo_inferido_baja(self, valor):
+        campo = _construir_campo_genero_desde_sintesis(valor)
+        assert campo is not None
+        assert campo.valor == valor
+        assert campo.fuente == "inferido"
+        assert campo.confianza == "baja"
+        assert campo.evidencia is None
+
+    def test_none_devuelve_none_no_aplica_no_es_un_valor_invalido(self):
+        """`None` es el caso "no aplica" (no-ropa) -- mismo `None` de
+        retorno que un valor invalido, pero el MOTIVO es distinto y quien
+        llama (`_sintetizar_ficha`) es quien distingue los dos para
+        decidir si anota `fallos` (ver el cableado en `core/extract.py`)."""
+        assert _construir_campo_genero_desde_sintesis(None) is None
+
+    @pytest.mark.parametrize("valor", ["", "Mujer", "hombre ", "masculino", "femenino", "otro", 42, ["mujer"]])
+    def test_valores_invalidos_devuelven_none_nunca_un_campo_inventado(self, valor):
+        assert _construir_campo_genero_desde_sintesis(valor) is None
 
 
 def test_sintesis_fuente_foto_exige_que_el_valor_este_en_el_pixel():

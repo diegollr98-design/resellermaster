@@ -275,6 +275,24 @@ def es_categoria_valida(valor: object) -> bool:
     return isinstance(valor, str) and valor in CATEGORIAS
 
 
+# Genero del producto (fast-follow del `tipo`, 2026-07-21). Enum CERRADO como
+# `CATEGORIAS`: es un JUICIO del modelo (nunca un texto legible en un pixel),
+# SIEMPRE inferido. Alimenta las candidatas de categoria (`core/categorias.py`
+# sesga las hojas del genero pedido). Los valores casan con lo que reconocen
+# los consumidores: "hombre"/"mujer" via `_GENERO_SINONIMOS`, "niño"/"niña" via
+# el canal infantil (`_es_infantil`). "unisex" = sin sesgo (ni hombre ni mujer).
+# Para no-ropa (un masajeador) la sintesis deja `valor=None` (no aplica), igual
+# que `tipo` -- la clave puede faltar, nunca un comodin.
+GeneroTipo = Literal["hombre", "mujer", "niño", "niña", "unisex"]
+GENEROS: tuple[GeneroTipo, ...] = ("hombre", "mujer", "niño", "niña", "unisex")
+
+
+def es_genero_valido(valor: object) -> bool:
+    """`True` solo si `valor` es uno de los `GeneroTipo` conocidos."""
+
+    return isinstance(valor, str) and valor in GENEROS
+
+
 def mapear_estado_wallapop(estado: EstadoCanonico, categoria: CategoriaTipo) -> str:
     """Estado canonico -> literal EXACTO de Wallapop para esa categoria.
 
