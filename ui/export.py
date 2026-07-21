@@ -302,7 +302,7 @@ def _render_precio(producto: dict) -> None:
         st.caption("Combinaciones que se probarán: " + " · ".join(f"«{v}»" for v in variantes))
         return
 
-    st.caption(f"⚠️ {pricing._NOTA_PRECIO_PEDIDO}")
+    st.caption(f"⚠️ {pricing.NOTA_PRECIO_PEDIDO}")
     for tas in tasaciones:
         st.divider()
         _render_una_tasacion(tas)

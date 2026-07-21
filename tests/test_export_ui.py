@@ -112,6 +112,22 @@ def _script(data_dir: str, lote_id: str) -> None:
     _export.render(_LoteStore(data_dir=_Path(data_dir)), lote_id)
 
 
+class _BuscadorFakeUI:
+    """Doble de `pricing.Buscador` para la UI -> el test del botón de precio
+    NUNCA toca la red (se inyecta con monkeypatch sobre `pricing.BuscadorWallapop`)."""
+
+    def __init__(self, *a, **k) -> None:
+        pass
+
+    def buscar_comparables(self, terminos: str):
+        from core.pricing import Comparable
+
+        return [
+            Comparable(url=f"https://es.wallapop.com/item/x{i}", precio=float(10 + i), titulo=f"t{i}")
+            for i in range(6)
+        ]
+
+
 # ============================================================================
 # 1. Sin ficha confirmada -> ni payload ni botón de saltárselo.
 # ============================================================================
@@ -202,3 +218,33 @@ def test_boton_preparar_fotos_crea_carpeta_con_fotos_renombradas(tmp_path):
     codigos = [c.value for c in at.code]
     assert any(str(directorio) == c for c in codigos), codigos
     assert at.success
+
+
+# ============================================================================
+# 5. El botón "Buscar comparables" se EJECUTA (el clic, no sólo el render):
+#    cazaría un `AttributeError` como el de `pricing._NOTA_PRECIO_PEDIDO`
+#    renombrado, que ni ruff ni el arranque veían (`[INC-006]`/`[INC-021]`:
+#    un flujo que cuesta un clic arrancar no está probado hasta que alguien
+#    paga ese clic). Con buscador falso -> sin red.
+# ============================================================================
+def test_boton_buscar_comparables_se_ejecuta_y_pinta_medianas(tmp_path, monkeypatch):
+    from core import pricing
+
+    monkeypatch.setattr(pricing, "BuscadorWallapop", _BuscadorFakeUI)
+    lote_id, pid = _preparar(
+        tmp_path, extraccion=_ficha_confirmada_limpia(), confirmar_ficha=True
+    )
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    boton = next(b for b in at.button if b.key == f"btn_precio_{pid}")
+    at = boton.click().run()
+    # ESTA es la aserción que cazaba el bug: pulsar el botón EJECUTA
+    # `_render_precio` entero, incluida la nota `pricing.NOTA_PRECIO_PEDIDO`.
+    assert not at.exception, at.exception
+
+    # La nota honesta (precio pedido, no de venta) se pinta.
+    captions = " ".join(c.value for c in at.caption)
+    assert "PIDEN" in captions
+    # Y salió al menos una mediana (una métrica por variante con datos).
+    assert at.metric
