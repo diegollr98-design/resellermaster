@@ -188,6 +188,29 @@ def test_asignar_referencia_producto_inexistente_falla(tmp_path):
         store.asignar_referencia("producto-fantasma")
 
 
+def test_cargar_lote_expone_referencia_y_coste_por_producto(tmp_path):
+    # La UI (ficha/export) lee esto vía `cargar_lote`, sin saltarse la costura
+    # del store para consultar la DB directamente.
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, productos = _lote_con_productos(store, n=2)
+    con_ref = productos[0]
+    sin_ref = productos[1]
+
+    ref = store.asignar_referencia(con_ref)
+    store.guardar_coste(con_ref, 650)
+
+    estado = store.cargar_lote(lote_id)
+    prod_con_ref = next(p for p in estado["productos"] if p["id"] == con_ref)
+    prod_sin_ref = next(p for p in estado["productos"] if p["id"] == sin_ref)
+
+    assert prod_con_ref["referencia"] == ref
+    assert prod_con_ref["coste_cents"] == 650
+
+    # Producto sin referencia ni coste asignados: referencia=None, coste=0.
+    assert prod_sin_ref["referencia"] is None
+    assert prod_sin_ref["coste_cents"] == 0
+
+
 # --------------------------------------------------------------------------
 # Coste (céntimos enteros, columna propia)
 # --------------------------------------------------------------------------

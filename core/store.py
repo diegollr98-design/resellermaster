@@ -1361,6 +1361,10 @@ class LoteStore:
                         "confirmado_en": fila["confirmado_en"],
                         "creado_en": fila["creado_en"],
                         "fotos": fotos_del_producto,
+                        # Fase 5 FINANZAS: la UI (ficha/export) las necesita sin
+                        # saltarse la costura del store y consultar la DB directo.
+                        "referencia": fila["referencia"],
+                        "coste_cents": fila["coste_cents"],
                     }
                 )
 
