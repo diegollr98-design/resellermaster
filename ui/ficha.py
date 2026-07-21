@@ -1738,5 +1738,99 @@ def render(
                 )
             st.divider()
 
+    # RE-CONFIRMAR SELECCIONADOS (pedido de Diego, 2026-07-21): re-confirmar
+    # VARIAS fichas YA confirmadas de golpe -- regenera título/descripción con
+    # los campos que YA tiene confirmados (p.ej. para que el título lidere con
+    # el `tipo`). Hoy sólo había un botón "✅ Volver a confirmar" POR FICHA (7
+    # clics para 7 productos).
+    #
+    # CERO lógica de confirmación nueva: llama DIRECTO a `_accion_confirmar_
+    # lote` -- la MISMA función pura que invoca "Confirmar todas las fichas
+    # listas" de arriba (bucle sobre `_confirmar_uno`, `modo_bloque=True`): lo
+    # que Diego NO tocó en pantalla mantiene su `fuente`/`confianza`
+    # ORIGINALES (`truth-loop.md` §A.2 -- un 'confirmar todo' a ciegas nunca
+    # puede mentir sobre qué revisó de verdad). `store.confirmar_ficha` no
+    # bloquea reconfirmar: añade una fila más al log append-only
+    # `confirmaciones`, nunca sobreescribe la anterior.
+    #
+    # SIN `@st.dialog` -- A PROPÓSITO, a diferencia de "Confirmar todas": un
+    # botón DENTRO de un diálogo ya abierto no es alcanzable por `AppTest`
+    # (ver el límite documentado en `tests/test_ficha.py`, líneas ~1358 y
+    # ~1518 -- el mismo que obliga a probar `_accion_extraer_lote`/
+    # `_accion_confirmar_lote` con una llamada directa en vez de un click) --
+    # y este botón SÍ tiene que poder pulsarse y verificar la persistencia
+    # real en un solo `.click().run()`, igual que "✅ Confirmar ficha"
+    # individual (`change-loop.md` §C4, `[INC-028]`: todo botón nuevo lleva
+    # su `AppTest` que lo PULSA de verdad). El coste (§15) no se pierde por
+    # eso: se calcula y se ENSEÑA en línea, ANTES del botón, con las MISMAS
+    # funciones que usa el diálogo de arriba (`_solicitudes_redaccion_
+    # pendientes` + `motor.estimar_coste_texto_lote`, sin red, sólo caché en
+    # disco) -- Diego ve el coste sin abrir nada, y lo sigue viendo ANTES de
+    # gastar.
+    #
+    # Va DESPUÉS del bloque "sembrar antes de contar" de arriba (nunca antes):
+    # `_confirmar_uno` lee los valores de los widgets desde `session_state`, y
+    # ese bloque es el que garantiza que estén frescos incluso tras el GC de
+    # navegación (`[INC-014]`/`[INC-021]`) -- colocar este selector justo
+    # después de "Re-extraer los seleccionados" (antes del sembrado) habría
+    # dejado, en el peor caso, una re-confirmación leyendo valores rancios.
+    # MISMO motivo de arriba para el `st.container()`.
+    with st.container():
+        confirmadas_pids = _confirmadas_entre(confirmados_agrupacion)
+        if confirmadas_pids:
+            seleccionados_reconf_pids = st.multiselect(
+                "Elegir fichas confirmadas a RE-CONFIRMAR (regenera título y "
+                "descripción con tus campos ya confirmados)",
+                options=confirmadas_pids,
+                default=[],
+                format_func=lambda pid: _etiqueta_producto_selector(productos_por_id[pid]),
+                key="ficha_multiselect_reconfirmar",
+                help=(
+                    "Re-confirmar NO re-extrae (no llama al VLM, no vuelve a leer las "
+                    "fotos): sólo regenera el título y la descripción a partir de los "
+                    "campos que ya confirmaste -- por ejemplo, para que el título lidere "
+                    "con el tipo. Cuesta una redacción de texto por ficha."
+                ),
+            )
+            seleccionados_reconf = [productos_por_id[pid] for pid in seleccionados_reconf_pids]
+            if seleccionados_reconf:
+                try:
+                    solicitudes = _solicitudes_redaccion_pendientes(seleccionados_reconf)
+                    estimacion = motor.estimar_coste_texto_lote(solicitudes)
+                except Exception as exc:  # noqa: BLE001 — la estimación no puede tumbar la pantalla.
+                    logger.exception(
+                        "No se pudo estimar el coste de re-confirmar %s ficha(s)",
+                        len(seleccionados_reconf),
+                    )
+                    st.error(f"No se pudo estimar el coste de la re-confirmación: {exc}")
+                else:
+                    coste_cts = estimacion.coste_usd_estimado * 100
+                    if estimacion.n_a_pagar == 0:
+                        st.caption("Coste: **0 €** -- en caché, o ninguna necesita redacción nueva.")
+                    else:
+                        st.caption(
+                            f"Coste estimado: **~{coste_cts:.2f} cts USD** "
+                            f"({estimacion.n_a_pagar} de {estimacion.n_llamadas_total} "
+                            "redacción(es) a pagar)."
+                        )
+            if st.button(
+                f"✅ Re-confirmar los seleccionados ({len(seleccionados_reconf_pids)})",
+                key="btn_reconfirmar_seleccionados",
+                use_container_width=True,
+                disabled=not seleccionados_reconf_pids,
+            ):
+                ok, fallos = _accion_confirmar_lote(store, seleccionados_reconf, motor)
+                if fallos:
+                    st.error(
+                        f"Fallaron {len(fallos)} de {len(seleccionados_reconf)} (las demás SÍ "
+                        "quedaron re-confirmadas):\n\n"
+                        + "\n".join(f"- producto `{pid[:8]}`: {motivo}" for pid, motivo in fallos)
+                    )
+                if ok:
+                    st.success(f"{len(ok)} ficha(s) re-confirmada(s) -- título/descripción regenerados.")
+                if not fallos:
+                    st.rerun()
+            st.divider()
+
     for producto in confirmados_agrupacion:
         _render_producto(store, lote_id, producto, fotos_por_id, motor, crear_extractor)

@@ -2148,3 +2148,223 @@ def test_ficha_vieja_de_verdad_sin_fallo_sintesis_mantiene_mensaje_version_anter
 
     captions = " ".join(c.value for c in at.caption)
     assert "versión anterior de la app" in captions.lower()
+
+
+# ============================================================================
+# RE-CONFIRMAR SELECCIONADOS (pedido de Diego, 2026-07-21): re-confirmar
+# VARIAS fichas YA confirmadas de golpe (regenera título/descripción con los
+# campos que ya tiene confirmados -- p.ej. para que el título lidere con el
+# `tipo`). CERO lógica de confirmación nueva: el botón llama DIRECTO a
+# `_accion_confirmar_lote` -- la MISMA función que usa "Confirmar todas las
+# fichas listas". Vive en el CUERPO del script (no en un `@st.dialog`) para
+# que `AppTest` sí pueda pulsarlo de verdad (`[INC-028]`, `change-loop.md`
+# §C4) -- un botón dentro de un diálogo ya abierto no es alcanzable, ver el
+# límite documentado arriba en `test_accion_extraer_lote_...` (~línea 1358)
+# y en la sección de "Confirmar todas" (~línea 1518).
+# ============================================================================
+def _script_reconfirmar(data_dir: str, lote_id: str) -> None:
+    """Motor de mentira PARA ESTE flujo: además de `consultar_texto` (la
+    redacción), implementa `estimar_coste_texto_lote` -- lo necesita el
+    bloque nuevo de `ui/ficha.py` para enseñar el coste EN LÍNEA antes del
+    botón (§15), sin diálogo. Ninguno de los dos llama a la red. Definido
+    DENTRO de la función (mismo motivo que `_script`/`_script_reextraer`:
+    `AppTest.from_function` ejecuta el CÓDIGO FUENTE en un módulo aislado,
+    no puede cerrar sobre nombres externos)."""
+    from pathlib import Path as _Path
+
+    from core.llm import EstimacionLlamada as _EstimacionLlamada
+    from core.llm import EstimacionLote as _EstimacionLote
+    from core.llm import ResultadoLLM as _ResultadoLLM
+    from core.store import LoteStore as _LoteStore
+    from ui import ficha as _ficha
+
+    class _MotorReconfirmarFake:
+        def consultar_texto(self, prompt, json_schema, version_prompt=None, producto_id=None):
+            return _ResultadoLLM(
+                # el título NUEVO, regenerado, lidera con el `tipo` -- lo que
+                # Diego pidió de verdad al re-confirmar.
+                datos={
+                    "titulo": "Masajeador de rodilla lufthous, talla M",
+                    "descripcion": "Descripción regenerada tras re-confirmar.",
+                },
+                fuente="api", coste_usd=0.00005, tokens_entrada=120, tokens_salida=60,
+            )
+
+        def estimar_coste_texto_lote(self, solicitudes, tokens_salida_estimados=60):
+            llamadas = tuple(
+                _EstimacionLlamada(
+                    ficheros=(), en_cache=False,
+                    tokens_entrada_estimados=100, tokens_salida_estimados=60,
+                    coste_usd_estimado=0.0001,
+                )
+                for _ in solicitudes
+            )
+            return _EstimacionLote(
+                llamadas=llamadas, n_llamadas_total=len(llamadas),
+                n_en_cache=0, n_a_pagar=len(llamadas),
+                coste_usd_estimado=sum(ll.coste_usd_estimado for ll in llamadas),
+            )
+
+    _ficha.render(
+        _LoteStore(data_dir=_Path(data_dir)), lote_id, crear_motor=lambda: _MotorReconfirmarFake()
+    )
+
+
+def _preparar_confirmada_con_tipo(tmp_path: Path) -> tuple[str, str]:
+    """Ficha con `tipo` poblado, YA CONFIRMADA -- con el título VIEJO, que NO
+    lidera con el tipo. Escrita DIRECTO al store (mismo patrón que
+    `test_multiselect_reextraer_aparece_con_etiquetas_identificables`),
+    SIN pasar por el confirm real -- si pasara por él,
+    `redactar_desde_campos_confirmados` ya aplicaría
+    `_asegurar_titulo_lidera_con_tipo` (commit `3a1f41d`) y el título
+    "viejo" sería inalcanzable: esa función es DETERMINISTA y corrige
+    CUALQUIER título que no empiece por el `tipo`, así que el único modo de
+    reproducir "una ficha confirmada ANTES de esa mejora, con el título
+    viejo en disco" es escribirlo tal cual, sin pasar por la redacción. Es
+    el estado real que dispara el caso de uso de Diego: "re-confirma ESTAS
+    para que el título se actualice"."""
+    lote_id, pid = _preparar(tmp_path, _ficha_con_tipo)
+    store = LoteStore(data_dir=tmp_path)
+    producto = _producto(tmp_path, lote_id, pid)
+    campos = dict(producto["campos"]["campos"])
+    campos["estado"] = {**campos["estado"], "valor": "Bueno", "fuente": "diego", "confianza": "alta"}
+    campos["titulo"] = {
+        **campos["titulo"], "valor": "Sudadera Reebok talla M", "fuente": "inferido", "confianza": "baja",
+    }
+    confirmado = dict(producto["campos"])
+    confirmado["campos"] = campos
+    confirmado["confirmada"] = True
+    store.confirmar_ficha(pid, confirmado)
+
+    producto_tras = _producto(tmp_path, lote_id, pid)
+    assert producto_tras["campos"]["confirmada"] is True
+    assert producto_tras["campos"]["campos"]["titulo"]["valor"] == "Sudadera Reebok talla M"
+    assert producto_tras["campos"]["campos"]["tipo"]["valor"] == "masajeador de rodilla"
+    return lote_id, pid
+
+
+def test_multiselect_reconfirmar_solo_ofrece_las_ya_confirmadas(tmp_path):
+    """Sin ninguna ficha confirmada -> el selector NO aparece (nada que
+    re-confirmar, cero fricción). Con una confirmada y otra sin extraer ->
+    sólo la confirmada sale como opción."""
+    lote_id, _pid_sin_extraer = _preparar_n_sin_extraer(tmp_path, 1)
+    at = AppTest.from_function(_script_reconfirmar, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+    assert not any(m.key == "ficha_multiselect_reconfirmar" for m in at.multiselect)
+
+    lote_id2, pid2 = _preparar_confirmada_con_tipo(tmp_path)
+    at2 = AppTest.from_function(_script_reconfirmar, args=(str(tmp_path), lote_id2)).run()
+    assert not at2.exception
+    ms = _multiselect(at2, "ficha_multiselect_reconfirmar")
+    assert ms.value == []  # vacío por defecto -- nunca pre-seleccionado
+    # `.options` trae la etiqueta YA formateada (`format_func`), no el pid
+    # crudo -- mismo patrón que `test_multiselect_reextraer_aparece_con_
+    # etiquetas_identificables`.
+    assert pid2[:8] in " ".join(ms.options)
+
+
+def test_boton_reconfirmar_deshabilitado_sin_seleccion(tmp_path):
+    lote_id, _pid = _preparar_confirmada_con_tipo(tmp_path)
+    at = AppTest.from_function(_script_reconfirmar, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    boton = next(b for b in at.button if b.key == "btn_reconfirmar_seleccionados")
+    assert boton.proto.disabled is True
+    assert "(0)" in boton.label
+
+
+def test_reconfirmar_seleccionados_pulsa_el_boton_y_persiste_titulo_con_tipo(tmp_path):
+    """EL TEST QUE IMPORTA (`[INC-028]`): PULSA `btn_reconfirmar_seleccionados`
+    de verdad (`.click().run()`, no sólo renderiza la pantalla inicial) y
+    verifica que la re-confirmación CORRIÓ -- el título persistido en el
+    store cambia del borrador VIEJO al NUEVO, que lidera con el `tipo`
+    confirmado ("masajeador de rodilla"). CERO lógica de confirmación nueva
+    en la pantalla: esto es exactamente lo que hace `_accion_confirmar_lote`
+    (reusado, sin cambios) sobre la selección de Diego."""
+    lote_id, pid = _preparar_confirmada_con_tipo(tmp_path)
+    store = LoteStore(data_dir=tmp_path)
+    confirmaciones_antes = [
+        c for c in store.cargar_lote(lote_id)["confirmaciones"]
+        if c["tipo"] == "ficha" and c["producto_id"] == pid
+    ]
+
+    at = AppTest.from_function(_script_reconfirmar, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    ms = _multiselect(at, "ficha_multiselect_reconfirmar")
+    at = ms.select(pid).run()
+    assert not at.exception
+
+    # el coste se enseña EN LÍNEA, antes del botón (§15) -- sin diálogo.
+    captions = " ".join(c.value for c in at.caption)
+    assert "coste" in captions.lower()
+
+    boton = next(b for b in at.button if b.key == "btn_reconfirmar_seleccionados")
+    assert boton.proto.disabled is False
+    at = boton.click().run()
+    assert not at.exception, f"pulsar re-confirmar seleccionados lanzó: {at.exception}"
+
+    # 1) NINGÚN fallo tragado en silencio (§13). El `st.success` inline del
+    # bloque se pinta ANTES de `st.rerun()`, así que ese run concreto se
+    # descarta (semántica de `st.rerun()`: el guion se abandona y empieza
+    # de cero) -- lo que persiste tras el rerun es el badge "✅ Ficha
+    # confirmada por Diego." de la tarjeta, que SÍ sobrevive porque se
+    # deriva del store releído, no de ese mensaje efímero.
+    assert len(at.error) == 0
+    textos_success = " ".join(s.value for s in at.success)
+    assert "confirmada por diego" in textos_success.lower()
+
+    # 2) la MUTACIÓN REAL ocurrió: título nuevo, lidera con el tipo.
+    producto_tras = _producto(tmp_path, lote_id, pid)
+    campos_tras = producto_tras["campos"]["campos"]
+    assert campos_tras["titulo"]["valor"] == "Masajeador de rodilla lufthous, talla M"
+    assert campos_tras["titulo"]["valor"] != "Sudadera Reebok talla M"  # el borrador VIEJO ya no está
+    assert campos_tras["titulo"]["valor"].lower().startswith(campos_tras["tipo"]["valor"].lower())
+    assert campos_tras["titulo"]["fuente"] == "inferido"  # regenerado, Diego no lo tecleó esta vez
+    assert producto_tras["campos"]["confirmada"] is True
+
+    # 3) es una CONFIRMACIÓN NUEVA de verdad (`store.confirmar_ficha` se
+    # llamó), no que el botón no hiciera nada: el log append-only creció.
+    confirmaciones_despues = [
+        c for c in store.cargar_lote(lote_id)["confirmaciones"]
+        if c["tipo"] == "ficha" and c["producto_id"] == pid
+    ]
+    assert len(confirmaciones_despues) == len(confirmaciones_antes) + 1
+
+
+def test_reconfirmar_seleccionados_no_toca_las_no_elegidas(tmp_path):
+    """Dos fichas confirmadas con `tipo` -> Diego sólo selecciona UNA -> la
+    otra queda INTACTA en disco (mismo criterio que
+    `test_reextraer_seleccionados_solo_toca_los_elegidos`)."""
+    lote_id, pid_elegida = _preparar_confirmada_con_tipo(tmp_path)
+    store = LoteStore(data_dir=tmp_path)
+    carpeta = store.lotes_dir / lote_id
+    ruta = carpeta / "IMG_otra.jpg"
+    _crear_img(ruta, (30, 40, 50))
+    (foto_id,) = store.añadir_fotos(lote_id, [Foto(ruta=str(ruta), hash="hash_otra")])
+    (pid_no_elegida,) = store.guardar_agrupacion(lote_id, [[foto_id]])
+    store.confirmar_producto(pid_no_elegida)
+    resultado_otra = _ficha_con_tipo(tmp_path / "crops_multi_otra")
+    store.guardar_extraccion(pid_no_elegida, serializar_extraccion(resultado_otra))
+    producto_no_elegida = _producto(tmp_path, lote_id, pid_no_elegida)
+    confirmado_no_elegida = dict(producto_no_elegida["campos"])
+    confirmado_no_elegida["confirmada"] = True
+    store.confirmar_ficha(pid_no_elegida, confirmado_no_elegida)
+    titulo_no_elegida_antes = _producto(tmp_path, lote_id, pid_no_elegida)["campos"]["campos"]["titulo"]["valor"]
+
+    at = AppTest.from_function(_script_reconfirmar, args=(str(tmp_path), lote_id)).run()
+    assert not at.exception
+
+    ms = _multiselect(at, "ficha_multiselect_reconfirmar")
+    etiquetas = " ".join(ms.options)  # `.options` = etiquetas formateadas, no pids crudos
+    assert pid_elegida[:8] in etiquetas and pid_no_elegida[:8] in etiquetas
+    at = ms.select(pid_elegida).run()  # SÓLO una de las dos
+    boton = next(b for b in at.button if b.key == "btn_reconfirmar_seleccionados")
+    at = boton.click().run()
+    assert not at.exception
+
+    campos_elegida = _producto(tmp_path, lote_id, pid_elegida)["campos"]["campos"]
+    assert campos_elegida["titulo"]["valor"] == "Masajeador de rodilla lufthous, talla M"
+
+    campos_no_elegida = _producto(tmp_path, lote_id, pid_no_elegida)["campos"]["campos"]
+    assert campos_no_elegida["titulo"]["valor"] == titulo_no_elegida_antes  # INTACTA
