@@ -230,6 +230,10 @@ class LoteNoEncontradoError(StoreError):
     pass
 
 
+class LoteConVentasError(StoreError):
+    """Se intentó borrar un lote que tiene ventas registradas (dinero real)."""
+
+
 class ProductoNoEncontradoError(StoreError):
     pass
 
@@ -461,6 +465,109 @@ class LoteStore:
         fila = conn.execute("SELECT id FROM lotes WHERE id = ?", (lote_id,)).fetchone()
         if fila is None:
             raise LoteNoEncontradoError(f"lote no encontrado: {lote_id}")
+
+    def borrar_lote(self, lote_id: str) -> None:
+        """Elimina un lote ENTERO (fotos, productos y todo su rastro) — para
+        que Diego borre lotes de PRUEBA. Superficie sensible (PERSISTENCIA):
+        un borrado es irreversible y no puede destruir historial de ventas ni
+        petar por FK.
+
+        GUARDIA DE DINERO (con dientes, `decision-making.md` §12): si algún
+        producto del lote tiene una fila en `ventas`, RECHAZA con
+        `LoteConVentasError` SIN tocar nada — ni disco ni DB, y antes de tocar
+        cualquiera de los dos. Una venta es dinero y `ventas` no tiene FK a
+        `productos` justo para SOBREVIVIR a un borrado; borrar el lote dejaría
+        una venta con su producto ya inexistente, que no es lo que este flujo
+        (borrar pruebas) quiere. Ese caso tiene otro camino a conciencia
+        (deshacer la venta primero). No es un aviso: bloquea.
+
+        Borrado en UNA transacción atómica, orden FK (hijos -> padres): no hay
+        `ON DELETE CASCADE` y `PRAGMA foreign_keys=ON`, así que borrar un padre
+        antes que sus hijos lanzaría una FK violation. Orden:
+        `confirmaciones` -> `publicaciones` -> `referencia_seq` ->
+        `movimientos` -> `fotos` -> `productos` -> `lotes`. (`ventas` no se
+        toca: la guardia ya garantiza que no hay ninguna de este lote.)
+
+        RESET del contador de referencia: dentro de la MISMA transacción,
+        DESPUÉS de borrar, si la base queda sin productos Y sin ventas, se
+        limpia la marca de agua de `referencia_seq` en `sqlite_sequence` para
+        que el AUTOINCREMENT reinicie en 1 (arranque limpio para el uso real,
+        seguro porque no queda ningún producto/venta con una ref posiblemente
+        impresa). Si QUEDA algún producto o venta, NO se resetea: el contador
+        nunca baja mientras algo pueda tener una ref viva.
+
+        Disco DESPUÉS del commit — mismo criterio de orden que `archivar_foto`,
+        con el estado de verdad invertido: aquí la verdad es la DB. Nunca se
+        borra el disco ANTES del commit: si el commit fallara, se habrían
+        perdido las fotos de un lote que la DB dice que todavía existe. Si el
+        `rmtree` falla después del commit (antivirus de Windows reteniendo un
+        .jpg, permiso), se registra RUIDOSO con `logger.exception` pero NO se
+        relanza como fatal: el lote YA está borrado de la DB (la operación
+        lógica tuvo éxito) y una carpeta huérfana es una molestia de limpieza,
+        no pérdida de datos ni un estado a medias.
+
+        `LoteNoEncontradoError` si el lote no existe; `LoteConVentasError` si
+        tiene ventas.
+        """
+        with self._transaccion() as conn:
+            self._lote_existe(conn, lote_id)
+
+            # GUARDIA DE DINERO — antes de tocar disco o DB.
+            n_ventas = conn.execute(
+                """SELECT COUNT(*) AS n FROM ventas
+                   WHERE producto_id IN (SELECT id FROM productos WHERE lote_id = ?)""",
+                (lote_id,),
+            ).fetchone()["n"]
+            if n_ventas:
+                raise LoteConVentasError(
+                    f"el lote {lote_id} tiene {n_ventas} venta(s) registrada(s): no se "
+                    "borra un lote con dinero asociado. Deshaz esa(s) venta(s) primero "
+                    "si de verdad quieres eliminarlo."
+                )
+
+            # Hijos -> padres (sin ON DELETE CASCADE, foreign_keys=ON).
+            conn.execute("DELETE FROM confirmaciones WHERE lote_id = ?", (lote_id,))
+            conn.execute(
+                """DELETE FROM publicaciones
+                   WHERE producto_id IN (SELECT id FROM productos WHERE lote_id = ?)""",
+                (lote_id,),
+            )
+            conn.execute(
+                """DELETE FROM referencia_seq
+                   WHERE producto_id IN (SELECT id FROM productos WHERE lote_id = ?)""",
+                (lote_id,),
+            )
+            conn.execute(
+                """DELETE FROM movimientos
+                   WHERE producto_id IN (SELECT id FROM productos WHERE lote_id = ?)""",
+                (lote_id,),
+            )
+            conn.execute("DELETE FROM fotos WHERE lote_id = ?", (lote_id,))
+            conn.execute("DELETE FROM productos WHERE lote_id = ?", (lote_id,))
+            conn.execute("DELETE FROM lotes WHERE id = ?", (lote_id,))
+
+            # RESET del contador SOLO si la base queda del todo vacía de
+            # productos Y ventas (nada puede tener ya una ref viva impresa).
+            quedan_productos = conn.execute(
+                "SELECT COUNT(*) AS n FROM productos"
+            ).fetchone()["n"]
+            quedan_ventas = conn.execute("SELECT COUNT(*) AS n FROM ventas").fetchone()["n"]
+            if not quedan_productos and not quedan_ventas:
+                conn.execute("DELETE FROM sqlite_sequence WHERE name = 'referencia_seq'")
+
+        # Disco DESPUÉS del commit: la DB es el estado de verdad.
+        carpeta = self.lotes_dir / lote_id
+        if carpeta.exists():
+            try:
+                shutil.rmtree(carpeta, ignore_errors=False)
+            except OSError:
+                logger.exception(
+                    "El lote %s ya se borró de la DB pero no se pudo borrar su carpeta "
+                    "%s; queda huérfana en disco (limpieza manual), NO es pérdida de "
+                    "datos ni un estado a medias",
+                    lote_id,
+                    carpeta,
+                )
 
     # -- fotos --------------------------------------------------------------
 

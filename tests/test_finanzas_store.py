@@ -19,6 +19,8 @@ import pytest
 import core.store as store_mod
 from core.store import (
     Foto,
+    LoteConVentasError,
+    LoteNoEncontradoError,
     LoteStore,
     ProductoNoEncontradoError,
 )
@@ -579,3 +581,142 @@ def test_venta_sobrevive_al_borrado_del_producto(tmp_path):
     assert fila["titulo"] == "Camiseta Nike S"  # snapshot congelado
     assert fila["coste_cents"] == 400
     assert fila["beneficio_bruto_cents"] == 800  # 1200 - 400, del snapshot
+
+
+# --------------------------------------------------------------------------
+# `borrar_lote` — eliminar un lote ENTERO (para lotes de PRUEBA).
+# Superficie sensible PERSISTENCIA: irreversible, no destruye ventas, sin FK
+# violation (orden hijos->padres), reset del contador sólo con la DB vacía.
+# --------------------------------------------------------------------------
+
+
+def _contar(conn, sql, *args) -> int:
+    return conn.execute(sql, args).fetchone()[0]
+
+
+def _poblar_lote_completo(store: LoteStore, nombre: str) -> tuple[str, list[str]]:
+    """Un lote que TOCA las 7 tablas relevantes: productos + fotos +
+    confirmaciones (confirmar) + referencia_seq (asignar_referencia) +
+    publicaciones y movimientos (registrar_subido). SIN ventas (para el test
+    de "sin FK violation")."""
+    lote_id, productos = _lote_con_productos(store, n=2, nombre=nombre)
+    for p in productos:
+        store.confirmar_producto(p)
+        store.asignar_referencia(p)
+        store.guardar_coste(p, 300)
+        store.registrar_subido(p, "wallapop", precio_elegido_cents=2000)
+    return lote_id, productos
+
+
+def test_borrar_lote_elimina_todas_las_filas_y_la_carpeta_de_disco(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, productos = _poblar_lote_completo(store, "ParaBorrar")
+    # Un SEGUNDO lote intacto, que NO debe tocarse.
+    otro_lote, otros_productos = _poblar_lote_completo(store, "Intacto")
+
+    carpeta = store.lotes_dir / lote_id
+    (carpeta / "descartadas").mkdir(exist_ok=True)
+    (carpeta / "dummy.txt").write_text("basura de prueba")
+    assert carpeta.exists()
+
+    store.borrar_lote(lote_id)
+
+    # La carpeta de disco desapareció.
+    assert not carpeta.exists()
+    # El otro lote conserva su carpeta.
+    assert (store.lotes_dir / otro_lote).exists()
+
+    marcadores = ",".join("?" for _ in productos)
+    conn = sqlite3.connect(store.db_path)
+    try:
+        assert _contar(conn, "SELECT COUNT(*) FROM lotes WHERE id = ?", lote_id) == 0
+        assert _contar(conn, "SELECT COUNT(*) FROM productos WHERE lote_id = ?", lote_id) == 0
+        assert _contar(conn, "SELECT COUNT(*) FROM fotos WHERE lote_id = ?", lote_id) == 0
+        assert _contar(conn, "SELECT COUNT(*) FROM confirmaciones WHERE lote_id = ?", lote_id) == 0
+        for tabla in ("publicaciones", "referencia_seq", "movimientos"):
+            n = conn.execute(
+                f"SELECT COUNT(*) FROM {tabla} WHERE producto_id IN ({marcadores})",
+                productos,
+            ).fetchone()[0]
+            assert n == 0, tabla
+
+        # El segundo lote no se tocó: sigue con sus 2 productos y sus fotos.
+        assert _contar(conn, "SELECT COUNT(*) FROM productos WHERE lote_id = ?", otro_lote) == 2
+        assert _contar(conn, "SELECT COUNT(*) FROM fotos WHERE lote_id = ?", otro_lote) == 2
+    finally:
+        conn.close()
+
+    # El otro lote sigue cargando entero.
+    estado = store.cargar_lote(otro_lote)
+    assert len(estado["productos"]) == 2
+    # cargar_ventas (cross-lote) ya no ve las publicaciones del lote borrado.
+    ids_en_ledger = {f["producto_id"] for f in store.cargar_ventas()}
+    assert ids_en_ledger == set(otros_productos)
+
+
+def test_borrar_lote_sin_fk_violation_con_todas_las_tablas_pobladas(tmp_path):
+    # `PRAGMA foreign_keys=ON` y sin ON DELETE CASCADE: si el orden de borrado
+    # fuera padres->hijos, SQLite lanzaría IntegrityError. Este test lo cazaría.
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, _ = _poblar_lote_completo(store, "Completo")
+    store.borrar_lote(lote_id)  # no debe lanzar ninguna excepción
+    with pytest.raises(LoteNoEncontradoError):
+        store.cargar_lote(lote_id)
+
+
+def test_borrar_lote_con_venta_bloquea_y_no_borra_nada(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, productos = _poblar_lote_completo(store, "ConVenta")
+    store.marcar_vendido(productos[0], precio_final_cents=2500, plataforma_venta="wallapop")
+
+    carpeta = store.lotes_dir / lote_id
+    assert carpeta.exists()
+
+    with pytest.raises(LoteConVentasError):
+        store.borrar_lote(lote_id)
+
+    # NADA se borró: ni la carpeta de disco, ni las filas (rollback total).
+    assert carpeta.exists()
+    conn = sqlite3.connect(store.db_path)
+    try:
+        assert _contar(conn, "SELECT COUNT(*) FROM lotes WHERE id = ?", lote_id) == 1
+        assert _contar(conn, "SELECT COUNT(*) FROM productos WHERE lote_id = ?", lote_id) == 2
+        assert _contar(conn, "SELECT COUNT(*) FROM fotos WHERE lote_id = ?", lote_id) == 2
+    finally:
+        conn.close()
+    # El lote sigue cargando y la venta sigue en el ledger.
+    assert len(store.cargar_lote(lote_id)["productos"]) == 2
+    assert any(f["venta"] is not None for f in store.cargar_ventas())
+
+
+def test_borrar_lote_resetea_el_contador_si_la_db_queda_vacia(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, productos = _lote_con_productos(store, n=2, nombre="Solo")
+    assert store.asignar_referencia(productos[0]) == 1
+    assert store.asignar_referencia(productos[1]) == 2
+
+    store.borrar_lote(lote_id)  # DB queda vacía de productos y ventas
+
+    # Un producto nuevo en un lote nuevo obtiene Ref. 1 (contador reiniciado).
+    _, nuevos = _lote_con_productos(store, n=1, nombre="Nuevo")
+    assert store.asignar_referencia(nuevos[0]) == 1
+
+
+def test_borrar_lote_no_resetea_el_contador_si_quedan_otros_productos(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_a, prods_a = _lote_con_productos(store, n=1, nombre="LoteA")
+    lote_b, prods_b = _lote_con_productos(store, n=1, nombre="LoteB")
+    assert store.asignar_referencia(prods_a[0]) == 1
+    assert store.asignar_referencia(prods_b[0]) == 2
+
+    store.borrar_lote(lote_a)  # quedan productos (lote B) -> NO se resetea
+
+    # El siguiente producto sigue la numeración: 3, jamás recicla el 1.
+    _, prods_c = _lote_con_productos(store, n=1, nombre="LoteC")
+    assert store.asignar_referencia(prods_c[0]) == 3
+
+
+def test_borrar_lote_inexistente_falla(tmp_path):
+    store = LoteStore(data_dir=tmp_path)
+    with pytest.raises(LoteNoEncontradoError):
+        store.borrar_lote("lote-fantasma")

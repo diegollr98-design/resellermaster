@@ -18,7 +18,7 @@ from pathlib import Path
 
 import streamlit as st
 
-from core.store import DEFAULT_DATA_DIR, LoteStore
+from core.store import DEFAULT_DATA_DIR, LoteConVentasError, LoteStore, StoreError
 from ui import curar, export, ficha, finanzas, ingesta
 
 
@@ -89,6 +89,45 @@ def _aplicar_navegacion_pendiente() -> None:
         st.session_state["sb_lote_id"] = pendiente["lote_id"]
 
 
+def _render_eliminar_lote(store: LoteStore, lote: dict) -> None:
+    """Flujo de borrado del lote seleccionado en la barra lateral (para que
+    Diego borre lotes de PRUEBA). Confirmación en DOS pasos (checkbox + botón)
+    que nombra el lote y cuántas fotos/productos se van — defensa contra el
+    misclick sobre un lote real.
+
+    SOLO renderiza y delega: toda la lógica (guardia de dinero, orden FK,
+    disco) vive tras la costura en `store.borrar_lote`. Las keys llevan el
+    `lote_id` para que la confirmación sea POR lote (cambiar de lote nace con
+    el checkbox en falso, nunca arrastra un "sí" de otro lote).
+
+    Tras un borrado con éxito no se toca `sb_lote_id` aquí (el selectbox ya
+    está instanciado en este rerun): se hace `st.rerun()` y la guarda de
+    `main()` lo repara antes de re-instanciar el selectbox. Los errores se
+    pintan con `st.error`, nunca un traceback ([INC-006])."""
+    lote_id = lote["id"]
+    with st.sidebar.expander("Eliminar lote"):
+        st.caption(
+            f"«{lote['nombre']}»: se eliminarán {lote['n_fotos']} fotos y "
+            f"{lote['n_productos']} productos. Es IRREVERSIBLE."
+        )
+        confirmar = st.checkbox("Sí, eliminar este lote", key=f"del_confirm_{lote_id}")
+        if st.button(
+            "Eliminar lote",
+            key=f"del_btn_{lote_id}",
+            type="primary",
+            disabled=not confirmar,
+        ):
+            try:
+                store.borrar_lote(lote_id)
+            except LoteConVentasError as exc:
+                st.error(f"No se puede borrar: tiene ventas registradas. {exc}")
+            except StoreError as exc:
+                st.error(f"No se pudo borrar el lote: {exc}")
+            else:
+                st.session_state["_lote_borrado"] = lote["nombre"]
+                st.rerun()
+
+
 def main() -> None:
     store = _get_store()
     _aplicar_navegacion_pendiente()
@@ -108,6 +147,9 @@ def main() -> None:
 
     st.sidebar.divider()
     st.sidebar.caption("Lote")
+    borrado = st.session_state.pop("_lote_borrado", None)
+    if borrado:
+        st.sidebar.success(f"Lote «{borrado}» eliminado.")
     lotes = store.listar_lotes()
     lote_id: str | None = None
     if lotes:
@@ -121,7 +163,12 @@ def main() -> None:
         ids = list(etiquetas.keys())
         # Misma condición de CORRECCIÓN que en `_aplicar_navegacion_pendiente`:
         # legal SOLO porque esto corre antes de la línea de abajo que
-        # instancia `st.sidebar.selectbox(key="sb_lote_id", ...)`.
+        # instancia `st.sidebar.selectbox(key="sb_lote_id", ...)`. Es también
+        # lo que repara `sb_lote_id` tras un borrado: en el rerun que sigue a
+        # `borrar_lote`, el lote muerto ya no está en `ids`, así que esta
+        # guarda lo resetea al más reciente ANTES de instanciar el selectbox
+        # (nunca DESPUÉS: escribir la key de un widget ya instanciado en el
+        # mismo rerun lanza StreamlitAPIException).
         if st.session_state.get("sb_lote_id") not in ids:
             st.session_state["sb_lote_id"] = ids[0]  # más reciente primero
         lote_id = st.sidebar.selectbox(
@@ -130,6 +177,7 @@ def main() -> None:
             format_func=lambda i: etiquetas[i],
             key="sb_lote_id",
         )
+        _render_eliminar_lote(store, next(lote for lote in lotes if lote["id"] == lote_id))
     else:
         st.sidebar.info("Todavía no hay ningún lote. Créalo en «Ingesta».")
 
