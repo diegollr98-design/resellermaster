@@ -15,7 +15,6 @@ from core.extract import (
     Lectura,
     serializar_extraccion,
 )
-from core.schema import Evidencia
 from core.store import Foto, LoteStore
 
 
@@ -27,7 +26,6 @@ def _crear_img(ruta: Path, color=(120, 60, 60)) -> None:
 def _extraccion_lista(crops: Path) -> ResultadoExtraccion:
     """Ficha con categoria/titulo/descripcion propuestos, `estado` pendiente
     (SIEMPRE lo elige Diego)."""
-    ev = Evidencia(fichero="IMG_1.jpg", bbox=(10, 20, 30, 40))
     campos = {
         "marca": Campo(valor="Reebok", fuente="inferido", confianza="baja"),
         "categoria": Campo(valor="moda", fuente="inferido", confianza="baja"),
@@ -51,7 +49,8 @@ def _preparar_dos(tmp_path: Path) -> tuple[str, str, str]:
     lote_id = store.crear_lote("Lote 2 productos", "C:/fotos/origen")
     carpeta = store.lotes_dir / lote_id
     r1, r2 = carpeta / "IMG_1.jpg", carpeta / "IMG_2.jpg"
-    _crear_img(r1); _crear_img(r2, (60, 120, 60))
+    _crear_img(r1)
+    _crear_img(r2, (60, 120, 60))
     fids = store.añadir_fotos(lote_id, [Foto(ruta=str(r1), hash="h1"), Foto(ruta=str(r2), hash="h2")])
     pids = store.guardar_agrupacion(lote_id, [[fids[0]], [fids[1]]])
     for pid in pids:
@@ -118,6 +117,10 @@ def test_confirmar_B_no_resetea_estado_de_A_rendido_antes(tmp_path):
 
 
 def test_confirmar_A_tambien_pierde_categoria_y_texto_editado_de_B(tmp_path):
+    """No sólo `estado`: el bug-hunter verificó que `categoria` (selectbox)
+    y `marca` (text_input) de B también se perdían -- el fix se aplica a
+    TODOS los campos sembrados en `_sembrar_valores_iniciales`, no sólo a
+    `estado`."""
     lote_id, pid_a, pid_b = _preparar_dos(tmp_path)
     at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
     # B: cambia categoria y edita marca (text_input) sin confirmar
@@ -129,5 +132,5 @@ def test_confirmar_A_tambien_pierde_categoria_y_texto_editado_de_B(tmp_path):
     assert not at.exception
     cat_b = next(s for s in at.selectbox if s.key == f"ficha_{pid_b}_categoria_categoria").value
     marca_b = next(t for t in at.text_input if t.key == f"ficha_{pid_b}_marca_valor").value
-    print("categoria B tras confirmar A:", cat_b, "(elegida: electronica)")
-    print("marca B tras confirmar A:", marca_b, "(editada: EDITADO_POR_DIEGO)")
+    assert cat_b == "electronica", f"REGRESION: categoria de B se reseteo a {cat_b!r}"
+    assert marca_b == "EDITADO_POR_DIEGO", f"REGRESION: marca de B se reseteo a {marca_b!r}"

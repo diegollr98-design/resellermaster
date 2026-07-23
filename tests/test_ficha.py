@@ -1346,6 +1346,79 @@ def test_sembrar_valores_iniciales_no_pisa_edicion_sin_navegar():
     assert st.session_state[f"ficha_{pid}_tipo_valor"] == "sudadera (editado por Diego)"
 
 
+def test_sembrar_valores_iniciales_gc_restaura_sombra_no_default(tmp_path):
+    """`[INC-030]`: el GC de un `st.rerun()` a mitad del bucle de productos
+    (confirmar A dispara `st.rerun()`, B -- que va DESPUÉS en el bucle -- no
+    llega a instanciarse en ese run) borra la key de widget de B con la
+    firma IGUAL. Antes del fix, la rama de "key ausente" re-sembraba del
+    DISCO (el default), tirando la elección de Diego que sólo vivía en
+    `session_state`. El fix debe restaurar de la SOMBRA (el último valor
+    vivo), no del default."""
+    pid = "prod1"
+    campos = {"estado": {"valor": None, "fuente": "inferido", "confianza": "baja"}}
+
+    import pytest
+    try:
+        st.session_state.clear()
+    except Exception:
+        pytest.skip("st.session_state no es accesible fuera de un ScriptRunContext")
+
+    ficha._sembrar_valores_iniciales(pid, campos)
+    key = f"ficha_{pid}_estado_estado"
+    default_inicial = st.session_state[key]
+    assert default_inicial != "Muy bueno"  # sanity: el default NO es la elección
+
+    # Diego elige un estado (el widget escribe directo en session_state,
+    # igual que un `st.selectbox` real).
+    st.session_state[key] = "Muy bueno"
+    # El PRÓXIMO script run en el que B se renderiza vuelve a llamar a
+    # `_sembrar_valores_iniciales` (misma firma, key presente) -- ahí es
+    # donde la sombra se refresca con el valor vivo (rama (b)).
+    ficha._sembrar_valores_iniciales(pid, campos)
+    assert st.session_state[key] == "Muy bueno"  # sanity: rama (b) no la toca
+
+    # Simula el GC de navegación/rerun (p.ej. confirmar A dispara
+    # `st.rerun()` y B, que va después en el bucle, no llega a
+    # instanciarse en ese run): se va la key de widget, el marcador de
+    # firma sobrevive (igual que en `test_..._re_siembra_tras_gc_de_widget`).
+    del st.session_state[key]
+    assert f"_ficha_firma_{pid}" in st.session_state
+
+    # Re-siembra con la MISMA firma -- debe restaurar "Muy bueno" (la
+    # sombra), NO el default de disco.
+    ficha._sembrar_valores_iniciales(pid, campos)
+    assert st.session_state[key] == "Muy bueno", (
+        f"REGRESION [INC-030]: el GC restauro el default {default_inicial!r} "
+        f"en vez de la eleccion de Diego"
+    )
+
+
+def test_sembrar_valores_iniciales_reextraer_no_congela_sombra_rancia(tmp_path):
+    """Caso (c) del docstring, con sombra de por medio: si Diego había
+    editado un valor (que quedó en la sombra) y LUEGO llega una
+    re-extracción real (firma DISTINTA), lo nuevo debe mandar -- el fix no
+    puede convertirse en "el valor editado nunca se pierde", o una
+    re-extracción legítima quedaría congelada en un valor rancio."""
+    pid = "prod1"
+    campos_v1 = {"tipo": {"valor": "sudadera", "fuente": "inferido", "confianza": "baja"}}
+    campos_v2 = {"tipo": {"valor": "masajeador de rodilla", "fuente": "inferido", "confianza": "baja"}}
+
+    import pytest
+    try:
+        st.session_state.clear()
+    except Exception:
+        pytest.skip("st.session_state no es accesible fuera de un ScriptRunContext")
+
+    key = f"ficha_{pid}_tipo_valor"
+    ficha._sembrar_valores_iniciales(pid, campos_v1)
+    st.session_state[key] = "editado por Diego, sin confirmar"  # queda en la sombra
+
+    # Re-extracción real: firma distinta -> debe ganar lo nuevo, no la sombra.
+    ficha._sembrar_valores_iniciales(pid, campos_v2)
+    assert st.session_state[key] == "masajeador de rodilla"
+    assert st.session_state[f"_shadow_{key}"] == "masajeador de rodilla"
+
+
 def _script_navegacion(data_dir: str, lote_id: str) -> None:
     """Reproduce el MECANISMO real de `app.py::main` (`st.sidebar.radio`
     con `key="sb_pantalla"` decidiendo qué módulo de `ui/` renderiza este

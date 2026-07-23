@@ -869,7 +869,29 @@ def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
     (b) Diego edita una key SIN navegar, firma IGUAL + key PRESENTE →
         NO se toca (se preserva su edición).
     (c) re-extraer, firma DISTINTA → se sobreescribe con lo nuevo
-        (protección original contra el valor rancio, intacta)."""
+        (protección original contra el valor rancio, intacta).
+
+    `[INC-030]` (2026-07-23, hallado por Diego con datos reales, sin
+    pérdida en disco): (a) estaba MAL resuelto -- "key ausente → default"
+    trataba el GC de un `st.rerun()` a mitad del bucle de productos (el
+    botón "Confirmar" de un producto A dispara `st.rerun()`; los productos
+    POSTERIORES en el bucle, como B, no llegan a instanciarse en ese run →
+    Streamlit hace GC de sus keys de widget) exactamente IGUAL que una
+    re-extracción real -- pero la elección de Diego para un producto SIN
+    CONFIRMAR vive SÓLO en `session_state`, nunca en disco, así que
+    "re-sembrar del disco" la tira. `estado` es el caso más grave: su
+    default es el centinela "(sin elegir)".
+
+    Fix: una SOMBRA en una key NORMAL (`_shadow_{key}`, nunca `key=` de
+    un widget) que sobrevive al mismo GC que el marcador de firma. (a) el
+    GC restaura de la SOMBRA (el último valor vivo), no del default;
+    (c) re-extraer sigue mandando con lo nuevo (la sombra también se
+    reinicia); (b) key presente y firma igual: no se toca la edición, y
+    la sombra se refresca con el valor vivo para que la próxima (a) tenga
+    algo fresco que restaurar. CRÍTICO: la sombra NUNCA se lee-y-escribe
+    incondicionalmente (`st.session_state.get(key, default)`) -- en la
+    rama de GC se LEE, no se escribe, o pisaría la buena sombra con el
+    default y el bug seguiría igual."""
     firma = tuple(
         (campo, _valor_por_defecto(campo, dc)) for campo, dc in sorted(campos.items())
     )
@@ -884,11 +906,21 @@ def _sembrar_valores_iniciales(pid: str, campos: dict) -> None:
             key, default = f"ficha_{pid}_genero_genero", _genero_default(dc)
         else:
             key, default = f"ficha_{pid}_{campo}_valor", _valor_por_defecto(campo, dc)
-        # Re-siembra si la extracción cambió (firma nueva) O si la key falta
-        # (GC de navegación) -- NUNCA si sólo está presente con firma igual,
-        # o pisaríamos la edición de Diego (caso (b) de arriba).
-        if firma_cambio or key not in st.session_state:
+        shadow_key = f"_shadow_{key}"
+        if firma_cambio:
+            # (c) re-extraer: lo nuevo manda; la sombra se refresca también
+            # al default nuevo (no congelar un valor rancio de antes).
             st.session_state[key] = default
+            st.session_state[shadow_key] = default
+        elif key not in st.session_state:
+            # (a) GC de navegación/rerun: restaura el ÚLTIMO valor vivo si
+            # lo hay -- NUNCA el default, o se pierde la elección de Diego
+            # que aún no tocó disco.
+            st.session_state[key] = st.session_state.get(shadow_key, default)
+        else:
+            # (b) key presente, firma igual: NO se toca la edición de
+            # Diego; sólo se refresca la sombra con el valor vivo actual.
+            st.session_state[shadow_key] = st.session_state[key]
     st.session_state[marcador] = firma
 
 
