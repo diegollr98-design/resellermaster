@@ -1,5 +1,7 @@
 # Cierre — Ultra-review multiagente + hardening · SEED (sesión FRESCA)
 
+> PASO 0 OBLIGATORIO: invoca `/seed-review` sobre este SEED antes de tocar nada.
+
 > **Objetivo:** dejar RESELLERMASTER **cerrado — sin bugs, lo más óptimo
 > posible** — con un análisis adversarial multi-agente, ANTES del portfolio HTML.
 > NO es una fase de features nuevas: es un **gate de calidad sobre lo ya
@@ -13,11 +15,10 @@ Eres el orquestador ("papá oso") de RESELLERMASTER. Lee CLAUDE.md, .claude/rule
 sessions-log) y .claude/incident-ledger.md. RECONCILIA el estado contra el repo
 (git log, el código, pytest) antes de nada — no te fíes de este seed.
 
-PASO 0 OBLIGATORIO: antes de ejecutar NADA de este seed, corre /seed-review sobre
-docs/seeds/cierre-ultra-review.md. El skill lanza un agente CIEGO que re-deriva el
-objetivo desde la fuente más upstream y ataca lo que este seed da por sentado (lo
-escribió la sesión anterior, posiblemente sesgada). Con su veredicto (ejecutar / con
-ediciones / parar), procede — no antes.
+PASO 0 (ver la primera línea del cuerpo): invoca /seed-review antes de tocar nada,
+muestra el veredicto y procede según él. Lo dispara también la regla global
+~/.claude/CLAUDE.md; el PASO 0 embebido es belt-and-suspenders por si esa config no
+está cargada.
 
 Después: es una sesión de CIERRE POR AUDITORÍA ADVERSARIAL (no features). Orquesta
 listing-audit/bug-hunter en paralelo sobre las superficies sensibles para intentar
