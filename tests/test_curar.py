@@ -309,7 +309,12 @@ def _preparar_lote_grupo_de_cuatro(tmp_path: Path) -> tuple[str, dict[str, str]]
 
 def test_render_sin_excepcion(tmp_path):
     lote_id, _ = _preparar_lote_dos_grupos_y_suelta(tmp_path)
-    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run()
+    # timeout=30 (no el default de 3 s de AppTest): este es el PRIMER test del
+    # módulo y paga el warmup de Streamlit; bajo la carga de la suite completa
+    # ese arranque supera 3 s y el test parpadeaba en rojo (flaky histórico,
+    # ver sessions-log). Aislado corre en <2 s; el margen no puede hacer fallar
+    # un test que pasa, sólo evita el timeout por contención de CPU.
+    at = AppTest.from_function(_script, args=(str(tmp_path), lote_id)).run(timeout=30)
     assert not at.exception
 
 
