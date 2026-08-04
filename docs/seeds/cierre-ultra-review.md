@@ -11,11 +11,19 @@
 Eres el orquestador ("papá oso") de RESELLERMASTER. Lee CLAUDE.md, .claude/rules/
 (decision-making, truth-loop, change-loop, architecture, product, file-organization,
 sessions-log) y .claude/incident-ledger.md. RECONCILIA el estado contra el repo
-(git log, el código, pytest) antes de nada — no te fíes de este seed. Es una sesión
-de CIERRE POR AUDITORÍA ADVERSARIAL (no features): orquesta listing-audit/bug-hunter
-en paralelo sobre las superficies sensibles para intentar PILLAR bugs/mentiras del
-pipeline, valida cada veredicto por EJECUCIÓN, y corre /eval como gate antes de cerrar
-cualquier cambio. El objetivo es 100% objetividad, romper lo que puedas.
+(git log, el código, pytest) antes de nada — no te fíes de este seed.
+
+PASO 0 OBLIGATORIO: antes de ejecutar NADA de este seed, corre /seed-review sobre
+docs/seeds/cierre-ultra-review.md. El skill lanza un agente CIEGO que re-deriva el
+objetivo desde la fuente más upstream y ataca lo que este seed da por sentado (lo
+escribió la sesión anterior, posiblemente sesgada). Con su veredicto (ejecutar / con
+ediciones / parar), procede — no antes.
+
+Después: es una sesión de CIERRE POR AUDITORÍA ADVERSARIAL (no features). Orquesta
+listing-audit/bug-hunter en paralelo sobre las superficies sensibles para intentar
+PILLAR bugs/mentiras del pipeline, valida cada veredicto por EJECUCIÓN, y corre /eval
+como gate antes de cerrar cualquier cambio. El objetivo es 100% objetividad, romper
+lo que puedas.
 ```
 
 ## Estado reconciliado (contra el repo @ `beb8973`, 2026-08-04 — RE-VERIFÍCALO)
