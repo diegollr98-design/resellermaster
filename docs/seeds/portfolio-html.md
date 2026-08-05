@@ -2,6 +2,14 @@
 
 > PASO 0 OBLIGATORIO: invoca `/seed-review` sobre este SEED antes de tocar nada (regla global de Diego). Muestra el veredicto y procede según él.
 
+> **RESULTADO /seed-review (2026-08-05) — ✏️ CON EDICIONES.** Panel: agente ciego + 2 críticos (uno verificó los 12 números contra el repo; corrió la suite: 904 passed, 1 skipped, 32 incidentes — todos exactos, ninguno falso). Ediciones aplicadas al construir:
+> 1. **El vídeo NO va como primer bloque vacío** (peor que nada). Va tras el hero, y se acompaña de una tarjeta-ficha (representación fiel de la pantalla real, con badges 📷/🧠) como prueba visual del producto ahora — no un SVG abstracto.
+> 2. **n a la vista en las cifras medidas**: 210 s = "medido, n=1"; 285 s = "estimado por un panel", NUNCA "medido" (no copiar el error de `CLAUDE.md:9`). El coste 3,4 cts se apoya en 14,5 cts los 62 recortes reales + 0 al reprocesar.
+> 3. **NO titular con el nº de tests** (contradice "verde local ≠ funciona"): 904 se usa dentro de la lección de `[INC-031]`, no como stat de cabecera.
+> 4. **El JUICIO lidera, no el tour de arquitectura**: "Decisiones medidas" sube; el aparato multi-agente (21 agentes, 32 incidentes) se enmarca con el stake real (*una ficha mala = venta perdida + reputación quemada*) para que no se lea como over-engineering.
+> 5. **De 10 → ~8 secciones**; los dos "Juicio" se funden en uno (el del seed-review, más universal, y es lo que pasó ESTA sesión).
+> 6. **Entrega elegida por Diego: `.html` suelto** (documento completo, fuentes por `<link>`, para subir a Vercel) — NO Artifact. **Vídeo: lo grabará Diego** → dejo el slot 16:9 con el guion.
+
 > **Objetivo:** un **portfolio HTML autocontenido** que presente RESELLERMASTER al **mismo nivel de acabado** que los dos de referencia. **Objetivo real (upstream): impresionar a quien contrata y conseguir que contraten a Diego** — mostrando que coge un problema difuso, lo descompone y orquesta IA para construir cada pieza SIN perder el rigor. El repo ya está CLEAN y verificado (cierre por auditoría hecho, ver `sessions-log.md` v0.12).
 >
 > **Regla dura, y es el corazón de este repo:** el proyecto existe para que el pipeline **no mienta sobre el producto**. Un portfolio sobre anti-alucinación que **invente una cifra** se autodestruye. **Cada número del portfolio se verifica contra el repo ANTES de escribirlo** (git log, CLAUDE.md, el ledger, la suite). Si un dato no está medido, no se pone o se marca como estimado. Esto no es opcional: es la tesis del proyecto aplicada a su propia vitrina.
