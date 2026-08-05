@@ -345,6 +345,31 @@ def test_vendido_congela_el_coste_al_vender(tmp_path):
     assert fila["beneficio_bruto_cents"] == 1500
 
 
+def test_coste_mostrado_sale_del_snapshot_no_del_producto_vivo(tmp_path):
+    # [audit 2026-08-05] El coste que se MUESTRA en el ledger (Excel/dashboard)
+    # debe salir del snapshot cuando hay venta: si mostrara el coste VIVO del
+    # producto, editarlo tras vender dejaría el informe incoherente
+    # (Precio - Coste_mostrado != Beneficio). Regresión del bug real de Diego:
+    # vendió con coste 0, lo editó a 1000, y el Excel enseñaba 10€ de coste con
+    # 150€ de beneficio sobre 150€ de precio.
+    store = LoteStore(data_dir=tmp_path)
+    _, productos = _lote_con_productos(store, n=1)
+    p = productos[0]
+
+    store.guardar_coste(p, 500)
+    store.marcar_vendido(p, precio_final_cents=2000, plataforma_venta="wallapop")
+    store.guardar_coste(p, 900)  # edita el coste vivo DESPUÉS de vender
+
+    fila = next(f for f in store.cargar_ventas() if f["producto_id"] == p)
+    # El coste MOSTRADO es el del snapshot (500), no el vivo (900)...
+    assert fila["coste_cents"] == 500
+    # ...y por eso el informe es coherente: Precio - Coste == Beneficio.
+    assert (
+        fila["venta"]["precio_final_cents"] - fila["coste_cents"]
+        == fila["beneficio_bruto_cents"]
+    )
+
+
 def test_marcar_vendido_re_marca_no_recongela_coste(tmp_path):
     store = LoteStore(data_dir=tmp_path)
     _, productos = _lote_con_productos(store, n=1)
@@ -689,7 +714,10 @@ def test_borrar_lote_con_venta_bloquea_y_no_borra_nada(tmp_path):
     assert any(f["venta"] is not None for f in store.cargar_ventas())
 
 
-def test_borrar_lote_resetea_el_contador_si_la_db_queda_vacia(tmp_path):
+def test_borrar_lote_NO_resetea_el_contador_ni_con_la_db_vacia(tmp_path):
+    # [audit 2026-08-05] Antes se reseteaba el contador cuando la DB quedaba
+    # vacía de productos Y ventas. Se QUITÓ: una marca de agua no se reinicia,
+    # y su reinicio era lo único que reintroducía la reutilización de números.
     store = LoteStore(data_dir=tmp_path)
     lote_id, productos = _lote_con_productos(store, n=2, nombre="Solo")
     assert store.asignar_referencia(productos[0]) == 1
@@ -697,9 +725,30 @@ def test_borrar_lote_resetea_el_contador_si_la_db_queda_vacia(tmp_path):
 
     store.borrar_lote(lote_id)  # DB queda vacía de productos y ventas
 
-    # Un producto nuevo en un lote nuevo obtiene Ref. 1 (contador reiniciado).
+    # Un producto nuevo NO recicla el 1: la marca de agua sigue creciendo -> 3.
     _, nuevos = _lote_con_productos(store, n=1, nombre="Nuevo")
-    assert store.asignar_referencia(nuevos[0]) == 1
+    assert store.asignar_referencia(nuevos[0]) == 3
+
+
+def test_borrar_lote_publicado_sin_vender_no_reutiliza_la_ref(tmp_path):
+    # [audit 2026-08-05] El bug que motivó quitar el reset: un producto
+    # PUBLICADO (ref impresa en un anuncio externo VIVO) pero SIN vender no
+    # cuenta como venta, así que la guarda de dinero deja borrar el lote. Si el
+    # contador se reseteara al quedar la DB vacía, el siguiente producto reusaría
+    # esa ref y colisionaría con el anuncio aún vivo. Con el reset quitado, no.
+    store = LoteStore(data_dir=tmp_path)
+    lote_id, productos = _lote_con_productos(store, n=1, nombre="Publicado")
+    p = productos[0]
+    ref = store.asignar_referencia(p)  # == 1, impresa en el anuncio
+    assert ref == 1
+    store.registrar_subido(p, "wallapop", precio_elegido_cents=2000)  # anuncio VIVO
+
+    store.borrar_lote(lote_id)  # sin ventas -> la guarda de dinero deja borrar
+
+    # El nuevo producto JAMÁS obtiene la Ref. 1 que sigue viva en el anuncio.
+    _, nuevos = _lote_con_productos(store, n=1, nombre="Nuevo")
+    assert store.asignar_referencia(nuevos[0]) != 1
+    assert store.asignar_referencia(nuevos[0]) == 2
 
 
 def test_borrar_lote_no_resetea_el_contador_si_quedan_otros_productos(tmp_path):

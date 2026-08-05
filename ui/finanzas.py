@@ -204,6 +204,18 @@ def _render_marcar_vendido(store: LoteStore, pid: str, fila: dict[str, Any]) -> 
     key_plataforma = f"finanzas_{pid}_plataforma"
     opciones = _opciones_plataforma(fila)
 
+    # Aviso (NO bloqueo) si se va a vender con el coste sin informar: al marcar
+    # Vendido se CONGELA `coste_snap_cents` con el coste vivo, y si es 0 el
+    # beneficio queda fijado como el precio íntegro, sobreestimado y sin vía de
+    # corrección salvo Deshacer+revender. No se bloquea porque a veces el coste
+    # real ES 0; pero la sobreestimación no debe ser silenciosa. [audit 2026-08-05]
+    if not fila.get("coste_cents"):
+        st.caption(
+            "⚠️ Coste sin informar (0 €): al vender, el beneficio se congelará "
+            "como el precio íntegro. Si conoces el coste, ponlo en «3. Ficha» "
+            "antes de marcar Vendido."
+        )
+
     if key_precio not in st.session_state:
         st.session_state[key_precio] = _precio_auto_euros(fila)
     if key_plataforma not in st.session_state:

@@ -153,6 +153,34 @@ def test_boton_vendido_con_precio_invalido_no_rompe_y_avisa(tmp_path: Path):
     assert fila["venta"] is None
 
 
+def test_aviso_al_vender_con_coste_cero(tmp_path: Path):
+    # [audit 2026-08-05] Vender con coste vivo 0 congela un beneficio = precio
+    # íntegro (sobreestimado, sin corrección salvo deshacer+revender). Aviso
+    # suave (no bloqueo) antes de que Diego lo congele en silencio.
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote finanzas", "C:/fotos/origen")
+    pid = _crear_producto(store, lote_id, "IMG_0.jpg")
+    store.registrar_subido(pid, "wallapop", precio_elegido_cents=2000)  # coste sin informar
+
+    at = AppTest.from_function(_script, args=(str(tmp_path),)).run()
+    assert not at.exception, at.exception
+    captions = " ".join(c.value for c in at.caption)
+    assert "Coste sin informar" in captions
+
+
+def test_sin_aviso_de_coste_cuando_el_coste_esta_informado(tmp_path: Path):
+    store = LoteStore(data_dir=tmp_path)
+    lote_id = store.crear_lote("Lote finanzas", "C:/fotos/origen")
+    pid = _crear_producto(store, lote_id, "IMG_0.jpg")
+    store.guardar_coste(pid, 500)  # coste informado -> sin aviso
+    store.registrar_subido(pid, "wallapop", precio_elegido_cents=2000)
+
+    at = AppTest.from_function(_script, args=(str(tmp_path),)).run()
+    assert not at.exception, at.exception
+    captions = " ".join(c.value for c in at.caption)
+    assert "Coste sin informar" not in captions
+
+
 # ============================================================================
 # 3. "Deshacer venta" -> el store ya no tiene la venta.
 # ============================================================================

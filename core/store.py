@@ -546,14 +546,16 @@ class LoteStore:
             conn.execute("DELETE FROM productos WHERE lote_id = ?", (lote_id,))
             conn.execute("DELETE FROM lotes WHERE id = ?", (lote_id,))
 
-            # RESET del contador SOLO si la base queda del todo vacía de
-            # productos Y ventas (nada puede tener ya una ref viva impresa).
-            quedan_productos = conn.execute(
-                "SELECT COUNT(*) AS n FROM productos"
-            ).fetchone()["n"]
-            quedan_ventas = conn.execute("SELECT COUNT(*) AS n FROM ventas").fetchone()["n"]
-            if not quedan_productos and not quedan_ventas:
-                conn.execute("DELETE FROM sqlite_sequence WHERE name = 'referencia_seq'")
+            # NO se resetea `referencia_seq`. La versión anterior lo reseteaba
+            # cuando la DB quedaba vacía de productos Y ventas, con el comentario
+            # "nada puede tener ya una ref viva impresa" -- FALSO: un producto
+            # PUBLICADO y no vendido (fila en `publicaciones`) tiene su ref
+            # impresa en un anuncio externo VIVO y no cuenta como venta, así que
+            # el reset la reutilizaría y el siguiente producto colisionaría con
+            # ese anuncio ([audit 2026-08-05], clase §17/§19: afirmación de
+            # seguridad que no se ejecutó). Una marca de agua AUTOINCREMENT no
+            # necesita reiniciarse: dejarla crecer siempre es lo que garantiza
+            # que borrar NUNCA reutiliza un número (el invariante nombrado).
 
         # Disco DESPUÉS del commit: la DB es el estado de verdad.
         carpeta = self.lotes_dir / lote_id
@@ -1371,6 +1373,15 @@ class LoteStore:
                     referencia = venta_row["referencia_snap"] if venta_row else None
                     titulo = venta_row["titulo_snap"] if venta_row else None
                     coste_cents = venta_row["coste_snap_cents"] if venta_row else 0
+
+                # El coste que se MUESTRA en el ledger DEBE salir del snapshot
+                # cuando hay venta: el beneficio se calcula con `coste_snap_cents`
+                # (abajo), asi que enseñar el coste VIVO del producto deja el
+                # informe INCOHERENTE (Precio - Coste != Beneficio) en cuanto
+                # Diego edita el coste tras vender. Sin venta se muestra el coste
+                # vivo (no hay economia de venta que congelar). [audit 2026-08-05]
+                if venta_row is not None:
+                    coste_cents = venta_row["coste_snap_cents"]
 
                 publicaciones = [
                     {
