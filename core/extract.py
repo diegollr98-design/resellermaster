@@ -1779,9 +1779,19 @@ ESQUEMA_SINTESIS_FICHA: dict = {
         # "genero" (2026-07-21, fast-follow de "tipo"): ESPEJO de
         # "categoria", pero NULLABLE -- a diferencia de categoria, el
         # producto puede legitimamente NO TENER genero (un masajeador),
-        # asi que `None` es un valor valido dentro del enum, no una
-        # ausencia de respuesta.
-        "genero": {"type": ["string", "null"], "enum": [*GENEROS, None]},
+        # asi que `None` es un valor valido, no una ausencia de respuesta.
+        #
+        # NULLABLE se expresa con `anyOf` (una rama enum-string + una rama
+        # null), NUNCA con `type: ["string","null"]` + `enum`: el validador
+        # de structured outputs de Anthropic RECHAZA esa union con un 400
+        # ("Enum value 'hombre' does not match declared type ['string','null']")
+        # -- valida cada valor del enum contra el `type`-array literal y ningun
+        # string casa. Es determinista, se dispara en TODA sintesis (era el 400
+        # que Diego veia, distinto del 429 de la rafaga de crops). `anyOf` SI
+        # esta soportado por structured outputs; el `type`-array+`enum` no.
+        # El guard `test_esquema_sintesis_sin_type_array_con_enum` fija esta
+        # regla para que ningun campo enum+nullable futuro reintroduzca el 400.
+        "genero": {"anyOf": [{"type": "string", "enum": list(GENEROS)}, {"type": "null"}]},
         "estado": _esquema_estado_sintesis(),
         "tipo": _esquema_tipo_sintesis(),
         "titulo": {"type": "string"},

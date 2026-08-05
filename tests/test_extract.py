@@ -752,6 +752,38 @@ class TestMedidasYDesperfectosFueraDeLaSintesis:
         assert "medidas" not in ESQUEMA_SINTESIS_FICHA["properties"]
         assert "medidas" not in ESQUEMA_SINTESIS_FICHA["required"]
 
+    def test_esquema_sintesis_sin_type_array_con_enum(self):
+        """Guard de la CLASE del 400 que Diego vio al re-extraer: structured
+        outputs de Anthropic RECHAZA con status 400 cualquier campo que declare
+        `type` como ARRAY (p.ej. `["string","null"]`) *y* un `enum` a la vez
+        ("Enum value 'hombre' does not match declared type ['string','null']").
+        Es determinista (se dispara en TODA sintesis) y ningun test de estructura
+        lo cazaba porque `_MotorFake` ignora el json_schema y nunca lo manda a la
+        API real. Nullable+enum se expresa con `anyOf`, no con la union en `type`.
+
+        Recorre TODO el esquema (los sub-esquemas de estado/tipo/campos tambien)
+        para que un campo enum+nullable futuro no reintroduzca el 400 en silencio."""
+
+        def _recorre(nodo, ruta="raiz"):
+            if not isinstance(nodo, dict):
+                return
+            tipo = nodo.get("type")
+            if isinstance(tipo, list) and "enum" in nodo:
+                raise AssertionError(
+                    f"{ruta}: `type` array {tipo} + `enum` -> 400 de structured "
+                    f"outputs. Usa anyOf: [{{type:string, enum:[...]}}, {{type:null}}]."
+                )
+            for clave in ("properties", "$defs", "definitions"):
+                for sub_nombre, sub in (nodo.get(clave) or {}).items():
+                    _recorre(sub, f"{ruta}.{clave}.{sub_nombre}")
+            for clave in ("anyOf", "allOf", "oneOf"):
+                for i, sub in enumerate(nodo.get(clave) or []):
+                    _recorre(sub, f"{ruta}.{clave}[{i}]")
+            if isinstance(nodo.get("items"), dict):
+                _recorre(nodo["items"], f"{ruta}.items")
+
+        _recorre(ESQUEMA_SINTESIS_FICHA)
+
 
 # Palabras REALES de packaging espanol contra las que se MIDIO el umbral
 # fuzzy del marcador (no elegido a ojo) -- ver el comentario de
