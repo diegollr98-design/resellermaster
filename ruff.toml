@@ -1,0 +1,13 @@
+# Politica de lint EXPLICITA, a proposito.
+#
+# Este repo no declaraba ninguna, asi que `ruff check .` significaba "lo que
+# la version instalada considere por defecto" -- y eso cambia entre releases:
+# ruff 0.15 daba 0 errores y 0.16 daba 100 sobre el MISMO codigo, porque
+# amplio su seleccion por defecto (RUF/I/SIM/UP/DTZ/BLE/PLR/ISC/B).
+#
+# Un gate cuyo significado cambia solo, sin que nadie decida nada, no es un
+# gate. Aqui se fija el conjunto clasico (pycodestyle E4/E7/E9 + pyflakes F),
+# que es el que este codigo ha cumplido siempre. Ampliarlo es una decision
+# deliberada, no un efecto secundario de actualizar una dependencia.
+[lint]
+select = ["E4", "E7", "E9", "F"]
