@@ -1,16 +1,20 @@
 # RESELLERMASTER
 
 **Entra un lote de fotos mezcladas de ropa y trastos de segunda mano. Salen fichas listas para pegar
-en Wallapop y Vinted — y la app no afirma ni un solo dato que no pueda señalar en un píxel.**
+en Wallapop y Vinted — y ningún campo dice venir de una foto sin que un `if` haya comprobado el
+píxel que lo prueba.**
 
-![Pantalla de ficha: cada campo con su recorte, su procedencia y su nivel de confianza](docs/img/ficha.png)
+![Pantalla de ficha: `marca` sale como 🧠 inferido con confianza baja; `modelo` y `ean` como 📷 leído en foto, cada uno junto al recorte exacto del que se leyó](docs/img/ficha.png)
+
+<sub>Tres campos del mismo producto: `marca` es una **conjetura marcada** (🧠, confianza baja, *«sin etiqueta que lo respalde»*), mientras que `modelo` y `ean` están **leídos de un píxel concreto** (📷) y el recorte que lo prueba está ahí al lado. El `ean` es el único campo del sistema que puede llegar a `confianza alta`, y sólo porque su checksum GS1 lo verifica.</sub>
 
 > **EN — TL;DR.** A local single-user Streamlit app for second-hand resale. It ingests a batch of mixed
 > photos, groups them per product (human confirms), reads the attributes with OCR + a vision model, and
 > produces copy-paste-ready listings for two Spanish marketplaces. The point isn't the automation — it's
 > the **guardrail**: every field carries its provenance (`foto` / `inferido` / `diego`), and a field
-> claiming to come from a photo **cannot be constructed without the pixel that proves it** — it raises at
-> construction time. Prices never come from the model; they come from observed comparables or they don't
+> claiming to come from a photo **cannot be constructed without the pixel that proves it** — it raises in
+> `__post_init__`. (Scope, stated honestly: that guards construction, which is how everything the pipeline
+> produces gets in; it is not a global invariant.) Prices never come from the model; they come from observed comparables or they don't
 > come at all. Code, docs and commit history are in Spanish.
 
 ---
@@ -56,8 +60,8 @@ if self.fuente == "foto" and self.evidencia is None:
     )
 ```
 
-Un campo que dice venir de la foto sin el píxel que lo respalda **no es que esté desaconsejado: es
-inconstruible**. Y `fuente="foto"` sólo se asigna si el valor está *literalmente contenido* en el texto
+Un campo que dice venir de la foto sin el píxel que lo respalda **no está desaconsejado: no se puede
+construir**. Y `fuente="foto"` sólo se asigna si el valor está *literalmente contenido* en el texto
 legible del recorte citado — no basta con que la cita exista
 ([`core/extract.py::_construir_campo_desde_sintesis`](core/extract.py)). Esa distinción costó un veredicto
 bloqueante en una auditoría interna: el modelo podía **extender** una lectura real (`"Reebok"` →
@@ -66,21 +70,13 @@ bloqueante en una auditoría interna: el modelo podía **extender** una lectura 
 Quien afirma, al final, es el humano: Diego revisa cada campo **con el recorte al lado** y confirma, y ahí
 la `fuente` pasa a `diego`. La máquina propone y enseña el píxel; la persona cierra.
 
-## Sobre leer los precios de Wallapop
-
-`core/pricing.py` hace peticiones **de lectura** a la búsqueda pública de Wallapop para calcular la mediana
-de comparables. Las condiciones están escritas en las reglas del repo
-([`.claude/rules/architecture.md`](.claude/rules/architecture.md)) y se respetan en el código:
-
-- **Leer resultados públicos ≠ publicar.** Nunca se toca una cuenta, no se publica, no se edita, no se
-  mensajea. Cero escritura.
-- **Volumen doméstico**: ~7 productos por lote, pocos lotes al mes — menos peticiones que una persona
-  navegando.
-- **Prohibidas las herramientas *stealth*.** Sin proxies rotativos, sin fingerprints, sin evasión
-  anti-bot. Es un `GET` plano. Vinted se quedó fuera precisamente por eso: su búsqueda está tras Datadome
-  y no se intentó rodearlo.
-
-Si vas a reutilizar esto, la disciplina va con el código.
+**Hasta dónde llega esa garantía, dicho sin adornos.** El `if` protege la *construcción*, que es por donde
+entra todo lo que produce el pipeline. No es un invariante global: `Campo` es un dataclass mutable, así que
+alguien puede construirlo bien y reasignar `fuente` después; y al persistir, `deserializar_extraccion`
+devuelve dicts, no `Campo`s, de modo que un registro manipulado a mano en la base de datos no vuelve a pasar
+por el `if`. Hoy nadie escribe por esas vías —sólo escribe el pipeline, que sí construye `Campo`s— así que
+es un hueco de defensa en profundidad, no un fallo vivo. Pero es una propiedad de una función, no del
+sistema entero, y decirlo de más sería justo el tipo de afirmación que este repo existe para no hacer.
 
 ## Cómo correrlo
 
@@ -103,14 +99,31 @@ Para levantar la app: `streamlit run app.py`. Agrupar y curar es gratis y offlin
 atributos necesita una `ANTHROPIC_API_KEY` en `.env` (ver [`.env.example`](.env.example)) y cuesta
 céntimos, cacheados por hash de imagen.
 
+## Sobre leer los precios de Wallapop
+
+`core/pricing.py` hace peticiones **de lectura** a la búsqueda pública de Wallapop para calcular la mediana
+de comparables. Las condiciones están escritas en las reglas del repo
+([`.claude/rules/architecture.md`](.claude/rules/architecture.md)) y se respetan en el código:
+
+- **Leer resultados públicos ≠ publicar.** Nunca se toca una cuenta, no se publica, no se edita, no se
+  mensajea. Cero escritura.
+- **Volumen doméstico**: ~7 productos por lote, pocos lotes al mes — menos peticiones que una persona
+  navegando.
+- **Prohibidas las herramientas *stealth*.** Sin proxies rotativos, sin fingerprints, sin evasión
+  anti-bot. Es un `GET` plano. Vinted se quedó fuera precisamente por eso: su búsqueda está tras Datadome
+  y no se intentó rodearlo.
+
+Si vas a reutilizar esto, la disciplina va con el código.
+
 ## Los números, y de dónde sale cada uno
 
 Este repo trata la procedencia de un dato de la ficha con dureza, así que la misma vara se aplica aquí:
 
 | Dato | Valor | Procedencia |
 |---|---|---|
-| Alucinaciones sobre 33 fotos reales | **0** | **Medido** con la API real. Se abstiene en las 6 trampas ilegibles del golden set |
-| Coste por producto | **3,4 cts** (0 al reprocesar) | **Medido** — sale de `LLMEngine.estimar_coste_lote` sobre el pipeline real, no de una estimación a ojo |
+| Alucinaciones con `confianza=alta` sobre 33 fotos reales | **0** | **Medido** con la API real — pero léelo con su límite: `alta` es casi inalcanzable **por diseño** (sólo la da un checksum de EAN; el `json_schema` de la síntesis ni admite el literal). El 0 es sobre todo una consecuencia estructural, no un resultado empírico sorprendente. Las de confianza media/baja se imprimen pero no se asertan |
+| Coste por producto, **facturado** | **14,5 cts** el lote de 62 llamadas · **0,95 cts** un producto completo con síntesis · **0** al reprocesar (caché) | **Medido**: es lo que cobró la API |
+| Coste por producto, **estimado a priori** | ~3,4 cts | **Estimado**, y sobreestima ~1,3×. Sale de `LLMEngine.estimar_coste_lote`, que multiplica una constante de 1.600 tokens/imagen y **no llama a la API** — existe para enseñar el coste ANTES de lanzar un lote, no para medirlo |
 | Export de un producto con la app | **~210 s** | **Medido**, cronómetro, **n=1** |
 | Export de un producto a mano | ~285 s | **Estimado** por un panel de agentes. **Nunca cronometrado.** El ahorro es real pero el lado manual no está medido |
 | Umbral de agrupación | **15 s** | **Medido**: barrido de 5 a 30 s sobre las 33 fotos. Zona segura 1-23 s, acantilado en 24 s |
@@ -131,6 +144,23 @@ Tres cosas están centralizadas a propósito, y nada las saltea:
    declarativo. El modelo **rellena un esquema**; no inventa campos ni se olvida de los obligatorios.
    Wallapop y Vinted no coinciden en los literales de estado ni en las tallas, así que hay tablas de
    mapeo con **signo**: presentar el producto peor de lo que es es seguro; mejor, es una devolución.
+
+## La persistencia, que es donde vive el dinero
+
+`core/store.py` (SQLite + disco) tiene tres decisiones que no son obvias y que existen porque el fallo caro
+aquí es **perder o corromper**, no petar:
+
+- **El beneficio de una venta se congela al venderla.** El coste se copia a `coste_snap_cents` en el
+  momento de la venta, así que editar el coste del producto después **no reescribe el histórico**. Probado
+  a mano: cambiar el coste tras vender no altera el beneficio ya registrado.
+- **El número de referencia es una marca de agua**, no un `MAX()+1`: una tabla `AUTOINCREMENT` propia. Si
+  borras o archivas un producto, su número **no se reutiliza** — el que está impreso en un anuncio vivo
+  sigue siendo único.
+- **El dinero vive en columnas propias**, fuera del JSON `campos` que `guardar_extraccion` sobreescribe
+  entero. Y `borrar_lote` **se bloquea** si el lote tiene ventas, antes de tocar el disco.
+
+`st.session_state` es una caché, nunca la verdad: el estado del lote se escribe a disco, porque un rerun de
+Streamlit no puede costar dos horas de curado.
 
 ## Lo que decidí NO construir (y por qué, con el dato)
 

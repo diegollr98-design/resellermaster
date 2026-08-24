@@ -1,8 +1,24 @@
+# VERSIONES CLAVADAS, a proposito.
+#
+# El README publica un numero exacto -- "deberias ver 890 passed, 15 skipped" --
+# y esa promesa solo es verdad si quien clona instala lo mismo que se verifico.
+# Con rangos abiertos no lo era: el CI instalaba lo ultimo y salian 6 fallos en
+# `tests/test_ficha.py` que NO eran bugs de la app, sino un cambio de
+# comportamiento de `AppTest` entre streamlit 1.57 (local) y 1.62 (CI). Por el
+# mismo camino entraba `anthropic` 1.0.0 frente al 0.100.0 verificado: un salto
+# de major en la unica costura que habla con el proveedor, sin que nadie lo
+# decidiera.
+#
+# "Funciona en mi maquina" era literalmente cierto y ese era el problema. Estas
+# son las versiones contra las que se verifico la suite; subirlas es una
+# decision con su pasada de pruebas, no un efecto colateral de la fecha en que
+# alguien hace `pip install`.
+#
 # Fase 1 — cero dependencias de red POR PRODUCTO, cero APIs de pago.
-streamlit>=1.40
-Pillow>=11.0
-pillow-heif>=0.20          # fotos .heic del iPhone
-ImageHash>=4.3             # hash perceptual (deteccion de duplicados en core/images.py)
+streamlit==1.57.0
+Pillow==12.1.1
+pillow-heif==1.4.0          # fotos .heic del iPhone
+ImageHash==4.3.2             # hash perceptual (deteccion de duplicados en core/images.py)
 
 # core/extract.py usa numpy para el analisis y recorte de imagen.
 #
@@ -11,22 +27,22 @@ ImageHash>=4.3             # hash perceptual (deteccion de duplicados en core/im
 # medido sobre 33 fotos reales) y no mira un solo pixel. CLIP se midio y se
 # DESCARTO -- daba 0.90 de similitud entre dos sudaderas DISTINTAS, `[INC-004]`.
 # Eran ~2 GB de dependencia muerta que se tragaba cualquiera que clonase.
-numpy>=1.24
+numpy==2.4.3
 
 # Fase 2 — COSTURA 1 (core/llm.py): unico SDK de proveedor permitido en todo
 # el repo, y solo detras de esa costura. Haiku 4.5 con vision (~0,2 cts/foto,
 # cacheado por hash) — ver docstring de core/llm.py y architecture.md.
-anthropic>=0.40
+anthropic==0.100.0
 
 # Fase 2 — core/extract.py: "el OCR LOCALIZA. El VLM LEE." OCR local, CPU,
 # gratis, cero llamadas a proveedor. Instancia perezosa (solo se carga la
 # primera vez que hace falta localizar texto de verdad) — un test que
 # mockea el OCR no descarga ni carga nada.
-rapidocr-onnxruntime>=1.2
+rapidocr-onnxruntime==1.2.3
 
 # Fase 5 FINANZAS (core/finanzas.py): export a Excel del ledger de ventas.
 # El .xlsx es un INFORME (SQLite sigue siendo la verdad) -- ver su docstring.
-openpyxl>=3.1
+openpyxl==3.1.5
 
 # Dev
 #
@@ -35,6 +51,6 @@ openpyxl>=3.1
 # `anthropic`, asi que en la maquina de Diego la suite pasaba sin declararlo y
 # en un entorno limpio moria al recolectar. Una dependencia directa se declara,
 # aunque otra te la instale de rebote.
-httpx>=0.27
-pytest>=8.0
-ruff>=0.8
+httpx==0.28.1
+pytest==9.0.3
+ruff==0.15.21
