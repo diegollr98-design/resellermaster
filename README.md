@@ -61,11 +61,14 @@ if self.fuente == "foto" and self.evidencia is None:
 ```
 
 Un campo que dice venir de la foto sin el píxel que lo respalda **no está desaconsejado: no se puede
-construir**. Y `fuente="foto"` sólo se asigna si el valor está *literalmente contenido* en el texto
-legible del recorte citado — no basta con que la cita exista
-([`core/extract.py::_construir_campo_desde_sintesis`](core/extract.py)). Esa distinción costó un veredicto
-bloqueante en una auditoría interna: el modelo podía **extender** una lectura real (`"Reebok"` →
-`"Reebok Classic 100% algodón"`) y colarla como leída.
+construir**. Y `fuente="foto"` sólo se asigna si el valor aparece **como token completo** en el texto
+legible del recorte citado — no basta con que la cita exista, ni con que el valor sea una subcadena
+cualquiera ([`core/extract.py::_construir_campo_desde_sintesis`](core/extract.py)). Esa distinción costó
+un veredicto bloqueante en una auditoría interna: el modelo podía **extender** una lectura real
+(`"Reebok"` → `"Reebok Classic 100% algodón"`) y colarla como leída. Y una auditoría externa encontró
+después que la comprobación seguía siendo una subcadena desnuda, así que una talla de una letra pasaba
+contra una etiqueta que no la dice (`"M"` dentro de `"ORIGINAL MARINES"`): por eso ahora se exige el
+token, con su test.
 
 Quien afirma, al final, es el humano: Diego revisa cada campo **con el recorte al lado** y confirma, y ahí
 la `fuente` pasa a `diego`. La máquina propone y enseña el píxel; la persona cierra.
@@ -87,12 +90,12 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-**Qué deberías ver: `891 passed, 15 skipped`, en menos de un minuto, sin API key y sin cuenta en ningún
+**Qué deberías ver: `892 passed, 15 skipped`, en menos de un minuto, sin API key y sin cuenta en ningún
 sitio.**
 
 Los 15 saltados son deliberados y lo dicen en voz alta: el golden set versiona el *ground truth*
 ([`tests/golden/*.json`](tests/golden/)) pero **no las fotos**, que son mercancía real de Diego y están
-gitignored. En su máquina la suite da `905 passed, 1 skipped`. Un skip es visible; un test que pasara sin
+gitignored. En su máquina la suite da `906 passed, 1 skipped`. Un skip es visible; un test que pasara sin
 los datos mentiría.
 
 Para levantar la app: `streamlit run app.py`. Agrupar y curar es gratis y offline; la extracción de
@@ -185,7 +188,7 @@ parte del repo, no un anexo:
 
 - [`CLAUDE.md`](CLAUDE.md) y [`.claude/rules/`](.claude/rules/) — las reglas que gobiernan el trabajo. La
   central es [`truth-loop.md`](.claude/rules/truth-loop.md): cómo se impide que el pipeline invente.
-- [`.claude/incident-ledger.md`](.claude/incident-ledger.md) — **32 incidentes propios**, append-only, con
+- [`.claude/incident-ledger.md`](.claude/incident-ledger.md) — **36 incidentes propios**, append-only, con
   evidencia y clase. No es un diario de bugs: es de dónde salen las reglas. Dos que valen la pena:
   - **`[INC-031]`** — 900 tests en verde no vieron que la síntesis fallaba con un 400 de esquema en *toda*
     re-extracción, porque los tests mockean el motor y descartan el `json_schema` que nunca llega a la API

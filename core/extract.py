@@ -2435,6 +2435,39 @@ def _indexar_candidatos_por_texto(lecturas: Sequence[LecturaCrop]) -> dict[str, 
     return indice
 
 
+# Caracteres que "pegan" a un token: si el valor va rodeado de estos, esta
+# INCRUSTADO en otra palabra, no es la palabra. Se incluyen los acentuados
+# porque el texto de una etiqueta viene en espanol.
+_PEGADO_AL_TOKEN = r"0-9a-zA-ZáéíóúüñÁÉÍÓÚÜÑ"
+
+
+def _valor_aparece_como_token(valor: str, texto: str) -> bool:
+    """El VALOR esta en el pixel como TOKEN completo, no incrustado en otra palabra.
+
+    Antes esto era un `in` de subcadena, y para un valor de 1-2 letras -- que es
+    justo lo que son las TALLAS -- no comprobaba casi nada: `"M" in "original
+    marines"` es True, asi que una talla podia salir con `fuente="foto"` y su
+    badge senalando un recorte que NO dice esa talla. Con `ORIGINAL MARINES` y
+    `LOONEY TUNES`, que estan en el golden set real, el guard era vacuo justo
+    donde mas se usa.
+
+    Es `[INC-024]` (calibrar contra el vocabulario real que puede colisionar, no
+    contra una palabra comoda) y `SS 17` (la garantia comprueba lo que promete,
+    no un proxy): el README afirma que `fuente="foto"` exige el valor
+    "literalmente contenido" en el recorte, y una subcadena dentro de otra
+    palabra no es eso para ningun lector.
+
+    Sigue siendo contencion, no igualdad: "Reebok" contra un crop que lee
+    "Reebok Classic" es legible de verdad y debe seguir contando como foto.
+    """
+    v = valor.strip().lower()
+    t = texto.strip().lower()
+    if not v:
+        return False
+    patron = rf"(?<![{_PEGADO_AL_TOKEN}]){re.escape(v)}(?![{_PEGADO_AL_TOKEN}])"
+    return re.search(patron, t) is not None
+
+
 def _construir_campo_desde_sintesis(
     decision: dict[str, Any],
     indice_candidatos: dict[str, LecturaCrop],
@@ -2481,7 +2514,7 @@ def _construir_campo_desde_sintesis(
     valor_en_el_pixel = (
         candidato is not None
         and candidato.texto is not None
-        and valor.strip().lower() in candidato.texto.strip().lower()
+        and _valor_aparece_como_token(valor, candidato.texto)
     )
 
     if decision["visible_en_foto"] and ubicacion_publicable and valor_en_el_pixel:

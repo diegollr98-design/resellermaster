@@ -2649,6 +2649,52 @@ def test_sintesis_fuente_foto_exige_que_el_valor_este_en_el_pixel():
     assert campo.fuente == "inferido", "un valor que no esta en el crop no es fuente=foto"
 
 
+def test_sintesis_fuente_foto_no_acepta_una_subcadena_dentro_de_otra_palabra():
+    """El guard era un `in` de SUBCADENA, y para un valor de 1-2 letras -- que
+    es justo lo que son las TALLAS -- no comprobaba practicamente nada:
+    `"M" in "original marines"` es True, asi que una talla salia con badge
+    "leido en foto" señalando un recorte que NO dice la talla.
+
+    Los tres textos de abajo no son inventados: `ORIGINAL MARINES` y
+    `LOONEY TUNES` estan en el golden set real (tests/golden/legibilidad.json).
+    Es `[INC-024]` otra vez -- calibrar contra el vocabulario real que puede
+    colisionar, no contra la longitud de una palabra comoda -- y `SS 17`: la
+    garantia tiene que comprobar lo que promete, no un proxy correlacionado.
+
+    Regla: el valor tiene que aparecer como TOKEN completo, no incrustado
+    dentro de otra palabra."""
+    from core.extract import LecturaCrop, _construir_campo_desde_sintesis
+
+    def campo_para(valor: str, texto_crop: str):
+        cand = LecturaCrop(
+            fichero="IMG.jpg", bbox=(1, 2, 3, 4), legible=True, pertenece_al_producto=True,
+            ubicacion="etiqueta_interior", contenido_probable="talla", texto=texto_crop,
+        )
+        decision = {
+            "valor": valor, "visible_en_foto": True,
+            "de_texto_detectado": texto_crop, "confianza": "media",
+        }
+        campo, _ = _construir_campo_desde_sintesis(decision, {texto_crop.strip().lower(): cand}, None)
+        return campo
+
+    # --- lo que NO puede pasar: el valor va dentro de otra palabra ---
+    for valor, texto in [("M", "ORIGINAL MARINES"), ("S", "SUDADERA"), ("L", "LOONEY TUNES")]:
+        campo = campo_para(valor, texto)
+        assert campo.fuente == "inferido", (
+            f"talla {valor!r} contra un recorte que dice {texto!r} NO es 'leido en foto': "
+            "esta dentro de otra palabra, la etiqueta no dice esa talla"
+        )
+        assert campo.confianza == "baja"
+
+    # --- lo que SI tiene que seguir pasando: token completo ---
+    for valor, texto in [("XXL", "TALLA XXL"), ("M", "Talla M"), ("LLLT-200", "Model: LLLT-200"),
+                         ("Reebok", "Reebok Classic")]:
+        campo = campo_para(valor, texto)
+        assert campo.fuente == "foto", (
+            f"{valor!r} SI esta como token en {texto!r}: degradarlo seria perder cobertura real"
+        )
+
+
 # ============================================================================
 # REDACCION DESDE CAMPOS CONFIRMADOS (2026-07-17, fix del bug de Diego:
 # "la descripcion no menciona la CREMALLERA ROTA" -- ver el docstring de la
