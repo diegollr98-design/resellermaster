@@ -6,6 +6,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Minimo privilegio: este workflow solo lee el codigo y corre la suite. No
+# publica, no comenta, no toca releases. En un repo publico el default del
+# GITHUB_TOKEN puede ser mas amplio de lo que hace falta, y un workflow que
+# puede escribir es superficie de ataque que este no necesita.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
