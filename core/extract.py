@@ -2435,14 +2435,8 @@ def _indexar_candidatos_por_texto(lecturas: Sequence[LecturaCrop]) -> dict[str, 
     return indice
 
 
-# Caracteres que "pegan" a un token: si el valor va rodeado de estos, esta
-# INCRUSTADO en otra palabra, no es la palabra. Se incluyen los acentuados
-# porque el texto de una etiqueta viene en espanol.
-_PEGADO_AL_TOKEN = r"0-9a-zA-ZáéíóúüñÁÉÍÓÚÜÑ"
-
-
 def _valor_aparece_como_token(valor: str, texto: str) -> bool:
-    """El VALOR esta en el pixel como TOKEN completo, no incrustado en otra palabra.
+    r"""El VALOR esta en el pixel como TOKEN completo, no incrustado en otra palabra.
 
     Antes esto era un `in` de subcadena, y para un valor de 1-2 letras -- que es
     justo lo que son las TALLAS -- no comprobaba casi nada: `"M" in "original
@@ -2459,13 +2453,31 @@ def _valor_aparece_como_token(valor: str, texto: str) -> bool:
 
     Sigue siendo contencion, no igualdad: "Reebok" contra un crop que lee
     "Reebok Classic" es legible de verdad y debe seguir contando como foto.
+
+    La frontera de palabra se DERIVA de `\w`, no se escribe a mano. La primera
+    version de este guard listaba los acentos a ojo
+    (`0-9a-zA-Z` + los del espanol) y el `listing-audit` la tumbo: 31 de 33
+    letras no-ASCII probadas quedaban FUERA de la lista, asi que volvian a
+    actuar como frontera y el agujero se reabria con otra letra --
+    `"M"` contra `"MAXIM"` daba `inferido`, pero contra `"MAXIM"` con A
+    acentuada daba `foto`. Y es alcanzable: el producto 7 del golden set es una
+    marca italiana, y las etiquetas de cuidado de la UE son multilingues por
+    normativa. El `_` tambien colaba (`"UDS"` dentro de `"THO8LASLHR_UDS"`),
+    y `\w` lo cubre.
+
+    Es `[INC-026]` / `SS 4`: una constante que debe COINCIDIR con la salida de
+    una funcion --aqui, "que es un caracter de palabra"-- se deriva aplicandola,
+    nunca se escribe a ojo. Se colo dentro del propio fix de `[INC-024]`.
+
+    Los espacios se normalizan en ambos lados: la etiqueta de cuello del
+    producto 4 es de TRES lineas, asi que `"JACK & JONES"` contra un recorte
+    transcrito con salto de linea es cobertura legitima que no se puede perder.
     """
-    v = valor.strip().lower()
-    t = texto.strip().lower()
+    v = re.sub(r"\s+", " ", valor.strip().lower())
+    t = re.sub(r"\s+", " ", texto.strip().lower())
     if not v:
         return False
-    patron = rf"(?<![{_PEGADO_AL_TOKEN}]){re.escape(v)}(?![{_PEGADO_AL_TOKEN}])"
-    return re.search(patron, t) is not None
+    return re.search(rf"(?<!\w){re.escape(v)}(?!\w)", t) is not None
 
 
 def _construir_campo_desde_sintesis(

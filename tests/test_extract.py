@@ -2694,6 +2694,37 @@ def test_sintesis_fuente_foto_no_acepta_una_subcadena_dentro_de_otra_palabra():
             f"{valor!r} SI esta como token en {texto!r}: degradarlo seria perder cobertura real"
         )
 
+    # --- el vocabulario INCOMODO: la primera version de este guard escribio la
+    # frontera de palabra A OJO (0-9a-zA-Z + los acentos del espanol) y el
+    # listing-audit la tumbo: 31 de 33 letras no-ASCII quedaban fuera de la
+    # lista y reabrian el agujero con otra letra. Es [INC-026] colandose dentro
+    # del fix de [INC-024], y el test original lo dejo pasar porque calibraba
+    # contra ASCII, que es el vocabulario COMODO. La frontera se DERIVA de \w.
+    for valor, texto in [
+        ("M", "MÀXIM"),                    # italiano/catalan
+        ("S", "SÈCHAGE EN TAMBOUR"),       # frances: etiqueta de cuidado UE
+        ("M", "MÊME COULEUR"),
+        ("S", "SÃO PAULO"),                # portugues
+        ("S", "SØLV"),                     # nordico
+        ("M", "MÜNCHEN"),                  # aleman
+        ("UDS", "THO8LASLHR_UDS *8445061029720"),  # el guion bajo tambien pega
+    ]:
+        campo = campo_para(valor, texto)
+        assert campo.fuente == "inferido", (
+            f"{valor!r} dentro de {texto!r} sigue estando INCRUSTADO en otra palabra: "
+            "una letra no-ASCII no es una frontera de palabra"
+        )
+
+    # --- cobertura legitima que NO se puede perder: la etiqueta de cuello del
+    # producto 4 del golden set es de TRES lineas -> los espacios se normalizan.
+    salto = chr(10)
+    for valor, texto in [("JACK & JONES", f"JACK &{salto}JONES{salto}EST. 1990"),
+                         ("ORIGINAL MARINES", "ORIGINAL  MARINES")]:
+        campo = campo_para(valor, texto)
+        assert campo.fuente == "foto", (
+            f"{valor!r} SI esta en {texto!r}: un salto de linea del OCR no puede costar cobertura"
+        )
+
 
 # ============================================================================
 # REDACCION DESDE CAMPOS CONFIRMADOS (2026-07-17, fix del bug de Diego:
