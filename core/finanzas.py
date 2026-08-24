@@ -126,6 +126,31 @@ def _texto_subido(fila: dict[str, Any]) -> str:
     )
 
 
+# Excel/LibreOffice interpretan como FORMULA cualquier celda de texto que
+# empiece por = + - @ (o por un control de tabulacion/retorno). El titulo de
+# una ficha es texto libre, asi que un titulo que empiece por "=" se ejecuta al
+# abrir el .xlsx en vez de leerse. Es la clase "CSV/Excel injection", y aqui no
+# es teorica: `Titulo` sale de la sintesis y de lo que Diego teclea.
+#
+# Riesgo real bajo -- es un fichero que genera Diego con sus propios datos y
+# que abre el -- pero el repo YA tiene un sanitizador con dientes para el texto
+# que va a las plataformas (`schema.validar_texto`); que la hoja de calculo no
+# tuviera ninguno era una incoherencia, no una decision. Se antepone una
+# comilla simple, que es la forma estandar: Excel la consume al mostrar, asi
+# que el valor se LEE igual y deja de ejecutarse.
+_ARRANQUES_PELIGROSOS = ("=", "+", "-", "@", chr(9), chr(13))
+
+
+def _neutralizar_formula(valor: Any) -> Any:
+    """Impide que una celda de TEXTO se interprete como formula al abrirla.
+
+    Solo toca cadenas: los numeros y las fechas se escriben tal cual, porque no
+    hay forma de que un float arranque una formula.
+    """
+    if isinstance(valor, str) and valor.startswith(_ARRANQUES_PELIGROSOS):
+        return "'" + valor
+    return valor
+
 def _fila_a_columnas(fila: dict[str, Any]) -> list[Any]:
     venta = fila.get("venta")
     if venta is None:
@@ -176,7 +201,7 @@ def exportar_excel(filas: list[dict[str, Any]], destino: str | Path) -> Path:
     hoja.title = "Finanzas"
     hoja.append(list(_COLUMNAS))
     for fila in filas:
-        hoja.append(_fila_a_columnas(fila))
+        hoja.append([_neutralizar_formula(v) for v in _fila_a_columnas(fila)])
     libro.save(destino)
     return destino
 

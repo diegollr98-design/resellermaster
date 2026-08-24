@@ -219,3 +219,47 @@ def test_exportar_excel_crea_directorio_padre(tmp_path: Path):
 def test_nombre_export_por_defecto_incluye_la_fecha():
     momento = datetime(2026, 7, 21, 12, 0, tzinfo=timezone.utc)
     assert nombre_export_por_defecto(momento) == "finanzas_2026-07-21.xlsx"
+
+
+def test_export_xlsx_neutraliza_formulas(tmp_path):
+    """Un titulo que empieza por `=` NO puede acabar como formula en el .xlsx.
+
+    Clase "CSV/Excel injection": Excel y LibreOffice ejecutan cualquier celda de
+    TEXTO que arranque por = + - @ (o tabulador/retorno). El titulo de una ficha
+    es texto libre, asi que el vector es real. Riesgo bajo -- el fichero lo
+    genera y lo abre Diego con sus propios datos -- pero el repo ya sanitiza el
+    texto que va a las plataformas (`schema.validar_texto`) y que la hoja de
+    calculo no tuviera nada era una incoherencia.
+
+    Se comprueba sobre el fichero ESCRITO y releido, no sobre la funcion: la
+    garantia es que el .xlsx no lleve la formula, no que exista un helper
+    (`decision-making.md` §17).
+    """
+    from openpyxl import load_workbook
+
+    filas = [
+        {
+            "referencia": 1,
+            "titulo": "=1+1",
+            "lote": "L",
+            "coste_cents": 0,
+            "publicaciones": [],
+            "venta": None,
+        },
+        {
+            "referencia": 2,
+            "titulo": "Sudadera Reebok XXL",
+            "lote": "L",
+            "coste_cents": 0,
+            "publicaciones": [],
+            "venta": None,
+        },
+    ]
+    destino = exportar_excel(filas, tmp_path / "f.xlsx")
+    hoja = load_workbook(destino).active
+
+    peligrosa = hoja.cell(row=2, column=2).value
+    assert not str(peligrosa).startswith("="), f"formula viva en la celda: {peligrosa!r}"
+    assert "1+1" in str(peligrosa), "el valor debe seguir siendo LEGIBLE, no borrado"
+    # Un titulo normal no se toca.
+    assert hoja.cell(row=3, column=2).value == "Sudadera Reebok XXL"

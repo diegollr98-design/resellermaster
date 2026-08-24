@@ -44,4 +44,4 @@ Ver `truth-loop.md` §F. Resumen: **el retro registra hechos en el ledger; solo 
 ---
 
 ## Changelog
-- **v1.0** (2026-07-13) — creado con la infra, adaptado de `SEKURA/.claude/rules/change-loop.md` v1.1.
+- **v1.0** (2026-07-13) — creado con la infra, adaptado de el repo de SEKURA (`.claude/rules/change-loop.md`) v1.1.

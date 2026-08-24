@@ -87,12 +87,12 @@ pip install -r requirements.txt
 pytest -q
 ```
 
-**Qué deberías ver: `890 passed, 15 skipped`, en menos de un minuto, sin API key y sin cuenta en ningún
+**Qué deberías ver: `891 passed, 15 skipped`, en menos de un minuto, sin API key y sin cuenta en ningún
 sitio.**
 
 Los 15 saltados son deliberados y lo dicen en voz alta: el golden set versiona el *ground truth*
 ([`tests/golden/*.json`](tests/golden/)) pero **no las fotos**, que son mercancía real de Diego y están
-gitignored. En su máquina la suite da `904 passed, 1 skipped`. Un skip es visible; un test que pasara sin
+gitignored. En su máquina la suite da `905 passed, 1 skipped`. Un skip es visible; un test que pasara sin
 los datos mentiría.
 
 Para levantar la app: `streamlit run app.py`. Agrupar y curar es gratis y offline; la extracción de
@@ -127,7 +127,7 @@ Este repo trata la procedencia de un dato de la ficha con dureza, así que la mi
 | Export de un producto con la app | **~210 s** | **Medido**, cronómetro, **n=1** |
 | Export de un producto a mano | ~285 s | **Estimado** por un panel de agentes. **Nunca cronometrado.** El ahorro es real pero el lado manual no está medido |
 | Umbral de agrupación | **15 s** | **Medido**: barrido de 5 a 30 s sobre las 33 fotos. Zona segura 1-23 s, acantilado en 24 s |
-| Tests | 890 en un clon · 904 con las fotos | Ejecutado |
+| Tests | 891 en un clon · 905 con las fotos | Ejecutado |
 
 ## Las tres costuras
 

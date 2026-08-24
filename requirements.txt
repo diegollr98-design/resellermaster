@@ -16,7 +16,7 @@
 #
 # Fase 1 — cero dependencias de red POR PRODUCTO, cero APIs de pago.
 streamlit==1.57.0
-Pillow==12.1.1
+Pillow==12.3.0
 pillow-heif==1.4.0          # fotos .heic del iPhone
 ImageHash==4.3.2             # hash perceptual (deteccion de duplicados en core/images.py)
 
