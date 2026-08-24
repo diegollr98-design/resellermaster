@@ -29,7 +29,7 @@ N productos **reales**, fotografiados por Diego con su móvil y en sus condicion
 Estructura: una carpeta por producto con las fotos + un `truth.json` con los campos verificados.
 Cobertura mínima: las categorías que Diego vende de verdad, incluyendo los **casos difíciles** (sin etiqueta visible, marca desconocida, producto sin comparables). Un golden set de sólo casos fáciles miente.
 
-**El golden set se versiona en git** (es la excepción a la regla de no commitear fotos): es el gate, y un gate que cada uno tiene distinto no es un gate.
+**El ground truth se versiona en git** (`tests/golden/truth.json` y `legibilidad.json`): es el gate, y un gate que cada uno tiene distinto no es un gate. **Las fotos que describe, NO**: son de Diego, viven en `fotos/` y están gitignored. Consecuencia honesta, y hay que decirla porque se publica: en cualquier clon estos 14 tests **SKIPEAN** con el motivo escrito, y la suite da 890 passed / 15 skipped en vez de los 904 de la máquina de Diego. Un skip es visible; un test que pasara sin datos mentiría.
 
 ---
 

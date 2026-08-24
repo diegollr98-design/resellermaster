@@ -4,22 +4,13 @@ Pillow>=11.0
 pillow-heif>=0.20          # fotos .heic del iPhone
 ImageHash>=4.3             # hash perceptual (deteccion de duplicados en core/images.py)
 
-# Confirmacion visual de agrupacion (core/grouping.py, [INC-002] v2):
-# embeddings CLIP locales en vez de pHash/colorhash. CPU, sin CUDA — instalar
-# SIEMPRE con el indice CPU-only de PyTorch para no tirar del build con CUDA
-# (varios GB mas pesado e innecesario, esta app no usa GPU en ningun sitio):
+# core/extract.py usa numpy para el analisis y recorte de imagen.
 #
-#   pip install --index-url https://download.pytorch.org/whl/cpu open-clip-torch numpy
-#
-# La PRIMERA ejecucion en una maquina nueva descarga los pesos del modelo
-# (~350-600 MB segun el formato que cachee huggingface_hub) desde HuggingFace
-# Hub a ~/.cache/huggingface/hub/ — hace falta red esa vez. Las ejecuciones
-# siguientes (mismo proceso o procesos nuevos, misma maquina) son 100%
-# offline, reutilizan esa cache. Cero llamadas de red por producto, cero
-# coste. Ver docstring de core/grouping.py para la calibracion y la
-# degradacion honesta si el modelo no llega a cargar.
-open-clip-torch>=3.0
-torch>=2.0                 # CPU-only, ver nota de instalacion arriba
+# NO hay CLIP ni torch, aunque este fichero los declaro durante un tiempo:
+# core/grouping.py agrupa SOLO por el hueco temporal del EXIF (umbral 15 s,
+# medido sobre 33 fotos reales) y no mira un solo pixel. CLIP se midio y se
+# DESCARTO -- daba 0.90 de similitud entre dos sudaderas DISTINTAS, `[INC-004]`.
+# Eran ~2 GB de dependencia muerta que se tragaba cualquiera que clonase.
 numpy>=1.24
 
 # Fase 2 — COSTURA 1 (core/llm.py): unico SDK de proveedor permitido en todo

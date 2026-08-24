@@ -230,7 +230,7 @@ def render(store: LoteStore) -> str | None:
     if metodo == "Carpeta en disco":
         carpeta_texto = st.text_input(
             "Ruta de la carpeta con las fotos mezcladas",
-            placeholder=r"C:\Users\diego\Fotos\lote_reventa",
+            placeholder=r"C:\Fotos\lote_reventa",
         )
         if carpeta_texto:
             carpeta = Path(carpeta_texto)

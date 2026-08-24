@@ -33,6 +33,6 @@ docs/
 - Toda llamada a un proveedor LLM pasa por `core/llm.py` (costura 1). Todo precio sale de `core/pricing.py` (costura 2). Todo campo de ficha está declarado en `core/schema.py` (costura 3). **Nada las saltea.**
 - `app.py` y `ui/` son **desechables**: sólo renderizan estado. Si hay una decisión de negocio ahí, está en el sitio equivocado.
 - El estado de un lote se escribe en `core/store.py` → disco. **`st.session_state` es una caché, no la verdad** — un rerun de Streamlit no puede costarle a Diego 2 horas de curado.
-- Fotos y datos del usuario **nunca** se commitean (ver `.gitignore`). El golden set es la excepción: vive en `tests/golden/` y sí se versiona (es el gate).
+- Fotos y datos del usuario **nunca** se commitean (ver `.gitignore`). El golden set es la excepción **parcial**: el ground truth (`tests/golden/*.json`) sí se versiona — es el gate —; las fotos que describe **no** (viven en `fotos/`, gitignored). En un clon, los tests que las necesitan skipean diciendo por qué.
 - Secretos sólo en `.env` (gitignored). Hay un `.env.example` con las claves vacías.
 - Referencia voluminosa (taxonomías de categorías, tablas de tallas) → `docs/`, no en `CLAUDE.md`.

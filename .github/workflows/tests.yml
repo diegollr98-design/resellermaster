@@ -1,0 +1,30 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: pip
+
+      - name: Instalar dependencias
+        run: pip install -r requirements.txt
+
+      - name: Lint
+        run: ruff check .
+
+      # Sin API key y sin las fotos de Diego (gitignored: son mercancia real
+      # suya). Los ~15 tests del golden set SKIPEAN diciendo por que -- es
+      # deliberado: un test que pasara sin sus datos mentiria.
+      - name: Tests
+        run: pytest -q

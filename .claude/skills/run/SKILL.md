@@ -21,7 +21,7 @@ Verificar un cambio en la app **real**, no sólo en los tests. `pytest` verde y 
    ```
    Correr en background. Un arranque limpio no imprime tracebacks. **Un `Traceback` en el arranque = fallo, aunque la página cargue** (Streamlit renderiza parcialmente y esconde el error abajo).
 
-3. **Verificar el flujo mínimo** si el cambio lo afecta: cargar un lote de prueba de `tests/golden/`, comprobar que agrupa, que muestra los campos con su procedencia y que los botones de copiar existen.
+3. **Verificar el flujo mínimo** si el cambio lo afecta: cargar un lote de prueba de `fotos/` (`tests/golden/` sólo trae el ground truth en JSON, no las fotos), comprobar que agrupa, que muestra los campos con su procedencia y que los botones de copiar existen.
 
 4. **Reportar la salida REAL**, no un "arranca bien". Pega el log.
 

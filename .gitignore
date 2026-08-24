@@ -11,11 +11,15 @@ venv/
 .pytest_cache/
 .ruff_cache/
 
-# Datos del usuario — fotos, lotes, caché de API, DB local
-data/lotes/
-data/cache/
-data/*.db
-data/exports/
+# Datos del usuario — fotos, lotes, caché de API, DB local, informes.
+#
+# Es `data/**`, NO `data/`: con la forma de directorio git no desciende dentro,
+# así que cualquier excepción `!data/...` que se añada después se ignora EN
+# SILENCIO (comprobado ejecutando, no leído). Y las reglas de abajo cubrían
+# `data/` sólo por extensión: el día que ahí cayera un .csv o un .json de un
+# lote real, entraba al commit. Nada de `data/` está versionado
+# (`git ls-files -- data/` es vacío) y `core/store.py` lo crea al arrancar.
+data/**
 *.jpg
 *.jpeg
 *.png
@@ -38,3 +42,9 @@ desktop.ini
 # Fotos de trabajo de Diego (no se versionan)
 fotos/
 scratch_*
+
+# Borradores de las case-pages del portafolio: viven en el repo PORTAFOLIO, no
+# aquí. El handoff decía "no hagas git add -A" — eso es una petición, no una
+# garantía (`decision-making.md` §17). Esto sí la fuerza.
+portfolio-*.html
+docs/portfolio/
