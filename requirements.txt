@@ -29,5 +29,12 @@ rapidocr-onnxruntime>=1.2
 openpyxl>=3.1
 
 # Dev
+#
+# httpx se usa en tests/test_llm.py para simular los errores de red y de rate
+# limit de la costura. Venia "gratis" como dependencia transitiva de
+# `anthropic`, asi que en la maquina de Diego la suite pasaba sin declararlo y
+# en un entorno limpio moria al recolectar. Una dependencia directa se declara,
+# aunque otra te la instale de rebote.
+httpx>=0.27
 pytest>=8.0
 ruff>=0.8
