@@ -127,7 +127,7 @@ Este repo trata la procedencia de un dato de la ficha con dureza, así que la mi
 | Alucinaciones con `confianza=alta` sobre 33 fotos reales | **0** | **Medido** con la API real — pero léelo con su límite: `alta` es casi inalcanzable **por diseño** (sólo la da un checksum de EAN; el `json_schema` de la síntesis ni admite el literal). El 0 es sobre todo una consecuencia estructural, no un resultado empírico sorprendente. Las de confianza media/baja se imprimen pero no se asertan |
 | Coste por producto, **facturado** | **14,5 cts** el lote de 62 llamadas · **0,95 cts** un producto completo con síntesis · **0** al reprocesar (caché) | **Medido**: es lo que cobró la API |
 | Coste por producto, **estimado a priori** | ~3,4 cts | **Estimado**, y sobreestima ~1,3×. Sale de `LLMEngine.estimar_coste_lote`, que multiplica una constante de 1.600 tokens/imagen y **no llama a la API** — existe para enseñar el coste ANTES de lanzar un lote, no para medirlo |
-| Export de un producto con la app | **~210 s** | **Medido**, cronómetro, **n=1** |
+| Export de un producto con la app | **~210 s** | **Medido**, cronómetro, **n=1**. Es el **paso de export de UN producto**, no el tiempo total por producto ni una media de lote: `docs/seeds/guion-video.md` avisa explícitamente de que usarlo como "tiempo por producto" sería un estiramiento |
 | Export de un producto a mano | ~285 s | **Estimado** por un panel de agentes. **Nunca cronometrado.** El ahorro es real pero el lado manual no está medido |
 | Umbral de agrupación | **15 s** | **Medido**: barrido de 5 a 30 s sobre las 33 fotos. Zona segura 1-23 s, acantilado en 24 s |
 | Tests | 891 en un clon · 905 con las fotos | Ejecutado |
