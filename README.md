@@ -130,7 +130,7 @@ Este repo trata la procedencia de un dato de la ficha con dureza, así que la mi
 | Export de un producto con la app | **~210 s** | **Medido**, cronómetro, **n=1**. Es el **paso de export de UN producto**, no el tiempo total por producto ni una media de lote: `docs/seeds/guion-video.md` avisa explícitamente de que usarlo como "tiempo por producto" sería un estiramiento |
 | Export de un producto a mano | ~285 s | **Estimado** por un panel de agentes. **Nunca cronometrado.** El ahorro es real pero el lado manual no está medido |
 | Umbral de agrupación | **15 s** | **Medido**: barrido de 5 a 30 s sobre las 33 fotos. Zona segura 1-23 s, acantilado en 24 s |
-| Tests | 891 en un clon · 905 con las fotos | Ejecutado |
+| Tests | 892 en un clon · 906 con las fotos | Ejecutado |
 
 ## Las tres costuras
 
